@@ -3,6 +3,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from agentmain import GeneraticAgent
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters, ContextTypes
+from telegram.request import HTTPXRequest
 import mykey
 
 agent = GeneraticAgent()
@@ -92,17 +93,32 @@ if __name__ == '__main__':
     if not ALLOWED: sys.exit('ERROR: tg_allowed_users in mykey.py is empty or missing. Set it to avoid unauthorized access.')
     _logf = open(os.path.join(os.path.dirname(__file__), 'temp', 'tgapp.log'), 'a', encoding='utf-8', buffering=1)
     sys.stdout = sys.stderr = _logf
+    print('[NEW] New process starting, the above are history infos ...')
     threading.Thread(target=agent.run, daemon=True).start()
     proxy = vars(mykey).get('proxy', 'http://127.0.0.1:2082')
     print('proxy:', proxy)
-    app = ApplicationBuilder().token(mykey.tg_bot_token).proxy(proxy).get_updates_proxy(proxy).build()
+    request = HTTPXRequest(proxy=proxy, read_timeout=30, write_timeout=30, connect_timeout=30, pool_timeout=30)
+    app = (ApplicationBuilder()
+           .token(mykey.tg_bot_token)
+           .request(request)
+           .get_updates_request(request)
+           .build())
     app.add_handler(CommandHandler("stop", cmd_abort))
     app.add_handler(CommandHandler("llm", cmd_llm))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_msg))
+
+    async def _error_handler(update, context: ContextTypes.DEFAULT_TYPE):
+        print(f"[{time.strftime('%m-%d %H:%M')}] TG error: {context.error}", flush=True)
+    app.add_error_handler(_error_handler)
+
     print(f"TG bot starting... {time.strftime('%m-%d %H:%M')}")
     while True:
         try:
-            app.run_polling(drop_pending_updates=True)
+            app.run_polling(
+                drop_pending_updates=True,
+                poll_interval=1.0,
+                timeout=30,
+            )
         except Exception as e:
             print(f"[{time.strftime('%m-%d %H:%M')}] polling crashed: {e}", flush=True)
             time.sleep(10)

@@ -13,6 +13,19 @@ google_api_key = mykeys.get("google_api_key")
 proxy = mykeys.get("proxy", 'http://127.0.0.1:2082')
 proxies = {"http": proxy, "https": proxy} if proxy else None
 
+def compress_history_tags(messages, keep_recent=4, max_len=200):
+    """Compress <thinking>/<tool_use>/<tool_result> tags in older messages to save tokens."""
+    for i, msg in enumerate(messages):
+        if i < len(messages) - keep_recent and 'orig' not in msg:
+            msg['orig'] = msg['prompt']
+            for tag in ('thinking', 'tool_use', 'tool_result'):
+                msg['prompt'] = re.sub(
+                    rf'(<{tag}>)([\s\S]*?)(</{tag}>)',
+                    lambda m, _ml=max_len: m.group(1) + (m.group(2)[:_ml] + '...') + m.group(3) if len(m.group(2)) > _ml else m.group(0),
+                    msg['prompt']
+                )
+    return messages
+
 class SiderLLMSession:
     def __init__(self, default_model="gemini-3.0-flash"):
         from sider_ai_api import Session
@@ -32,16 +45,7 @@ class ClaudeSession:
         self.api_key, self.api_base, self.default_model, self.context_win = api_key, api_base.rstrip('/'), model, context_win
         self.raw_msgs, self.lock = [], threading.Lock()
     def _trim_messages(self, messages):
-        # 压缩4轮前的assistant消息：truncate <thinking>/<tool_use> 块
-        for i, msg in enumerate(messages):
-            if i < len(messages) - 4 and 'orig' not in msg:
-                msg['orig'] = msg['prompt']
-                for tag in ('thinking', 'tool_use', 'tool_result'):
-                    msg['prompt'] = re.sub(
-                        rf'(<{tag}>)([\s\S]*?)(</{tag}>)',
-                        lambda m: m.group(1) + (m.group(2)[:200] + '...') + m.group(3) if len(m.group(2)) > 200 else m.group(0),
-                        msg['prompt']
-                    )
+        compress_history_tags(messages)
         total = sum(len(m['prompt']) for m in messages)
         if total <= self.context_win * 4: return messages
         target, current, result = self.context_win * 4 * 0.9, 0, []
@@ -120,16 +124,9 @@ class LLMSession:
             yield f"Error: {str(e)}"
 
     def make_messages(self, raw_list, omit_images=True):
+        compress_history_tags(raw_list)
         messages = []
         for i, msg in enumerate(raw_list):
-            if i < len(raw_list) - 4 and 'orig' not in msg:
-                msg['orig'] = msg['prompt']
-                for tag in ('thinking', 'tool_use', 'tool_result'):
-                    msg['prompt'] = re.sub(
-                        rf'(<{tag}>)([\s\S]*?)(</{tag}>)',
-                        lambda m: m.group(1) + (m.group(2)[:200] + '...') + m.group(3) if len(m.group(2)) > 200 else m.group(0),
-                        msg['prompt']
-                    )
             prompt = msg['prompt']
             if omit_images and msg['image']: messages.append({"role": msg['role'], "content": "[Image omitted, if you needed it, ask me]\n" + prompt})
             elif not omit_images and msg['image']:

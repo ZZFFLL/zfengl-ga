@@ -103,8 +103,8 @@ def first_init_driver():
         if len(sess) > 0: break
     if len(sess) == 0: return 
     if len(sess) == 1: 
-        driver.newtab()
-        time.sleep(5)
+        #driver.newtab()
+        time.sleep(3)
 
 def web_scan(tabs_only=False, switch_tab_id=None):
     """
@@ -207,7 +207,8 @@ def file_read(path, start=1, keyword=None, count=200, show_linenos=True):
                         res = list(before) + [(i, l)] + list(itertools.islice(stream, count - len(before) - 1))
                         break
                     before.append((i, l))
-                else: return f"Keyword '{keyword}' not found after line {start}."
+                else: return f"Keyword '{keyword}' not found after line {start}. Falling back to content from line {start}:\n\n" \
+                               + file_read(path, start, None, count, show_linenos)
             else: res = itertools.islice(stream, count)
             return "\n".join(f"{i}|{l}" if show_linenos else l for i, l in res)
     except Exception as e:
@@ -287,8 +288,9 @@ class GenericAgentHandler(BaseHandler):
         result = web_scan(tabs_only=tabs_only, switch_tab_id=switch_tab_id)
         content = result.pop("content", None)
         yield f'[Info] {str(result)}\n'
-        if content: next_prompt = f"```html\n{content}\n```"
+        if content: next_prompt = f"<tool_result>\n```html\n{content}\n```\n</tool_result>"
         else: next_prompt = "标签页列表如上\n"
+        # 手动tool_result为了触发历史上下文自动压缩
         return StepOutcome(result, next_prompt=next_prompt)
     
     def do_web_execute_js(self, args, response):
@@ -296,15 +298,16 @@ class GenericAgentHandler(BaseHandler):
         支持将结果保存到文件供后续读取分析，但保存功能仅限即时读取，与await等异步操作不兼容。
         '''
         script = args.get("script", "")
+        if not script: return StepOutcome(None, next_prompt="[Error] Empty script param. Check your tool call arguments.")
         save_to_file = args.get("save_to_file", "")
         result = web_execute_js(script)
         if save_to_file and "js_return" in result:
             content = str(result["js_return"] or '')
             abs_path = self._get_abs_path(save_to_file)
-            result["js_return"] = content[:200] + ("..." if len(content) > 200 else "")
+            result["js_return"] = smart_format(content, max_str_len=200)
             try:
                 with open(abs_path, 'w', encoding='utf-8') as f: f.write(str(content))
-                result["js_return"] += f"\n\n[已保存以上内容到 {abs_path}]"
+                result["js_return"] += f"\n\n[已保存完整内容到 {abs_path}]"
             except:
                 result['js_return'] += f"\n\n[保存失败，无法写入文件 {abs_path}]"
         print("Web Execute JS Result:", smart_format(result))
@@ -371,13 +374,15 @@ class GenericAgentHandler(BaseHandler):
         if show_linenos:
             tips = '由于设置了show_linenos，以下返回信息为：(行号|)内容 。\n'
             result = tips + result 
+        if ' ... [TRUNCATED]' in result:
+            result += '\n\n（某些行被截断，如需完整内容可改用 code_run 读取）'
         next_prompt = self._get_anchor_prompt()
         if 'memory' in path or 'sop' in path: 
             next_prompt += "\nPROTOCOL: 你正在读取记忆或SOP文件，若决定按sop执行请先调用相关工具提取sop中的关键点（特别是靠后的）进入工作记忆。"
         return StepOutcome(result, next_prompt=next_prompt)
     
     def do_update_working_mem(self, args, response):
-        '''读取完sop后，为整个任务设定后续需要临时记忆的重点。
+        '''为整个任务设定后续需要临时记忆的重点。
         '''
         key_info = args.get("key_info", "")
         related_sop = args.get("related_sop", "")
