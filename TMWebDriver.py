@@ -1,4 +1,4 @@
-import json, threading, time, uuid, queue, socket, requests
+import json, threading, time, uuid, queue, socket, requests, traceback
 from typing import Dict, Any, Optional, List  
 from simple_websocket_server import WebSocketServer, WebSocket  
 from bs4 import BeautifulSoup  
@@ -59,6 +59,7 @@ class TMWebDriver:
                 print(f"Browser http connected: {session.url} (Session: {session_id})")  
                 self.sessions[session_id] = session
             session = self.sessions[session_id]
+            if session.disconnect_at is not None and session.type != 'http': session.reconnect(queue.Queue(), session_info)
             session.disconnect_at = None
             if session.type == 'http': msgQ = session.http_queue
             else: return json.dumps({"id": "", "ret": "use ws"})
@@ -67,7 +68,7 @@ class TMWebDriver:
                 try:
                     msg = msgQ.get(timeout=0.2)
                     try: self.acks[json.loads(msg).get('id','')] = True
-                    except: pass
+                    except: traceback.print_exc()
                     return msg
                 except queue.Empty: continue
             return json.dumps({"id": "", "ret": "next long-poll"})
@@ -101,13 +102,14 @@ class TMWebDriver:
                 except Exception as e:
                     return json.dumps({'error': str(e)}, ensure_ascii=False)
             return 'ok'
-        def run(): 
-            import asyncio
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            bottle.run(app, host=self.host, port=self.port+1, server='tornado', threads=20)
-        http_thread = threading.Thread(target=run)  
-        http_thread.daemon = True  
+        def run():
+            from wsgiref.simple_server import make_server, WSGIServer, WSGIRequestHandler
+            from socketserver import ThreadingMixIn
+            class _T(ThreadingMixIn, WSGIServer): pass
+            class _H(WSGIRequestHandler):
+                def log_request(self, *a): pass
+            make_server(self.host, self.port+1, app, server_class=_T, handler_class=_H).serve_forever()
+        http_thread = threading.Thread(target=run, daemon=True)
         http_thread.start()  
 
     def clean_sessions(self):
@@ -206,7 +208,7 @@ class TMWebDriver:
         exec_id = str(uuid.uuid4())  
         payload = json.dumps({'id': exec_id, 'code': code, 'auto_switch_newtab': auto_switch_newtab})
 
-        if tp == 'ws':        
+        if tp == 'ws': 
             session.ws_client.send_message(payload)  
         elif tp == 'http':
             session.http_queue.put(payload)
@@ -216,7 +218,7 @@ class TMWebDriver:
         hasjump = acked = False
 
         while exec_id not in self.results:  
-            time.sleep(0.1)  
+            time.sleep(0.5)  
             if not acked and exec_id in self.acks:
                 acked = True; start_time = time.time()
             if tp == 'ws':
