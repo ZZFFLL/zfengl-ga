@@ -1,4 +1,3 @@
-# coding=utf-8
 """
 CRITICAL: 严禁在此工具链中 import pyautogui (会污染 win32api 导致逻辑冲突)。
 ljqCtrl Quick Reference:
@@ -10,25 +9,33 @@ ljqCtrl Quick Reference:
 - MouseDClick(staytime=0.05), MouseClick(staytime=0.05)
 """
 
-import os, sys, time, random, math
-import win32api, win32con 
+import os, sys, time, random, math, win32api, win32con 
 import numpy as np
 
 dpi_scale = 1
-
 try:
 	from PIL import ImageGrab, Image, ImageEnhance, ImageFilter, ImageDraw
 	import cv2
 except: pass
 
-scr = ImageGrab.grab()
-swidth, sheight = scr.size
-print('Screen width & height:', swidth, sheight)
-cwidth, cheight = map(win32api.GetSystemMetrics, [win32con.SM_CXSCREEN, win32con.SM_CYSCREEN])
-dpi_scale = cwidth / swidth
-print('dpi_scale:', dpi_scale)
-
-time.process_time()
+try:
+	scr = ImageGrab.grab()
+	swidth, sheight = scr.size
+	print('Screen width & height:', swidth, sheight)
+	cwidth, cheight = map(win32api.GetSystemMetrics, [win32con.SM_CXSCREEN, win32con.SM_CYSCREEN])
+	dpi_scale = cwidth / swidth
+	print('dpi_scale:', dpi_scale)
+except:
+	import ctypes
+	user32 = ctypes.windll.user32
+	user32.SetProcessDPIAware()  # 确保 DPI 感知
+	cwidth = user32.GetSystemMetrics(0)  # SM_CXSCREEN
+	cheight = user32.GetSystemMetrics(1)  # SM_CYSCREEN
+	try:
+		dpi = user32.GetDpiForSystem()  # Windows 10 1607+
+		dpi_scale = dpi / 96.0
+	except: dpi_scale = 1.0  # 降级方案
+	print(f'Screen (RDP disconnected): {cwidth}x{cheight}, dpi_scale: {dpi_scale}')
 
 def MouseDown(): win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN,0,0) 
 def MouseUp(): win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP,0,0)

@@ -60,5 +60,4 @@ memory/*
 restore_commit.txt
 
 sche_tasks/
-model_responses.sync-conflict-*
 QUICK_START.md
