@@ -34,7 +34,16 @@ class GeneraticAgent:
             if not any(x in k for x in ['api', 'config', 'cookie']): continue
             try:
                 if 'claude' in k: llm_sessions += [ClaudeSession(api_key=cfg['apikey'], api_base=cfg['apibase'], model=cfg['model'])]
-                if 'oai' in k: llm_sessions += [LLMSession(api_key=cfg['apikey'], api_base=cfg['apibase'], model=cfg['model'], proxy=cfg.get('proxy'))]
+                if 'oai' in k: llm_sessions += [LLMSession(
+                    api_key=cfg['apikey'],
+                    api_base=cfg['apibase'],
+                    model=cfg['model'],
+                    proxy=cfg.get('proxy'),
+                    api_mode=cfg.get('api_mode', 'chat_completions'),
+                    max_retries=cfg.get('max_retries', 2),
+                    connect_timeout=cfg.get('connect_timeout', 10),
+                    read_timeout=cfg.get('read_timeout', 120),
+                )]
                 if 'xai' in k: llm_sessions += [XaiSession(cfg, mykeys.get('proxy', ''))]
                 if 'sider' in k: llm_sessions += [SiderLLMSession(cfg, default_model=x) for x in \
                                     ["gemini-3.0-flash", "claude-haiku-4.5", "kimi-k2"]]

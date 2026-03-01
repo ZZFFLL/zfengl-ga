@@ -2,7 +2,11 @@
 oai_config = {
     'apikey':'sk-uklURcj',
     'apibase':"http://113.145.139.147:3001",
-    'model':"openai/gpt-5.1"
+    'model':"openai/gpt-5.1",
+    'api_mode':"chat_completions",  # optional: "chat_completions" | "responses"
+    'max_retries': 2,               # optional: retries for 429/timeout/5xx
+    'connect_timeout': 10,          # optional: seconds
+    'read_timeout': 120             # optional: seconds (stream read)
 }
 
 # or

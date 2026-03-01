@@ -86,45 +86,164 @@ class ClaudeSession:
         return _ask_gen() if stream else ''.join(list(_ask_gen()))
 
 class LLMSession:
-    def __init__(self, api_key, api_base, model, context_win=12000, proxy=None):
-        self.api_key = api_key; self.api_base = api_base; self.default_model = model
+    def __init__(self, api_key, api_base, model, context_win=12000, proxy=None, api_mode="chat_completions",
+                 max_retries=2, connect_timeout=10, read_timeout=120):
+        self.api_key = api_key; self.api_base = api_base.rstrip('/'); self.default_model = model
         self.context_win = context_win; self.raw_msgs = []; self.messages = []
         self.proxies = {"http": proxy, "https": proxy} if proxy else None
         self.lock = threading.Lock()
+        self.max_retries = max(0, int(max_retries))
+        self.connect_timeout = max(1, int(connect_timeout))
+        self.read_timeout = max(5, int(read_timeout))
+        mode = str(api_mode or "chat_completions").strip().lower().replace('-', '_')
+        if mode in ["responses", "response"]: self.api_mode = "responses"
+        else: self.api_mode = "chat_completions"
+
+    def _endpoint(self, path):
+        if self.api_base.endswith('/v1'): return f"{self.api_base}/{path.lstrip('/')}"
+        return f"{self.api_base}/v1/{path.lstrip('/')}"
+
+    def _retry_delay(self, resp, attempt):
+        retry_after = None
+        try:
+            if resp is not None:
+                retry_after = (resp.headers or {}).get("retry-after")
+            if retry_after is not None:
+                retry_after = float(retry_after)
+        except:
+            retry_after = None
+        if retry_after is None: retry_after = min(30.0, 1.5 * (2 ** attempt))
+        return max(0.5, float(retry_after))
+
+    def _to_responses_input(self, messages):
+        result = []
+        for msg in messages:
+            role = str(msg.get("role", "user")).lower()
+            if role not in ["user", "assistant", "system", "developer"]: role = "user"
+            content = msg.get("content", "")
+            text_type = "output_text" if role == "assistant" else "input_text"
+            parts = []
+            if isinstance(content, str):
+                if content: parts.append({"type": text_type, "text": content})
+            elif isinstance(content, list):
+                for part in content:
+                    if not isinstance(part, dict): continue
+                    ptype = part.get("type")
+                    if ptype == "text":
+                        text = part.get("text", "")
+                        if text: parts.append({"type": text_type, "text": text})
+                    elif ptype == "image_url":
+                        url = (part.get("image_url") or {}).get("url", "")
+                        if url and role != "assistant": parts.append({"type": "input_image", "image_url": url})
+            if len(parts) == 0: parts = [{"type": text_type, "text": str(content)}]
+            result.append({"role": role, "content": parts})
+        return result
 
     def raw_ask(self, messages, model=None, temperature=0.5):
         if model is None: model = self.default_model
         headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json", "Accept": "text/event-stream"}
-        payload = {"model": model, "messages": messages, "temperature": temperature, "stream": True}
-        try:
-            with requests.post(f"{self.api_base}/v1/chat/completions", headers=headers, 
-                               json=payload, stream=True, timeout=(5, 60), proxies=self.proxies) as r:
-                r.raise_for_status()
-                buffer = ''
-                for line in r.iter_lines():
-                    line = line.decode("utf-8")
-                    if not line or not line.startswith("data:"): continue
-                    data = line[5:].lstrip()
-                    if data == "[DONE]": break
-                    obj = json.loads(data); ch = (obj.get("choices") or [{}])[0]
-                    finish_reason = ch.get("finish_reason")
-                    delta = (ch.get("delta") or {}).get("content")
-                    if delta:
-                        yield delta; buffer += delta
+        if self.api_mode == "responses":
+            url = self._endpoint("responses")
+            payload = {"model": model, "input": self._to_responses_input(messages), "temperature": temperature, "stream": True}
+        else:
+            url = self._endpoint("chat/completions")
+            payload = {"model": model, "messages": messages, "temperature": temperature, "stream": True}
+        for attempt in range(self.max_retries + 1):
+            streamed_any = False
+            try:
+                with requests.post(url, headers=headers, json=payload, stream=True,
+                                   timeout=(self.connect_timeout, self.read_timeout), proxies=self.proxies) as r:
+                    if r.status_code >= 400:
+                        retryable = r.status_code in [408, 409, 425, 429, 500, 502, 503, 504]
+                        if retryable and attempt < self.max_retries:
+                            delay = self._retry_delay(r, attempt)
+                            print(f"[LLM Retry] HTTP {r.status_code}, retry in {delay:.1f}s ({attempt+1}/{self.max_retries+1})")
+                            time.sleep(delay)
+                            continue
+                    r.raise_for_status()
+                    buffer = ''; seen_delta = False
+                    for line in r.iter_lines():
+                        line = line.decode("utf-8") if isinstance(line, bytes) else line
+                        if not line or not line.startswith("data:"): continue
+                        data = line[5:].lstrip()
+                        if data == "[DONE]": break
+                        try: obj = json.loads(data)
+                        except: continue
+                        if self.api_mode == "responses":
+                            etype = obj.get("type", "")
+                            delta = obj.get("delta", "") if etype == "response.output_text.delta" else ""
+                            if delta:
+                                streamed_any = True; seen_delta = True
+                                yield delta; buffer += delta
+                            elif etype == "response.output_text.done" and not seen_delta:
+                                text = obj.get("text", "")
+                                if text:
+                                    streamed_any = True
+                                    yield text; buffer += text
+                            elif etype == "error":
+                                err = obj.get("error", {})
+                                emsg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
+                                if emsg:
+                                    yield f"Error: {emsg}"
+                                    return
+                            elif etype == "response.completed":
+                                break
+                        else:
+                            ch = (obj.get("choices") or [{}])[0]
+                            finish_reason = ch.get("finish_reason")
+                            delta = (ch.get("delta") or {}).get("content")
+                            if delta:
+                                streamed_any = True
+                                yield delta; buffer += delta
+                            if finish_reason: break
                         if '</tool_use>' in buffer[-30:]: break
-                    if finish_reason: break
-        except Exception as e:
-            yield f"Error: {str(e)}"
+                    return
+            except requests.HTTPError as e:
+                resp = getattr(e, "response", None)
+                status = getattr(resp, "status_code", "unknown")
+                retryable = isinstance(status, int) and status in [408, 409, 425, 429, 500, 502, 503, 504]
+                if retryable and attempt < self.max_retries and not streamed_any:
+                    delay = self._retry_delay(resp, attempt)
+                    print(f"[LLM Retry] HTTP {status}, retry in {delay:.1f}s ({attempt+1}/{self.max_retries+1})")
+                    time.sleep(delay)
+                    continue
+                body = ""
+                try: body = (resp.text or "").strip()
+                except: body = ""
+                body = body[:1200] if body else "<empty>"
+                rid = ""
+                retry_after = ""
+                ct = ""
+                try:
+                    h = resp.headers or {}
+                    rid = h.get("x-request-id") or h.get("request-id") or ""
+                    retry_after = h.get("retry-after") or ""
+                    ct = h.get("content-type") or ""
+                except: pass
+                yield f"Error: HTTP {status} {str(e)}; content_type: {ct or '<empty>'}; retry_after: {retry_after or '<empty>'}; request_id: {rid or '<empty>'}; body: {body}"
+                return
+            except (requests.Timeout, requests.ConnectionError) as e:
+                if attempt < self.max_retries and not streamed_any:
+                    delay = self._retry_delay(None, attempt)
+                    print(f"[LLM Retry] {type(e).__name__}, retry in {delay:.1f}s ({attempt+1}/{self.max_retries+1})")
+                    time.sleep(delay)
+                    continue
+                yield f"Error: {type(e).__name__}: {str(e)}"
+                return
+            except Exception as e:
+                yield f"Error: {str(e)}"
+                return
 
     def make_messages(self, raw_list, omit_images=True):
         compress_history_tags(raw_list)
         messages = []
         for i, msg in enumerate(raw_list):
             prompt = msg['prompt']
-            if omit_images and msg['image']: messages.append({"role": msg['role'], "content": "[Image omitted, if you needed it, ask me]\n" + prompt})
-            elif not omit_images and msg['image']:
+            image = msg.get('image')
+            if omit_images and image: messages.append({"role": msg['role'], "content": "[Image omitted, if you needed it, ask me]\n" + prompt})
+            elif not omit_images and image:
                 messages.append({"role": msg['role'], "content": [
-                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{msg['image']}"}},
+                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image}"}},
                     {"type": "text", "text": prompt} ]})
             else:
                 messages.append({"role": msg['role'], "content": prompt})
