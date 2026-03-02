@@ -54,8 +54,12 @@ def agent_runner_loop(client, system_prompt, user_input, handler, tools_schema, 
         yield f"**LLM Running (Turn {turn+1}) ...**\n\n"
         if (turn+1) % 10 == 0: client.last_tools = ''  # 每10轮重置一次工具描述，避免上下文过大导致的模型性能下降
         response_gen = client.chat(messages=messages, tools=tools_schema)
-        response = yield from response_gen
-        if verbose: yield '\n\n'
+        if verbose:
+            response = yield from response_gen
+            yield '\n\n'
+        else:
+            response = exhaust(response_gen)
+            yield response.content
 
         if not response.tool_calls:
             tool_name, args = 'no_tool', {}

@@ -22,8 +22,9 @@ proc = subprocess.Popen(
 
 - 必须 Popen，禁止 subprocess.run（会阻塞）
 - stdout.log/stderr.log 用于调试subagent卡死、LLM调用失败等问题
-- `--llm_no` 默认=sonnet 4.5，`--llm_no 1`=opus 4.6
 - 文件统一 UTF-8，subagent 无 reply 5min 自动退出无需清理
+- **禁止合并启动+轮询到同一个code_run**——会阻塞自己。启动Popen立即返回，下一轮再poll output.txt。这是并行的前提
+- 新建/复用任务目录时，先删除旧 output*.txt（否则会读到上次结果误判完成）
 
 ## 场景1：测试模式 - 行为验证
 **用途**：观察agent真实行为，修正RULES/L2/L3/SOP

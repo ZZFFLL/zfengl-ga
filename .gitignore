@@ -55,6 +55,9 @@ memory/*
 # Subagent SOP
 !memory/subagent_sop.md
 
+# Plan SOP
+!memory/plan_sop.md
+
 # ADB UI tool
 !memory/adb_ui.py
 
