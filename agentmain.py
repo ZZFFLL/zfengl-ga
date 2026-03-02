@@ -125,6 +125,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--scheduled', action='store_true', help='计划任务轮询模式')
     parser.add_argument('--task', metavar='IODIR', help='一次性任务模式(文件IO)')
+    parser.add_argument('--reflect', metavar='SCRIPT', help='反射模式：加载监控脚本，check()触发时发任务')
     parser.add_argument('--llm_no', type=int, default=0, help='LLM编号')
     args = parser.parse_args()
 
@@ -149,7 +150,34 @@ if __name__ == '__main__':
                     os.remove(rp); break
             else: break
             nround = int(nround) + 1 if nround.isdigit() else 1
-    elif args.scheduled:
+    elif args.reflect:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('reflect_script', args.reflect)
+        mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+        interval = getattr(mod, 'INTERVAL', 5)
+        once = getattr(mod, 'ONCE', False)
+        on_done = getattr(mod, 'on_done', None)
+        print(f'[Reflect] loaded {args.reflect}, interval={interval}s, once={once}')
+        while True:
+            time.sleep(interval)
+            try: task = mod.check()
+            except Exception as e: 
+                print(f'[Reflect] check() error: {e}'); continue
+            if task is None: continue
+            print(f'[Reflect] triggered: {task[:80]}')
+            dq = agent.put_task(task, source='reflect')
+            try:
+                while 'done' not in (item := dq.get(timeout=120)): pass
+                result = item['done']
+            except Exception as e:
+                if once: raise
+                print(f'[Reflect] drain error: {e}'); result = f'[ERROR] {e}'
+            open('./temp/reflect.log', 'a', encoding='utf-8').write(f'[{datetime.now():%m-%d %H:%M}]\n{result}\n\n')
+            if on_done:
+                try: on_done(result)
+                except Exception as e: print(f'[Reflect] on_done error: {e}')
+            if once: print('[Reflect] ONCE=True, exiting.'); break
+    elif args.scheduled: 
         def drain(dq, tag):
             while 'done' not in (item := dq.get()): pass
             open('./temp/scheduler.log', 'a', encoding='utf-8').write(f'[{datetime.now():%m-%d %H:%M}] {tag}\n{item["done"]}\n\n')
