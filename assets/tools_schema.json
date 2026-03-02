@@ -43,7 +43,7 @@
     "name": "web_execute_js",
     "description": "万能网页操控工具。通过执行 JavaScript 脚本实现对浏览器的完全控制（如点击、滚动、提取特定数据）。鼓励在有把握情况下（记忆中有selector/做法等）精准使用以减少web_scan调用。执行结果可选择保存到本地文件进行后续分析。",
     "parameters": {"type": "object", "properties": {
-      "script": {"type": "string", "description": "要执行的 JavaScript 代码。"},
+      "script": {"type": "string", "description": "要执行的 JavaScript 代码或JS文件路径。"},
       "save_to_file": {"type": "string", "description": "可选。将 JS 执行结果（js_return）保存到的文件路径。该功能不支持 await 等异步结果。"}}, "required": ["script"]}
   }},
   {"type": "function", "function": {
@@ -62,7 +62,7 @@
   }},
   {"type": "function", "function": {
     "name": "start_long_term_update",
-    "description": "准备开始提炼记忆。发现值得长期记忆的信息（环境事实/用户偏好/避坑经验）时调用此工具。一次用户对话只允许调用一次，已记忆更新或在自主流程内时无需调用。",
+    "description": "准备开始提炼记忆。发现值得长期记忆的信息（环境事实/用户偏好/避坑经验）时调用此工具。已记忆更新或在自主流程内时无需调用。超15轮完成的任务必须调用以沉淀经验。",
     "parameters": {"type": "object", "properties": {}}}
   }
 ]

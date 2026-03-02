@@ -247,7 +247,7 @@ class GenericAgentHandler(BaseHandler):
         self.parent = parent
         self.key_info = ""
         self.related_sop = ""
-        self.cwd = cwd
+        self.cwd = cwd;  self.current_turn = 0
         self.history_info = last_history if last_history else []
         self.code_stop_signal = []
 
@@ -313,6 +313,9 @@ class GenericAgentHandler(BaseHandler):
         '''
         script = args.get("script", "")
         if not script: return StepOutcome(None, next_prompt="[Error] Empty script param. Check your tool call arguments.")
+        abs_path = self._get_abs_path(script.strip())
+        if os.path.isfile(abs_path):
+            with open(abs_path, 'r', encoding='utf-8') as f: script = f.read()
         save_to_file = args.get("save_to_file", "")
         switch_tab_id = args.get("switch_tab_id") or args.get("tab_id")
         result = web_execute_js(script, switch_tab_id=switch_tab_id)
@@ -471,6 +474,7 @@ class GenericAgentHandler(BaseHandler):
     def _get_anchor_prompt(self):
         h_str = "\n".join(self.history_info[-20:])
         prompt = f"\n### [WORKING MEMORY]\n<history>\n{h_str}\n</history>"
+        prompt += f"\nCurrent turn: {self.current_turn}\n"
         if self.key_info: prompt += f"\n<key_info>{self.key_info}</key_info>"
         if self.related_sop: prompt += f"\n有不清晰的地方请再次读取{self.related_sop}"
         try: print(prompt)

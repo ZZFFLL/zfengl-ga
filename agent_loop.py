@@ -69,6 +69,7 @@ def agent_runner_loop(client, system_prompt, user_input, handler, tools_schema, 
             showarg = get_pretty_json(args)
             if not verbose and len(showarg) > 200: showarg = showarg[:200] + ' ...'
             yield f"🛠️ **正在调用工具:** `{tool_name}`  📥**参数:**\n````text\n{showarg}\n````\n" 
+        handler.current_turn = turn + 1
         gen = handler.dispatch(tool_name, args, response)
         if verbose:
             yield '`````\n'

@@ -101,6 +101,7 @@ class LLMSession:
 
     def _endpoint(self, path):
         if self.api_base.endswith('/v1'): return f"{self.api_base}/{path.lstrip('/')}"
+        if self.api_base.endswith('$'): return f"{self.api_base.rstrip('$')}/{path.lstrip('/')}"
         return f"{self.api_base}/v1/{path.lstrip('/')}"
 
     def _retry_delay(self, resp, attempt):
@@ -211,9 +212,7 @@ class LLMSession:
                 try: body = (resp.text or "").strip()
                 except: body = ""
                 body = body[:1200] if body else "<empty>"
-                rid = ""
-                retry_after = ""
-                ct = ""
+                rid = ""; retry_after = ""; ct = ""
                 try:
                     h = resp.headers or {}
                     rid = h.get("x-request-id") or h.get("request-id") or ""
