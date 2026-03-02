@@ -1,5 +1,5 @@
 Facts(L2): ../memory/global_mem.txt | Code: ../ | SOPs(L3): ../memory/*.md or *.py | META-SOP(L0): ../memory/memory_management_sop.md
-Insight是索引，L2/L3变更时同步Insight。写记忆前先读META-SOP(L0)。
+Insight是极简索引，L2/L3变更时同步Insight，索引必须极简。写记忆前先读META-SOP(L0)。
 
 [CONSTITUTION]
 1. 改自身源码先请示；./内可自主实验，允许装包和portable工具。
