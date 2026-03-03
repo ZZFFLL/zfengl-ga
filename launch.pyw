@@ -2,7 +2,7 @@ import webview, threading, subprocess, sys, time, os, ctypes, atexit, socket, ra
 
 WINDOW_WIDTH, WINDOW_HEIGHT, RIGHT_PADDING, TOP_PADDING = 600, 900, 0, 300
 
-def find_free_port(lo=8501, hi=8599):
+def find_free_port(lo=18501, hi=18599):
     ports = list(range(lo, hi+1)); random.shuffle(ports)
     for p in ports:
         try: s = socket.socket(); s.bind(('127.0.0.1', p)); s.close(); return p
@@ -15,7 +15,7 @@ def get_screen_width():
 
 def start_streamlit(port):
     global proc
-    cmd = [sys.executable, "-m", "streamlit", "run", "stapp.py", "--server.port", str(port), "--server.headless", "true", "--theme.base", "dark"]  # 暗黑模式
+    cmd = [sys.executable, "-m", "streamlit", "run", "stapp.py", "--server.port", str(port), "--server.address", "localhost", "--server.headless", "true", "--theme.base", "dark"]  # 暗黑模式
     proc = subprocess.Popen(cmd)
     atexit.register(proc.kill)
 
