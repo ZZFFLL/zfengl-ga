@@ -158,7 +158,7 @@ def log_memory_access(path):
     stats[fname] = {'count': stats.get(fname, {}).get('count', 0) + 1, 'last': datetime.now().strftime('%Y-%m-%d')}
     with open(stats_file, 'w', encoding='utf-8') as f: json.dump(stats, f, indent=2, ensure_ascii=False)
 
-def web_execute_js(script, switch_tab_id=None):
+def web_execute_js(script, switch_tab_id=None, no_monitor=False):
     """
     执行 JS 脚本来控制浏览器，并捕获结果和页面变化。
     script: 要执行的 JavaScript 代码字符串。
@@ -180,7 +180,7 @@ def web_execute_js(script, switch_tab_id=None):
         if len(driver.get_all_sessions()) == 0:
             return {"status": "error", "msg": "没有可用的浏览器标签页，请先打开一个浏览器标签页，且确认TMWebDriver浏览器tempermonkey插件已安装并启用。"}
         if switch_tab_id: driver.default_session_id = switch_tab_id
-        result = execute_js_rich(script, driver)
+        result = execute_js_rich(script, driver, no_monitor=no_monitor)
         return result
     except Exception as e:
         return {"status": "error", "msg": format_error(e)}
@@ -318,7 +318,8 @@ class GenericAgentHandler(BaseHandler):
             with open(abs_path, 'r', encoding='utf-8') as f: script = f.read()
         save_to_file = args.get("save_to_file", "")
         switch_tab_id = args.get("switch_tab_id") or args.get("tab_id")
-        result = web_execute_js(script, switch_tab_id=switch_tab_id)
+        no_monitor = args.get("no_monitor", False)
+        result = web_execute_js(script, switch_tab_id=switch_tab_id, no_monitor=no_monitor)
         if save_to_file and "js_return" in result:
             content = str(result["js_return"] or '')
             abs_path = self._get_abs_path(save_to_file)

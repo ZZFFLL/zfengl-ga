@@ -8,13 +8,14 @@
 ## 限制(isTrusted)
 - JS dispatch的事件`isTrusted=false`，敏感操作(文件上传/部分按钮)会被浏览器拦截
 - ⭐**首选绕过：CDP桥**——CDP派发的Input事件是浏览器原生级别(isTrusted=true)，且无需前台，见下方CDP章节
-- 文件上传：JS无法填充`<input type=file>`，仍需ljqCtrl物理点击+Win32轮询文件对话框
-  - 流程：SetForegroundWindow→ljqCtrl点上传按钮→FindWindow轮询对话框→输入路径→轮询关闭
+- 文件上传：JS无法填充`<input type=file>`
+  - ⭐首选CDP batch：getDocument→querySelector→DOM.setFileInputFiles(无需前台/物理点击)
+  - 备选ljqCtrl物理点击：SetForegroundWindow→点上传按钮→FindWindow轮询对话框→输入路径→轮询关闭
 - 备选：元素→屏幕物理坐标(ljqCtrl/PostMessage点击前必算)：JS一次取rect+窗口信息，公式：
   - `physX = (screenX + rect中心x) * dpr`，`physY = (screenY + chromeH + rect中心y) * dpr`
   - chromeH = outerHeight - innerHeight，dpr = devicePixelRatio
   - 注意：screenX/Y也是CSS像素，所有值先加后统一乘dpr
-- 结论：读信息+普通操作用TMWebDriver；需isTrusted事件首选CDP桥；文件上传需配合ljqCtrl
+- 结论：读信息+普通操作用TMWebDriver；需isTrusted事件首选CDP桥；文件上传首选CDP三连(备选ljqCtrl)
 
 ## 导航
 - `web_scan` 仅读当前页不导航，切换网站用 `web_execute_js` + `location.href='url'`
@@ -54,8 +55,13 @@ el.id = '__ljq_ctrl'; el.style.display = 'none';
 el.textContent = JSON.stringify({cmd:'...', ...});
 document.body.appendChild(el);  // 响应写回el.textContent
 ```
-命令：`{cmd:'tabs'}` | `{cmd:'cookies'}` | `{cmd:'cdp', tabId:N, method:'...', params:{...}}`
-- CDP可用任意方法(Input/Network/DOM/Page/Runtime/Emulation等)，每次attach→send→detach
+单命令：`{cmd:'tabs'}` | `{cmd:'cookies'}` | `{cmd:'cdp', tabId:N, method:'...', params:{...}}`
+- ⭐batch混合：`{cmd:'batch', commands:[{cmd:'cookies'},{cmd:'tabs'},{cmd:'cdp',...},...]}`
+  - 返回`{ok:true, results:[...]}`，一次请求多命令，CDP懒attach复用session
+  - `$N.path`引用第N个结果字段(0-indexed)，如`"nodeId":"$2.root.nodeId"`
+  - 典型：文件上传三连 getDocument→querySelector(input[type=file])→setFileInputFiles
+  - ⚠tabId：CDP默认sender.tab.id(当前注入页)，跨tab需显式tabId或先batch内tabs查
+- CDP可用任意方法(Input/Network/DOM/Page/Runtime/Emulation等)，单条每次attach→send→detach
 - ⭐跨tab无需前台：指定tabId即可操作后台标签页
 - ⭐绕过isTrusted：CDP派发的Input事件是浏览器原生级别
 
@@ -66,7 +72,8 @@ document.body.appendChild(el);  // 响应写回el.textContent
   - 坑：多RenderWidgetHostHWND共存，必须按父窗口标题匹配再取子窗口
 
 ## 验证码/页面视觉截图
-- 优先：JS `canvas.toDataURL()` 直接拿base64（验证码是canvas/img时最干净，无需截屏）
+- ⭐首选CDP截图：`Page.captureScreenshot`(format:'png')→返回base64，无需前台/后台tab也行，全页高清
+- 验证码canvas/img：JS `canvas.toDataURL()` 直接拿base64最干净
 - 备选：`window.open(location.href,'_blank')` 前台开新标签→win32截图→完后close
   - GM_openInTab在web_execute_js不可用（非油猴上下文）
   - 浏览器无JS API切标签页，只能开新的来保证前台

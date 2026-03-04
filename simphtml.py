@@ -860,9 +860,11 @@ def get_html(driver, cutlist=False, maxchars=28000, instruction="", extra_js="")
     if len(ss) > maxchars: ss = ss[:maxchars] + ' ... [TRUNCATED]'
     return ss
 
-def execute_js_rich(script, driver):
-    try: last_html = get_html(driver, cutlist=False, extra_js=temp_monitor_js)
-    except: last_html = None
+def execute_js_rich(script, driver, no_monitor=False):
+    last_html = None
+    if not no_monitor:
+        try: last_html = get_html(driver, cutlist=False, extra_js=temp_monitor_js)
+        except: pass
     result = None;  error_msg = None;  reloaded = False; newTabs = []
     before_sids = set(driver.get_session_dict().keys())
     try:
@@ -889,6 +891,7 @@ def execute_js_rich(script, driver):
         rr['environment']['newTabs'] = newTabs
         rr['suggestion'] = "页面已刷新，以上新标签页在执行期间连接。"
     if error_msg: rr['error'] = error_msg
+    if no_monitor: return rr
     if not reloaded:
         try: rr['transients'] = get_temp_texts(driver)
         except: rr['transients'] = []

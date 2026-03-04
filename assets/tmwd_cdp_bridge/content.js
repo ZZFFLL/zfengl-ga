@@ -19,6 +19,8 @@ async function handle(el) {
       resp = await chrome.runtime.sendMessage({ action: 'cookies', url: req.url || location.href });
     } else if (cmd === 'cdp') {
       resp = await chrome.runtime.sendMessage({ action: 'cdp', method: req.method, params: req.params || {}, tabId: req.tabId });
+    } else if (cmd === 'batch') {
+      resp = await chrome.runtime.sendMessage({ action: 'batch', commands: req.commands, tabId: req.tabId });
     } else if (cmd === 'tabs') {
       resp = await chrome.runtime.sendMessage({ action: 'tabs', method: req.method, tabId: req.tabId });
     } else {
