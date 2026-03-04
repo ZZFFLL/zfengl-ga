@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Cookie Grabber",
+  "name": "TMWD CDP Bridge",
   "version": "2.0",
   "description": "Cookie viewer + CDP bridge",
   "permissions": [
@@ -23,6 +23,6 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Cookie Grabber"
+    "default_title": "TMWD CDP Bridge"
   }
 }
