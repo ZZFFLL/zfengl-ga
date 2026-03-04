@@ -45,7 +45,7 @@
     "parameters": {"type": "object", "properties": {
       "script": {"type": "string", "description": "要执行的 JavaScript 代码或JS文件路径。"},
       "save_to_file": {"type": "string", "description": "结果存文件，适合返回值较长时。不支持await。", "default": ""},
-      "no_monitor": {"type": "boolean", "description": "跳过页面变更监控，仅读取信息时用，省2-3秒。", "default": false}}, "required": ["script"]}
+      "no_monitor": {"type": "boolean", "description": "跳过页面变更监控，省2-3秒。仅在纯读取信息时设置，页面操作时不要设置。", "default": false}}, "required": ["script"]}
   }},
   {"type": "function", "function": {
     "name": "update_working_checkpoint",

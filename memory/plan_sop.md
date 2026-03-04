@@ -1,40 +1,36 @@
 # Plan Mode SOP
 
-## 1. 分类：识别任务结构
-分析子任务间关系，选择匹配的结构：
+> 简单任务（1-2步可完成）无需本SOP，直接做。
 
-- **Sequential** — 步骤间有输入输出依赖 (部署/ETL/构建)
-- **MapReduce** — 多独立维度，各自深入后汇总 (5P/SWOT/多文件审查)
-- **Branch** — 结果不确定，按条件选路径 (调试/探测/方案选择)
-- **Loop** — 重复直到满足条件 (优化/翻页/迭代修改)
-- **DAG** — 混合依赖，部分可并行 (项目开发)
+## 0. 基本协议
 
-可嵌套：大结构某步内部用另一种结构
+进入 plan mode 后，立即调用 `update_working_checkpoint`，内容包含：
 
-## 2. 分解模板
+1. **PLAN**：初始为 `[ ] 规划` `[ ] 执行`，规划完成后展开为详细 checklist
+2. **RULES**（以下三条原文写入，每次 update 必须保留）：
+   - 一次只做一步，完成后标 [x] 并 update checkpoint
+   - 每次 checkpoint 必须保留完整 PLAN + RULES
+   - 全部 [x] 才可收尾
 
-**Sequential:**  `[ ] A → [ ] B → [ ] C`
+## 1. 规划阶段
 
-**MapReduce:**
-```
-MAP [子流程: 读现状→分析→输出]:
-[ ] 维度1: ...
-[ ] 维度2: ...
-REDUCE:
-[ ] 汇总 → 终稿
-```
+初始 checkpoint：`[ ] 规划` `[ ] 执行`。"规划"完成 = 展开执行步骤并 update checkpoint。
 
-**Branch:**  `[ ] 尝试X → 成功:[ ]Y / 失败:[ ]Z`
+### 1a. 读 SOP
+查 insight 找相关 SOP 并读取——SOP 提供任务骨架，直接指导分解。无则跳过。不确定性最高的环节先探，其结果可能推翻整个计划。
 
-**Loop:**  `[ ] LOOP(max=N): 执行→检查→调整`
+### 1b. 分类
+从依赖关系读出结构：有依赖→Sequential | 无依赖→MapReduce | 条件未知→Branch。可嵌套。
 
-**DAG:**  `[ ] A → [ ]{B,C}并行 → [ ]D汇聚`
+### 1c. 分解
+按结构展开 checklist（每步须有独立完成判据，否则继续拆）。update checkpoint 并标 `[x] 规划`。
+- Seq: `[ ]A → [ ]B → [ ]C`
+- MR: `MAP: [ ]D1 [ ]D2 … REDUCE: [ ]汇总`
+- Branch: `[ ]尝试X → 成功:[ ]Y / 失败:[ ]Z`
 
-## 3. 写入 checkpoint
+## 2. 执行注意
 
-=== PLAN (结构类型) ===
-...
-=== PLAN RULES ===
-- 每完成/跳过一步，重新 update working checkpoint
-- 任何 checkpoint update 必须保留 PLAN
-================
+- 计划有误时回到规划修正，不硬凑；不可逆操作前多验证一步
+- MapReduce 的 MAP 可用 subagent 并行执行
+- 步骤间用尽量用文件传递中间结果和汇总，不靠上下文记忆
+- 收尾：全部 `[x]` 后汇总结果，清理 checkpoint

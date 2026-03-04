@@ -137,7 +137,7 @@ if __name__ == '__main__':
         while True:
             dq = agent.put_task(raw, source='task')
             while 'done' not in (item := dq.get(timeout=120)): 
-                if 'next' in item and random.random() < 0.05:  # 1/20的概率写一次中间结果
+                if 'next' in item and random.random() < 0.95:  # 概率写一次中间结果
                     with open(f'{d}/output{nround}.txt', 'w', encoding='utf-8') as f: f.write(item.get('next', ''))
             with open(f'{d}/output{nround}.txt', 'w', encoding='utf-8') as f: f.write(item['done'] + '\n[ROUND END]\n')
             for _ in range(150):  # 等reply.txt，5分钟超时

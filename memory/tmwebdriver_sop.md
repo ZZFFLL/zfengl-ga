@@ -67,7 +67,10 @@ document.body.appendChild(el);  // 响应写回el.textContent
 
 ## autofill获取
 检测：web_scan输出input带`data-autofilled="true"`，value显示为受保护提示(非真实值，Chrome安全保护需点击释放)
-- ⭐首选CDP：tabs获取tabId→CDP mousePressed点击输入框→autofill值释放→JS读`.value`(无需前台)
+- ⭐首选CDP batch一次完成：tabs获tabId→mousePressed+mouseReleased点击**任一**输入框→全部autofill字段值释放→JS读`.value`
+  - ⚠点击一个autofill字段会释放页面上所有autofill字段的值，无需逐个点击
+  - ⚠必须mousePressed+mouseReleased配对才算完整点击
+  - batch示例：`{cmd:'batch',commands:[{cmd:'tabs'},{cmd:'cdp',tabId:'$0.0.id',method:'Input.dispatchMouseEvent',params:{type:'mousePressed',x:X,y:Y,button:'left',clickCount:1}},{cmd:'cdp',tabId:'$0.0.id',method:'Input.dispatchMouseEvent',params:{type:'mouseReleased',x:X,y:Y,button:'left',clickCount:1}}]}`
 - 备选PostMessage物理点击(仅Windows/需前台)：枚举Chrome窗口标题匹配→rect*dpr→WM_LBUTTONDOWN/UP到Chrome_RenderWidgetHostHWND子窗口
   - 坑：多RenderWidgetHostHWND共存，必须按父窗口标题匹配再取子窗口
 

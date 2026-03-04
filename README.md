@@ -60,6 +60,8 @@ The agent doesn't just execute — it **learns and remembers**.
 
 ## Quick Start
 
+> 💡 **Windows零基础用户**：不知道Python是什么？[下载便携版](http://kw.fudan.edu.cn/resources/PC-Agent-Portable.zip)（19MB，解压即用）
+
 ```bash
 # 1. Clone
 git clone https://github.com/lsdefine/pc-agent-loop.git
