@@ -42,9 +42,39 @@ fetch('PDF_URL').then(r=>r.blob()).then(b=>{
 - 已修复：移除TM脚本内轮询，改由Python侧`get_session_dict()`前后对比检测新标签
 - 同理：TM脚本中任何后台逻辑都应避免依赖setTimeout轮询
 
-## Cookie提取(含HttpOnly)
-前提：需先安装`assets/cookie_grabber/`扩展
-机制：注入`id="__ljqcg__"`的div→扩展检测后自动将完整cookie写回该元素textContent（含HttpOnly）## 验证码/页面视觉截图
+## Cookie+CDP桥(tmwd_cdp_bridge扩展)
+前提：需先安装`assets/tmwd_cdp_bridge/`扩展(含debugger权限)
+触发ID：`__ljq_ctrl`
+### Cookie提取(含HttpOnly)
+注入`id="__ljq_ctrl"`的div(无需data-cmd，默认cookies)→扩展写回JSON到textContent
+```js
+const d=document.createElement('div');d.id='__ljq_ctrl';
+document.body.appendChild(d);
+await new Promise(r=>setTimeout(r,300));
+return d.textContent; // {ok:true, data:[...]}
+```
+### CDP命令(任意Chrome DevTools Protocol)
+```js
+const d=document.createElement('div');d.id='__ljq_ctrl';
+d.dataset.cmd='cdp'; d.dataset.method='Network.getCookies';
+d.dataset.params=JSON.stringify({urls:[location.href]});
+document.body.appendChild(d);
+await new Promise(r=>setTimeout(r,500));
+return d.textContent; // {ok:true, data:{...}}
+```
+- 可用任意CDP方法(Network/DOM/Page/Runtime等)，参数通过data-params传JSON
+- 每次调用会attach→sendCommand→detach debugger，页面顶部会短暂显示调试提示
+
+## 登录凭证autofill获取
+检测：simphtml.py已内置autofill检测，`web_scan`输出的input会带`data-autofilled="true"`属性，value显示为`⚠️受保护-读tmwebdriver_sop的autofill章节提取`（非真实值）
+问题：`:-webkit-autofill`可探测autofill状态，但`input.value`为空（Chrome安全保护，需物理点击释放）
+突破：PostMessage点击输入框触发释放
+前置：枚举Chrome主窗口标题匹配web_scan当前页标题，不匹配则切换标签页（避免点到后台tab）
+流程：JS检查`:-webkit-autofill`→获取`getBoundingClientRect()*devicePixelRatio`→PostMessage发`WM_LBUTTONDOWN/UP`到`Chrome_RenderWidgetHostHWND`子窗口→读`value`
+坑：多个RenderWidgetHostHWND共存(NexonLauncher等非浏览器Chrome应用也有)，必须EnumWindows按父窗口标题匹配目标页再取其子RenderWidget
+平台：Windows用PostMessage；macOS用CGEvent（未测试）
+
+## 验证码/页面视觉截图
 - 优先：JS `canvas.toDataURL()` 直接拿base64（验证码是canvas/img时最干净，无需截屏）
 - 备选：`window.open(location.href,'_blank')` 前台开新标签→win32截图→完后close
   - GM_openInTab在web_execute_js不可用（非油猴上下文）
