@@ -29,6 +29,20 @@ function createEnhancedDOMCopy() {
       const childClone = cloneNode(child, keep || isSmallDropdown);  
       if (childClone) childNodes.push(childClone);  
     }  
+    if (sourceNode.tagName === 'IFRAME') {
+      try {
+        const iDoc = sourceNode.contentDocument || sourceNode.contentWindow?.document;
+        if (iDoc && iDoc.body && iDoc.body.children.length > 0) {
+          const wrapper = document.createElement('div');
+          wrapper.setAttribute('data-iframe-content', sourceNode.src || '');
+          for (const ch of iDoc.body.childNodes) {
+            const c = cloneNode(ch, keep);
+            if (c) wrapper.appendChild(c);
+          }
+          if (wrapper.childNodes.length) childNodes.push(wrapper);
+        }
+      } catch(e) {}
+    }
 
     const rect = sourceNode.getBoundingClientRect();
     const style = window.getComputedStyle(sourceNode);
@@ -841,7 +855,7 @@ def find_changed_elements(before_html, after_html):
         result["top_change"] = h if len(h) <= 2000 else h[:2000] + '...[TRUNCATED]'
     return result
 
-def get_html(driver, cutlist=False, maxchars=28000, instruction="", extra_js=""):
+def get_html(driver, cutlist=False, maxchars=38000, instruction="", extra_js=""):
     page = get_main_block(driver, extra_js=extra_js)
     soup = optimize_html_for_tokens(page)
     html = str(soup)
