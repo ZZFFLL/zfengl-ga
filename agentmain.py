@@ -17,16 +17,14 @@ with open(os.path.join(script_dir, 'assets/tools_schema.json'), 'r', encoding='u
 mem_dir = os.path.join(script_dir, 'memory')
 if not os.path.exists(mem_dir): os.makedirs(mem_dir)
 mem_txt = os.path.join(mem_dir, 'global_mem.txt')
-if not os.path.exists(mem_txt):
-    with open(mem_txt, 'w', encoding='utf-8') as f: f.write('')
+if not os.path.exists(mem_txt): open(mem_txt, 'w', encoding='utf-8').write('')
 mem_insight = os.path.join(mem_dir, 'global_mem_insight.txt')
 if not os.path.exists(mem_insight):
     t = os.path.join(script_dir, 'assets/global_mem_insight_template.txt')
     open(mem_insight, 'w', encoding='utf-8').write(open(t, encoding='utf-8').read() if os.path.exists(t) else '')
 cdp_cfg = os.path.join(script_dir, 'assets/tmwd_cdp_bridge/config.js')
 if not os.path.exists(cdp_cfg):
-    with open(cdp_cfg, 'w', encoding='utf-8') as f:
-        f.write(f"const TID = '__ljq_{hex(random.randint(0, 99999999))[2:8]}';")
+    open(cdp_cfg, 'w', encoding='utf-8').write(f"const TID = '__ljq_{hex(random.randint(0, 99999999))[2:8]}';")
 
 def get_system_prompt():
     with open(os.path.join(script_dir, 'assets/sys_prompt.txt'), 'r', encoding='utf-8') as f: prompt = f.read()
@@ -101,7 +99,7 @@ class GeneraticAgent:
             if self.handler and self.handler.key_info: 
                 handler.key_info = self.handler.key_info
                 if '清除工作记忆' not in handler.key_info:
-                    handler.key_info += '\n[SYSTEM] 如果是新任务，请先更新或清除工作记忆\n'
+                    handler.key_info += '\n[SYSTEM] 若开始新任务，先更新或清除工作记忆\n'
             self.handler = handler
             self.llmclient.backend = self.llmclient.backends[self.llm_no]
             gen = agent_runner_loop(self.llmclient, sys_prompt, raw_query, 
