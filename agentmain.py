@@ -13,13 +13,17 @@ with open('assets/tools_schema.json', 'r', encoding='utf-8') as f:
     TS = f.read()
     TOOLS_SCHEMA = json.loads(TS if os.name == 'nt' else TS.replace('powershell', 'bash'))
 
+if not os.path.exists('memory'): os.makedirs('memory')
+if not os.path.exists('memory/global_mem.txt'):
+    with open('memory/global_mem.txt', 'w', encoding='utf-8') as f: f.write('')
+if not os.path.exists('memory/global_mem_insight.txt'):
+    t = 'assets/global_mem_insight_template.txt'
+    open('memory/global_mem_insight.txt', 'w', encoding='utf-8').write(open(t, encoding='utf-8').read() if os.path.exists(t) else '')
+if not os.path.exists('assets/tmwd_cdp_bridge/config.js'):
+    with open('assets/tmwd_cdp_bridge/config.js', 'w', encoding='utf-8') as f:
+        f.write(f"const TID = '__ljq_{hex(random.randint(0, 99999999))[2:8]}';")
+
 def get_system_prompt():
-    if not os.path.exists('memory'): os.makedirs('memory')
-    if not os.path.exists('memory/global_mem.txt'):
-        with open('memory/global_mem.txt', 'w', encoding='utf-8') as f: f.write('')
-    if not os.path.exists('memory/global_mem_insight.txt'):
-        t = 'assets/global_mem_insight_template.txt'
-        open('memory/global_mem_insight.txt', 'w', encoding='utf-8').write(open(t, encoding='utf-8').read() if os.path.exists(t) else '')
     with open('assets/sys_prompt.txt', 'r', encoding='utf-8') as f: prompt = f.read()
     prompt += f"\nToday: {time.strftime('%Y-%m-%d %a')}\n"
     prompt += get_global_memory()

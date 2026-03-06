@@ -46,12 +46,14 @@ fetch('PDF_URL').then(r=>r.blob()).then(b=>{
 
 ## CDP桥(tmwd_cdp_bridge扩展) ⭐首选
 扩展路径：`assets/tmwd_cdp_bridge/`(需安装，含debugger权限)
-调用：MutationObserver监听addedNodes(id=`__ljq_ctrl`)，⚠每次必须remove旧→createElement新→设textContent JSON→appendChild
+⚠TID密钥：首次运行自动生成到`assets/tmwd_cdp_bridge/config.js`(已gitignore)，扩展通过manifest引用
+调用：MutationObserver监听addedNodes(id=TID)，⚠每次必须remove旧→createElement新→设textContent JSON→appendChild
 ```js
-const old = document.getElementById('__ljq_ctrl');
+// TID从assets/tmwd_cdp_bridge/config.js读取，示例用'__ljq_ctrl'占位
+const old = document.getElementById(TID);
 if (old) old.remove();
 const el = document.createElement('div');
-el.id = '__ljq_ctrl'; el.style.display = 'none';
+el.id = TID; el.style.display = 'none';
 el.textContent = JSON.stringify({cmd:'...', ...});
 document.body.appendChild(el);  // 响应写回el.textContent
 ```

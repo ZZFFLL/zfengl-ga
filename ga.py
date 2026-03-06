@@ -407,8 +407,8 @@ class GenericAgentHandler(BaseHandler):
         '''
         key_info = args.get("key_info", "")
         related_sop = args.get("related_sop", "")
-        if key_info: self.key_info = key_info
-        if related_sop: self.related_sop = related_sop
+        if "key_info" in args: self.key_info = key_info
+        if "related_sop" in args: self.related_sop = related_sop
         yield f"[Info] Updated key_info and related_sop.\n"
         yield f"key_info:\n{self.key_info}\n\n"
         yield f"related_sop:\n{self.related_sop}\n\n"

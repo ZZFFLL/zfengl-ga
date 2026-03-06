@@ -1,5 +1,3 @@
-// content.js - DOM trigger bridge
-const TID = '__ljq_ctrl';
 
 new MutationObserver(muts => {
   for (const m of muts) for (const n of m.addedNodes) {
