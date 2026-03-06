@@ -62,14 +62,31 @@ async def _stream(dq, msg):
                 try: await msg.edit_text(display)
                 except Exception: pass
             last_text = display
-        if done: break
+        if done:
+            files = re.findall(r'\[FILE:([^\]]+)\]', show[-1000:])
+            for fpath in files:
+                if os.path.exists(fpath):
+                    if fpath.lower().endswith(('.png','.jpg','.jpeg','.gif','.webp')):
+                        try: await msg.reply_photo(open(fpath,'rb'))
+                        except Exception: pass
+                    else:
+                        try: await msg.reply_document(open(fpath,'rb'))
+                        except Exception: pass
+            show = re.sub(r'\[FILE:[^\]]+\]', '', show)
+            if show.strip():
+                try: await msg.edit_text(_to_html(show), parse_mode='HTML')
+                except Exception:
+                    try: await msg.edit_text(show)
+                    except Exception: pass
+            break
 
 async def handle_msg(update, ctx):
     uid = update.effective_user.id
     if ALLOWED and uid not in ALLOWED:
         return await update.message.reply_text("no")
     msg = await update.message.reply_text("thinking...")
-    dq = agent.put_task(update.message.text, source="telegram")
+    prompt = f"If you need to show files to user, use [FILE:filepath] in your response.\n\n{update.message.text}"
+    dq = agent.put_task(prompt, source="telegram")
     task = asyncio.create_task(_stream(dq, msg))
     ctx.user_data['stream_task'] = task
 
