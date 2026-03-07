@@ -8,11 +8,11 @@ try:
 except:
     print("Please ask the agent install python-telegram-bot to use telegram module.")
     sys.exit(1)
-import mykey
+from sidercall import mykeys
 
 agent = GeneraticAgent()
 agent.verbose = False
-ALLOWED = set(getattr(mykey, 'tg_allowed_users', []))
+ALLOWED = set(mykeys.get('tg_allowed_users', []))
 
 _TAG_PATS = [r'<' + t + r'>.*?</' + t + r'>' for t in ('thinking', 'summary', 'tool_use')]
 _TAG_PATS.append(r'<file_content>.*?</file_content>')
@@ -124,7 +124,7 @@ if __name__ == '__main__':
     sys.stdout = sys.stderr = _logf
     print('[NEW] New process starting, the above are history infos ...')
     threading.Thread(target=agent.run, daemon=True).start()
-    proxy = vars(mykey).get('proxy', 'http://127.0.0.1:2082')
+    proxy = mykeys.get('proxy', 'http://127.0.0.1:2082')
     print('proxy:', proxy)
 
     async def _error_handler(update, context: ContextTypes.DEFAULT_TYPE):
@@ -136,7 +136,7 @@ if __name__ == '__main__':
             # Recreate request and app objects on each restart to avoid stale connections
             request = HTTPXRequest(proxy=proxy, read_timeout=30, write_timeout=30, connect_timeout=30, pool_timeout=30)
             app = (ApplicationBuilder()
-                   .token(mykey.tg_bot_token)
+                   .token(mykeys['tg_bot_token'])
                    .request(request)
                    .get_updates_request(request)
                    .build())

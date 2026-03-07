@@ -2,10 +2,15 @@ import os, json, re, time, requests, sys, threading, urllib3
 from datetime import datetime
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-try: import mykey
-except: raise Exception('[ERROR] mykey.py not found, please copy mykey_template.py to mykey.py and fill your LLM backend.')
+def _load_mykeys():
+    try:
+        import mykey; return {k: v for k, v in vars(mykey).items() if not k.startswith('_')}
+    except ImportError: pass
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'mykey.json')
+    if not os.path.exists(p): raise Exception('[ERROR] mykey.py or mykey.json not found, please create one from mykey_template.')
+    with open(p, encoding='utf-8') as f: return json.load(f)
 
-mykeys = vars(mykey)
+mykeys = _load_mykeys()
 proxy = mykeys.get("proxy", 'http://127.0.0.1:2082')
 proxies = {"http": proxy, "https": proxy} if proxy else None
 
@@ -506,18 +511,9 @@ def tryparse(json_str):
     return json.loads(json_str)
 
 if __name__ == "__main__":
-    import sys, os
-    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    try:
-        import mykey
-    except ImportError:
-        class MockMyKey: pass
-        mykey = MockMyKey()
-    
-    mykeys = vars(mykey)
     sider_cookie = mykeys.get("sider_cookie")
     oai_configs = {
-        k: v for k, v in vars(mykey).items() if k.startswith("oai_config") and v
+        k: v for k, v in mykeys.items() if k.startswith("oai_config") and v
     }
     google_api_key = mykeys.get("google_api_key")
     cfg = oai_configs.get("oai_config")
