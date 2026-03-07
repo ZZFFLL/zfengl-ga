@@ -69,10 +69,13 @@ document.body.appendChild(el);  // 响应写回el.textContent
 
 ## autofill获取
 检测：web_scan输出input带`data-autofilled="true"`，value显示为受保护提示(非真实值，Chrome安全保护需点击释放)
-- ⭐首选CDP batch一次完成：tabs获tabId→mousePressed+mouseReleased点击**任一**输入框→全部autofill字段值释放→JS读`.value`
-  - ⚠点击一个autofill字段会释放页面上所有autofill字段的值，无需逐个点击
-  - ⚠必须mousePressed+mouseReleased配对才算完整点击
-  - batch示例：`{cmd:'batch',commands:[{cmd:'tabs'},{cmd:'cdp',tabId:'$0.0.id',method:'Input.dispatchMouseEvent',params:{type:'mousePressed',x:X,y:Y,button:'left',clickCount:1}},{cmd:'cdp',tabId:'$0.0.id',method:'Input.dispatchMouseEvent',params:{type:'mouseReleased',x:X,y:Y,button:'left',clickCount:1}}]}`
+- ⭐首选CDP单次点击：JS取任一autofill输入框坐标→CDP `Input.dispatchMouseEvent` mousePressed一次即可释放→JS读`.value`
+  - ⚠点击一个autofill字段会释放页面上**所有**autofill字段的值，无需逐个点击
+  - ⚠只需mousePressed，不需要mouseReleased配对
+  - ⚠tabId：当前注入页无需指定(默认sender.tab.id)，跨tab才需显式tabId(整数)
+  - 示例(当前页)：`{cmd:'cdp',method:'Input.dispatchMouseEvent',params:{type:'mousePressed',x:X,y:Y,button:'left',clickCount:1}}`
+  - 示例(跨tab)：先`{cmd:'tabs'}`获取tabId(整数)，再`{cmd:'cdp',tabId:N,method:'Input.dispatchMouseEvent',params:{...}}`
+  - ⚠batch的`$N.path`引用会将整数tabId转为字符串导致类型错误，跨tab时建议分两次命令而非batch
 - 备选PostMessage物理点击(仅Windows/需前台)：枚举Chrome窗口标题匹配→rect*dpr→WM_LBUTTONDOWN/UP到Chrome_RenderWidgetHostHWND子窗口
   - 坑：多RenderWidgetHostHWND共存，必须按父窗口标题匹配再取子窗口
 

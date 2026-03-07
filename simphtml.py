@@ -200,7 +200,7 @@ function analyzeNode(node, pPathType='main') {
         ((minDimensionRatio > 0.2 && rect.width/window.innerWidth < 0.98) || minDimensionRatio > 0.95)) {  
       top.node.dataset.mark = 'K:mainInteractive';  
        sorted.slice(1).forEach(e => {
-          if (e.zIndex < sorted[0].zIndex) {
+          if ((parseInt(e.zIndex)||0) <= (parseInt(sorted[0].zIndex)||0)) {
               e.node.dataset.mark = 'R:covered';
           } else {
               e.node.dataset.mark = 'K:noncovered';
@@ -877,7 +877,7 @@ def get_html(driver, cutlist=False, maxchars=38000, instruction="", extra_js="")
 def execute_js_rich(script, driver, no_monitor=False):
     last_html = None
     if not no_monitor:
-        try: last_html = get_html(driver, cutlist=False, extra_js=temp_monitor_js)
+        try: last_html = get_html(driver, cutlist=False, extra_js=temp_monitor_js, maxchars=9999999)
         except: pass
     result = None;  error_msg = None;  reloaded = False; newTabs = []
     before_sids = set(driver.get_session_dict().keys())
@@ -911,7 +911,7 @@ def execute_js_rich(script, driver, no_monitor=False):
         except: rr['transients'] = []
     if not reloaded and len(newTabs) == 0:
         try:
-            current_html = get_html(driver, cutlist=False)
+            current_html = get_html(driver, cutlist=False, maxchars=9999999)
             if last_html is None: raise Exception("no baseline")
             diff_data = find_changed_elements(last_html, current_html)
             change_count = diff_data.get('changed', 0)
