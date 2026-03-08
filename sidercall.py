@@ -27,6 +27,11 @@ def compress_history_tags(messages, keep_recent=4, max_len=200):
                 )
     return messages
 
+def auto_make_url(base, path):
+    b, p = base.rstrip('/'), path.strip('/')
+    if b.endswith('$'): return b[:-1].rstrip('/')
+    return b if b.endswith(p) else f"{b}/{p}" if re.search(r'/v\d+$', b) else f"{b}/v1/{p}"
+
 class SiderLLMSession:
     def __init__(self, sider_cookie, default_model="gemini-3.0-flash"):
         from sider_ai_api import Session   # 不使用sider的话没必要安装这个包
@@ -61,7 +66,7 @@ class ClaudeSession:
         headers = {"x-api-key": self.api_key, "Content-Type": "application/json", "anthropic-version": "2023-06-01"}
         payload = {"model": model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens, "stream": True}
         try:
-            with requests.post(f"{self.api_base}/v1/messages", headers=headers, json=payload, stream=True, timeout=(5,30)) as r:
+            with requests.post(auto_make_url(self.api_base, "messages"), headers=headers, json=payload, stream=True, timeout=(5,30)) as r:
                 r.raise_for_status()
                 for line in r.iter_lines():
                     if not line: continue
@@ -104,14 +109,6 @@ class LLMSession:
         if mode in ["responses", "response"]: self.api_mode = "responses"
         else: self.api_mode = "chat_completions"
 
-    def _endpoint(self, path):
-         # 处理火山引擎API，它已经包含完整路径 
-        if 'ark.cn-beijing.volces.com' in self.api_base or 'ark.cn-shanghai.volces.com' in self.api_base:
-            return f"{self.api_base}/{path.lstrip('/')}"
-        if self.api_base.endswith('/v1'): return f"{self.api_base}/{path.lstrip('/')}"
-        if self.api_base.endswith('$'): return f"{self.api_base.rstrip('$')}/{path.lstrip('/')}"
-        return f"{self.api_base}/v1/{path.lstrip('/')}"
-
     def _retry_delay(self, resp, attempt):
         retry_after = None
         try:
@@ -152,10 +149,10 @@ class LLMSession:
         if model is None: model = self.default_model
         headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json", "Accept": "text/event-stream"}
         if self.api_mode == "responses":
-            url = self._endpoint("responses")
+            url = auto_make_url(self.api_base, "responses")
             payload = {"model": model, "input": self._to_responses_input(messages), "temperature": temperature, "stream": True}
         else:
-            url = self._endpoint("chat/completions")
+            url = auto_make_url(self.api_base, "chat/completions")
             payload = {"model": model, "messages": messages, "temperature": temperature, "stream": True}
         for attempt in range(self.max_retries + 1):
             streamed_any = False

@@ -1,6 +1,6 @@
 import webview, threading, subprocess, sys, time, os, ctypes, atexit, socket, random
 
-WINDOW_WIDTH, WINDOW_HEIGHT, RIGHT_PADDING, TOP_PADDING = 600, 900, 0, 300
+WINDOW_WIDTH, WINDOW_HEIGHT, RIGHT_PADDING, TOP_PADDING = 600, 900, 0, 100
 
 def find_free_port(lo=18501, hi=18599):
     ports = list(range(lo, hi+1)); random.shuffle(ports)
