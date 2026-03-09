@@ -84,7 +84,11 @@ document.body.appendChild(el);  // 响应写回el.textContent
 - 验证码canvas/img：JS `canvas.toDataURL()` 直接拿base64最干净
 - 备选：`window.open(location.href,'_blank')` 前台开新标签→win32截图→完后close
   - GM_openInTab在web_execute_js不可用（非油猴上下文）
-  - 浏览器无JS API切标签页，只能开新的来保证前台
+
+## 直接import(仅作调试使用)
+- `sys.path.insert(0, GenericAgent根目录)`, `from TMWebDriver import TMWebDriver`
+- `d=TMWebDriver()`, `d.set_session('url_pattern')`, `d.execute_js('code')` → 返回`{'data': value}`(非裸值)
+- 配合simphtml：`str(simphtml.optimize_html_for_tokens(html))` → 注意返回BS4 Tag需str()
 
 ## 跨域iframe操控(postMessage中继)
 - 跨域iframe的contentDocument不可访问，web_execute_js只在顶层执行

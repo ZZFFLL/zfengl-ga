@@ -45,16 +45,13 @@
         console.log(log_prefix + `检测到opener，丢弃继承的window.name: ${window.name}`);
         window.name = '';
     } else {
-        sid = (window.name && window.name.startsWith('ljq_')) ? 
-              window.name : window.sessionStorage.getItem('ljq_driver_sid');
+        sid = (window.name && window.name.startsWith('ljq_')) ? window.name : null;
     }
     if (!sid) {
         sid = `ljq_${Date.now().toString().slice(-2)}${Math.random().toString(36).slice(2, 4)}`;
-        window.sessionStorage.setItem('ljq_driver_sid', sid);
         window.name = sid;
         console.log(log_prefix + `创建新会话ID: ${sid}`);
     } else {
-        if (window.name !== sid) window.name = sid;
         console.log(log_prefix + `使用现有会话ID: ${sid}`);
     }
 
