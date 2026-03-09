@@ -102,7 +102,12 @@ class GeneraticAgent:
                     handler.key_info += '\n[SYSTEM] 若开始新任务，先更新或清除工作记忆\n'
             self.handler = handler
             self.llmclient.backend = self.llmclient.backends[self.llm_no]
-            gen = agent_runner_loop(self.llmclient, sys_prompt, raw_query, 
+            # 如果有历史记录且来自飞书，注入到首轮 user_input 中（支持/restore恢复上下文）
+            user_input = raw_query
+            if source == 'feishu' and len(self.history) > 1:  # 飞书场景且有之前的对话记录
+                h_str = "\n".join(self.history[-20:])
+                user_input = f"### [WORKING MEMORY]\n<history>\n{h_str}\n</history>\n\n### 用户当前消息\n{raw_query}"
+            gen = agent_runner_loop(self.llmclient, sys_prompt, user_input, 
                                 handler, TOOLS_SCHEMA, max_turns=40, verbose=self.verbose)
             try:
                 full_resp = ""; last_pos = 0
