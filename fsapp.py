@@ -75,7 +75,7 @@ def handle_command(open_id, cmd):
     elif cmd == "/help":
         send_message(open_id, "📖 命令列表:\n/stop - 停止当前任务\n/status - 查看状态\n/restore - 恢复上次对话历史\n/new - 开启新对话\n/help - 显示帮助")
     elif cmd == "/status":
-        send_message(open_id, f"状态: {'🟢 空闲' if not agent.is_busy() else '🔴 运行中'}")
+        send_message(open_id, f"状态: {'🟢 空闲' if not agent.is_running else '🔴 运行中'}")
     elif cmd == "/restore":
         try:
             files = glob.glob('./temp/model_responses_*.txt')
