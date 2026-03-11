@@ -179,7 +179,7 @@ function analyzeNode(node, pPathType='main') {
     const hasStandardButton = container.querySelector('button, input[type="button"], input[type="submit"], [role="button"]') !== null;  
     if (hasStandardButton) return true;  
     const hasClassButton = container.querySelector('[class*="-btn"], [class*="-button"], .button, .btn, [class*="btn-"]') !== null;  
-    return hasStandardButton || hasClassButton;  
+    return hasClassButton;  
   }   
   
   function handleOverlayContainer(childrenInfo, pathType) {  
@@ -225,15 +225,6 @@ function analyzeNode(node, pPathType='main') {
       rest.length && (!hasOverlap(rest) ? handlePartitionContainer(rest, pathType) : handleOverlayContainer(rest, pathType));  
     } 
   }  
-
-  function isValidInteractiveElement(info) {  
-    const { node, rect, style } = info;  
-    const isCentered = Math.abs((rect.left + rect.width/2) - window.innerWidth/2) < window.innerWidth*0.3;  
-    const isVisible = parseFloat(style.opacity) > 0.1;  
-    const isProminent = (parseInt(info.zIndex) > 30 || style.boxShadow !== 'none');  
-    const hasInteractiveElements = node.querySelector('button, a, input') !== null;  
-    return isCentered && isVisible && isProminent && hasInteractiveElements;  
-  }  
     
   function hasOverlap(items) {  
     return items.some((a, i) =>   
@@ -261,8 +252,6 @@ root.removeAttribute('data-mark');
 return root.outerHTML;
     }
 optHTML()'''
-
-
 
 js_findMainList = r'''function findMainList(startElement = null) {
         const containerElement = startElement || document.body;  
@@ -711,59 +700,6 @@ js_findMainContent = '''
         return findMainContent(byArea[0].element);  
     }  
   }  '''
-
-js_cleanDOM = '''function cleanDOM(element) {  
-    const clone = element.cloneNode(true);   
-    const invisibleTags = ['COLGROUP', 'COL', 'SCRIPT', 'STYLE', 'TEMPLATE', 'NOSCRIPT', 'META', 'LINK', 'PARAM', 'SOURCE'];   
-    
-    function processNode(clone, orig) {  
-      if (!clone || !orig) return;  
-      
-      // 处理所有子节点类型  
-      for (let i = clone.childNodes.length - 1; i >= 0; i--) {  
-        const cloneNode = clone.childNodes[i];  
-        
-        // 移除注释节点  
-        if (cloneNode.nodeType === 8) {  
-          cloneNode.remove();  
-          continue;  
-        }  
-        
-        // 只处理元素节点  
-        if (cloneNode.nodeType !== 1) continue;  
-        
-        const origChild = orig.children[Array.from(clone.children).indexOf(cloneNode)];  
-        if (!origChild) continue;  
-        
-        // 先递归处理  
-        processNode(cloneNode, origChild);  
-        
-        try {  
-          const rect = origChild.getBoundingClientRect();  
-          const style = window.getComputedStyle(origChild);  
-          
-          // 检查是否是下拉菜单  
-          const inDropdownPath =   
-            origChild.classList?.contains('dropdown-menu') ||   
-            /dropdown|menu/i.test(origChild.className) ||  
-            // 检查祖先节点是否为下拉菜单  
-            (orig.classList?.contains('dropdown-menu') || /dropdown|menu/i.test(orig.className));  
-          
-          // 如果是不可见且不在下拉菜单路径上，则移除  
-          if (invisibleTags.includes(origChild.tagName) || origChild.id === 'ljq-ind' || 
-              (!inDropdownPath && (rect.width <= 1 || rect.height <= 1 ||  
-              style.display === 'none' || style.visibility === 'hidden' ||  
-              style.opacity === '0'))) {  
-            cloneNode.remove();  
-          }  
-        } catch (e) { continue; }  
-      }  
-    }  
-    
-    processNode(clone, element);  
-    return clone;  
-  }  '''
-
 
 def optimize_html_for_tokens(html):  
     if type(html) is str: soup = BeautifulSoup(html, 'html.parser')  
