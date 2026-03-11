@@ -109,7 +109,7 @@ def first_init_driver():
         #driver.newtab()
         time.sleep(3)
 
-def web_scan(tabs_only=False, switch_tab_id=None):
+def web_scan(tabs_only=False, switch_tab_id=None, text_only=False):
     """
     获取当前页面的简化HTML内容和标签页列表。注意：简化过程会过滤边栏、浮动元素等非主体内容。
     tabs_only: 仅返回标签页列表，不获取HTML内容（节省token）。
@@ -135,7 +135,7 @@ def web_scan(tabs_only=False, switch_tab_id=None):
                 "active_tab": driver.default_session_id
             }
         }
-        if not tabs_only: result["content"] = get_html(driver, cutlist=True, maxchars=28000)
+        if not tabs_only: result["content"] = get_html(driver, cutlist=True, maxchars=28000, text_only=text_only)
         return result
     except Exception as e:
         return {"status": "error", "msg": format_error(e)}
@@ -243,8 +243,7 @@ def smart_format(data, max_depth=2, max_str_len=100, omit_str=' ... '):
     return json.dumps(truncate(data, 0), indent=2, ensure_ascii=False, default=str)
 
 class GenericAgentHandler(BaseHandler):
-    '''Generic Agent 工具库，包含多种工具的实现。工具函数自动加上了 do_ 前缀。实际工具名没有前缀。
-    '''
+    '''Generic Agent 工具库，包含多种工具的实现。工具函数自动加上了 do_ 前缀。实际工具名没有前缀。'''
     def __init__(self, parent, last_history=None, cwd='./'):
         self.parent = parent
         self.key_info = ""
@@ -302,7 +301,8 @@ class GenericAgentHandler(BaseHandler):
         '''
         tabs_only = args.get("tabs_only", False)
         switch_tab_id = args.get("switch_tab_id", None)
-        result = web_scan(tabs_only=tabs_only, switch_tab_id=switch_tab_id)
+        text_only = args.get("text_only", False)
+        result = web_scan(tabs_only=tabs_only, switch_tab_id=switch_tab_id, text_only=text_only)
         content = result.pop("content", None)
         yield f'[Info] {str(result)}\n'
         if content: next_prompt = f"<tool_result>\n```html\n{content}\n```\n</tool_result>"
@@ -373,8 +373,7 @@ class GenericAgentHandler(BaseHandler):
                 old = open(path, 'r', encoding="utf-8").read() if os.path.exists(path) else ""
                 open(path, 'w', encoding="utf-8").write(new_content + old)
             else:
-                with open(path, 'a' if mode == "append" else 'w', encoding="utf-8") as f:
-                    f.write(new_content)
+                with open(path, 'a' if mode == "append" else 'w', encoding="utf-8") as f: f.write(new_content)
             yield f"[Status] ✅ {mode.capitalize()} 成功 ({len(new_content)} bytes)\n"
             next_prompt = self._get_anchor_prompt()
             return StepOutcome({"status": "success", 'writed_bytes': len(new_content)}, 

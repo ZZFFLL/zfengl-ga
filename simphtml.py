@@ -1,7 +1,7 @@
 try: from bs4 import BeautifulSoup
 except ImportError: print("[Error] BeautifulSoup4 未安装，请叫Agent安装BeautifulSoup4，再使用web相关工具。")
 
-js_optHTML = r'''function optHTML() {
+js_optHTML = r'''function optHTML(text_only=false) {
 function createEnhancedDOMCopy() {  
   const nodeInfo = new WeakMap();  
   const ignoreTags = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'META', 'LINK', 'COLGROUP', 'COL', 'TEMPLATE', 'PARAM', 'SOURCE'];  
@@ -42,6 +42,12 @@ function createEnhancedDOMCopy() {
           if (wrapper.childNodes.length) childNodes.push(wrapper);
         }
       } catch(e) {}
+    }
+    if (sourceNode.shadowRoot) {
+      for (const shadowChild of sourceNode.shadowRoot.childNodes) {
+        const shadowClone = cloneNode(shadowChild, keep);
+        if (shadowClone) childNodes.push(shadowClone);
+      }
     }
 
     const rect = sourceNode.getBoundingClientRect();
@@ -90,7 +96,8 @@ function createEnhancedDOMCopy() {
     }  
   };  
 }  
-const { domCopy, getNodeInfo, isVisible } = createEnhancedDOMCopy();  
+const { domCopy, getNodeInfo, isVisible } = createEnhancedDOMCopy();
+if (text_only) return domCopy.innerText;  
 const viewportArea = window.innerWidth * window.innerHeight; 
 
 function analyzeNode(node, pPathType='main') {  
@@ -823,8 +830,8 @@ def get_temp_texts(driver):
         return []
     
 import time
-def get_main_block(driver, extra_js=""): 
-    return driver.execute_js(extra_js+'\n'+js_optHTML).get('data', '')
+def get_main_block(driver, extra_js="", text_only=False): 
+    return driver.execute_js(f"{extra_js}\n{js_optHTML}\nreturn optHTML({str(text_only).lower()});").get('data', '')
 
 def find_changed_elements(before_html, after_html):
     before_soup = BeautifulSoup(before_html, 'html.parser')
@@ -855,8 +862,9 @@ def find_changed_elements(before_html, after_html):
         result["top_change"] = h if len(h) <= 2000 else h[:2000] + '...[TRUNCATED]'
     return result
 
-def get_html(driver, cutlist=False, maxchars=38000, instruction="", extra_js=""):
-    page = get_main_block(driver, extra_js=extra_js)
+def get_html(driver, cutlist=False, maxchars=38000, instruction="", extra_js="", text_only=False):
+    page = get_main_block(driver, extra_js=extra_js, text_only=text_only)
+    if text_only: return page
     soup = optimize_html_for_tokens(page)
     html = str(soup)
     if not cutlist or len(html) <= maxchars: return html

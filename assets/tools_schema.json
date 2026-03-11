@@ -37,7 +37,8 @@
     "description": "获取当前页面的简化HTML内容和标签页列表。注意：简化会过滤边栏、浮动元素等非主体内容，如需查看被过滤内容请用execute_js。切换页面后一般应先调用查看。",
     "parameters": {"type": "object", "properties": {
       "tabs_only": {"type": "boolean", "description": "仅返回标签页列表和当前标签信息，不获取HTML内容。", "default": false},
-      "switch_tab_id": {"type": "string", "description": "可选的标签页 ID。如果提供，系统将在扫描前切换到该标签页。"}}}
+      "switch_tab_id": {"type": "string", "description": "可选的标签页 ID。如果提供，系统将在扫描前切换到该标签页。"},
+      "text_only": {"type": "boolean", "description": "只要纯文本不要HTML信息。", "default": false}}}
   }},
   {"type": "function", "function": {
     "name": "web_execute_js",
