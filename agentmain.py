@@ -190,23 +190,7 @@ if __name__ == '__main__':
                 except Exception as e: print(f'[Reflect] on_done error: {e}')
             if once: print('[Reflect] ONCE=True, exiting.'); break
     elif args.scheduled: 
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        def drain(dq, tag):
-            while 'done' not in (item := dq.get()): pass
-            open(os.path.join(script_dir, './temp/scheduler.log'), 'a', encoding='utf-8').write(f'[{datetime.now():%m-%d %H:%M}] {tag}\n{item["done"]}\n\n')
-        while True:
-            time.sleep(55 + random.random() * 10)
-            now = datetime.now()
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            sche_tasks_dir = os.path.join(script_dir, './sche_tasks/pending')
-            if not os.path.isdir(sche_tasks_dir): continue
-            for f in os.listdir(sche_tasks_dir):
-                m = re.match(r'(\d{4}-\d{2}-\d{2})_(\d{4})_', f)
-                if m and now >= datetime.strptime(f'{m[1]} {m[2]}', '%Y-%m-%d %H%M'):
-                    raw = open(os.path.join(sche_tasks_dir, f), encoding='utf-8').read()
-                    dq = agent.put_task(f'按scheduled_task_sop执行任务文件 ../sche_tasks/pending/{f}（立刻移到running）\n内容：\n{raw}', source='scheduler')
-                    threading.Thread(target=drain, args=(dq, f), daemon=True).start()
-                    break
+        print('moved to reflect mode')
     else:
         agent.inc_out = True
         while True:
