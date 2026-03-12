@@ -24,7 +24,10 @@ if not os.path.exists(mem_insight):
     open(mem_insight, 'w', encoding='utf-8').write(open(t, encoding='utf-8').read() if os.path.exists(t) else '')
 cdp_cfg = os.path.join(script_dir, 'assets/tmwd_cdp_bridge/config.js')
 if not os.path.exists(cdp_cfg):
-    open(cdp_cfg, 'w', encoding='utf-8').write(f"const TID = '__ljq_{hex(random.randint(0, 99999999))[2:8]}';")
+    try:
+        os.makedirs(os.path.dirname(cdp_cfg), exist_ok=True)
+        open(cdp_cfg, 'w', encoding='utf-8').write(f"const TID = '__ljq_{hex(random.randint(0, 99999999))[2:8]}';")
+    except Exception as e: print(f'[WARN] CDP config init failed: {e} — advanced web features (tmwebdriver) will be unavailable.')
 
 def get_system_prompt():
     with open(os.path.join(script_dir, 'assets/sys_prompt.txt'), 'r', encoding='utf-8') as f: prompt = f.read()
