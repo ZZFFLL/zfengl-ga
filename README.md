@@ -78,6 +78,100 @@ cp mykey_template.py mykey.py
 python launch.pyw
 ```
 
+## QQ Bot (Optional)
+
+QQ support uses `qq-botpy` over WebSocket, so no public webhook is required.
+
+```bash
+pip install qq-botpy
+```
+
+Then add these fields to `mykey.py` or `mykey.json`:
+
+```python
+qq_app_id = "YOUR_APP_ID"
+qq_app_secret = "YOUR_APP_SECRET"
+qq_allowed_users = ["YOUR_USER_OPENID"]  # or ['*'] for public access
+```
+
+Run QQ directly:
+
+```bash
+python qqapp.py
+```
+
+Or start it together with the desktop window:
+
+```bash
+python launch.pyw --qq
+```
+
+Notes:
+- Create the bot at [QQ Open Platform](https://q.qq.com)
+- In sandbox mode, add your own QQ account to the message list first
+- After the first inbound message, the user's openid will be written to `temp/qqapp.log`
+
+## Feishu / WeCom / DingTalk (Optional)
+
+Feishu:
+
+```bash
+pip install lark-oapi
+python fsapp.py
+# or
+python launch.pyw --feishu
+```
+
+Config keys in `mykey.py` / `mykey.json`:
+
+```python
+fs_app_id = "cli_xxx"
+fs_app_secret = "xxx"
+fs_allowed_users = ["ou_xxx"]  # or ['*']
+```
+
+Current Feishu support in this repo:
+- inbound: text, post rich text, image, file, audio, media, interactive/share cards
+- images are sent to multimodal-capable OpenAI-compatible backends as true image inputs on the first turn
+- outbound: interactive progress cards, uploaded image replies, uploaded file/media replies
+
+Detailed setup guide: `assets/SETUP_FEISHU.md`
+
+WeCom:
+
+```bash
+pip install wecom_aibot_sdk
+python wecomapp.py
+# or
+python launch.pyw --wecom
+```
+
+Config keys:
+
+```python
+wecom_bot_id = "your_bot_id"
+wecom_secret = "your_bot_secret"
+wecom_allowed_users = ["your_user_id"]  # or ['*']
+wecom_welcome_message = "Hello"
+```
+
+DingTalk:
+
+```bash
+pip install dingtalk-stream
+python dingtalkapp.py
+# or
+python launch.pyw --dingtalk
+```
+
+Config keys:
+
+```python
+dingtalk_client_id = "your_app_key"
+dingtalk_client_secret = "your_app_secret"
+dingtalk_allowed_users = ["your_staff_id"]  # or ['*']
+```
+
 **Also runs on Android** — tested successfully on Termux with `python agentmain.py` (CLI frontend):
 
 ```bash
@@ -142,6 +236,10 @@ The agent starts with 7 primitive tools. Through `code_run`, it can install pack
 **Interface** (talk to the agent):
 - `stapp.py` — Streamlit web UI
 - `tgapp.py` — Telegram bot interface
+- `fsapp.py` — Feishu bot interface
+- `qqapp.py` — QQ bot interface
+- `wecomapp.py` — WeCom bot interface
+- `dingtalkapp.py` — DingTalk bot interface
 - `launch.pyw` — One-click launcher with floating window
 
 **Infrastructure**:
@@ -230,6 +328,100 @@ python agentmain.py
 
 启动后告诉 Agent："执行 web setup SOP 解锁浏览器工具"——剩下的它自己搞定。完整引导流程见 [WELCOME_NEW_USER.md](WELCOME_NEW_USER.md)。
 
+## QQ Bot（可选）
+
+QQ 适配使用 `qq-botpy` 的 WebSocket 长连接，不需要公网 webhook。
+
+```bash
+pip install qq-botpy
+```
+
+然后在 `mykey.py` 或 `mykey.json` 中补充：
+
+```python
+qq_app_id = "YOUR_APP_ID"
+qq_app_secret = "YOUR_APP_SECRET"
+qq_allowed_users = ["YOUR_USER_OPENID"]  # 或 ['*'] 表示公开访问
+```
+
+启动方式：
+
+```bash
+python qqapp.py
+```
+
+或和桌面悬浮窗一起启动：
+
+```bash
+python launch.pyw --qq
+```
+
+补充说明：
+- 在 [QQ 开放平台](https://q.qq.com) 创建机器人并拿到 `AppID` / `AppSecret`
+- 沙箱调试时，先把自己的 QQ 号加入消息列表
+- 首次给机器人发消息后，用户 openid 会记录在 `temp/qqapp.log` 中，便于填入 `qq_allowed_users`
+
+## Feishu / WeCom / DingTalk（可选）
+
+Feishu：
+
+```bash
+pip install lark-oapi
+python fsapp.py
+# 或
+python launch.pyw --feishu
+```
+
+配置项：
+
+```python
+fs_app_id = "cli_xxx"
+fs_app_secret = "xxx"
+fs_allowed_users = ["ou_xxx"]  # 或 ['*']
+```
+
+当前仓库里的飞书能力：
+- 入站：文本、富文本 post、图片、文件、音频、media、交互卡片/分享卡片
+- 图片首轮会以真正的多模态图片输入发送给支持 OpenAI 兼容视觉的模型后端
+- 出站：流式进度卡片、图片回传、文件或 media 回传
+
+详细配置流程见 `assets/SETUP_FEISHU.md`
+
+WeCom(企业微信)：
+
+```bash
+pip install wecom_aibot_sdk
+python wecomapp.py
+# 或
+python launch.pyw --wecom
+```
+
+配置项：
+
+```python
+wecom_bot_id = "your_bot_id"
+wecom_secret = "your_bot_secret"
+wecom_allowed_users = ["your_user_id"]  # 或 ['*']
+wecom_welcome_message = "你好，我在线上。"
+```
+
+DingTalk(钉钉)：
+
+```bash
+pip install dingtalk-stream
+python dingtalkapp.py
+# 或
+python launch.pyw --dingtalk
+```
+
+配置项：
+
+```python
+dingtalk_client_id = "your_app_key"
+dingtalk_client_secret = "your_app_secret"
+dingtalk_allowed_users = ["your_staff_id"]  # 或 ['*']
+```
+
 ## 对比
 
 | | GenericAgent | OpenClaw | Claude Code |
@@ -261,6 +453,10 @@ Agent 拥有 7 个原子工具：`code_run`（执行任意代码）、`file_read
 **交互界面**：
 - `stapp.py` — Streamlit Web UI
 - `tgapp.py` — Telegram 机器人
+- `fsapp.py` — 飞书机器人
+- `qqapp.py` — QQ 机器人
+- `wecomapp.py` — 企业微信机器人
+- `dingtalkapp.py` — 钉钉机器人
 - `launch.pyw` — 一键启动 + 悬浮窗
 
 **基础设施**：
