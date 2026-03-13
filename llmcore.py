@@ -1,4 +1,4 @@
-import os, json, re, time, requests, sys, threading, urllib3
+import os, json, re, time, requests, sys, threading, urllib3, base64, mimetypes
 from datetime import datetime
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -33,6 +33,25 @@ def auto_make_url(base, path):
     b, p = base.rstrip('/'), path.strip('/')
     if b.endswith('$'): return b[:-1].rstrip('/')
     return b if b.endswith(p) else f"{b}/{p}" if re.search(r'/v\d+$', b) else f"{b}/v1/{p}"
+
+def build_multimodal_content(prompt_text, image_paths):
+    parts = []
+    text = prompt_text if isinstance(prompt_text, str) else str(prompt_text or "")
+    if text.strip():
+        parts.append({"type": "text", "text": text})
+    else:
+        parts.append({"type": "text", "text": "请查看图片并理解用户意图。"})
+    for path in image_paths or []:
+        if not path or not os.path.isfile(path): continue
+        try:
+            mime = mimetypes.guess_type(path)[0] or "image/png"
+            if not mime.startswith("image/"): mime = "image/png"
+            with open(path, "rb") as f:
+                data_url = f"data:{mime};base64,{base64.b64encode(f.read()).decode('ascii')}"
+            parts.append({"type": "image_url", "image_url": {"url": data_url}})
+        except Exception as e:
+            print(f"[WARN] encode image failed {path}: {e}")
+    return parts
 
 class SiderLLMSession:
     def __init__(self, sider_cookie, default_model="gemini-3.0-flash"):
@@ -392,6 +411,8 @@ class ToolClient:
         self.total_cd_tokens = 0
 
     def chat(self, messages, tools=None):
+        if self._should_use_structured_messages(messages):
+            return (yield from self._chat_structured(messages, tools))
         full_prompt = self._build_protocol_prompt(messages, tools)      
         print("Full prompt length:", len(full_prompt), 'chars')
         script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -410,14 +431,27 @@ class ToolClient:
             f.write(f"=== Response === {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n{raw_text}\n\n")
         return self._parse_mixed_response(raw_text)
 
-    def _build_protocol_prompt(self, messages, tools):
-        system_content = next((m['content'] for m in messages if m['role'].lower() == 'system'), "")
-        history_msgs = [m for m in messages if m['role'].lower() != 'system']
-        # 构造工具描述
+    def _should_use_structured_messages(self, messages):
+        return isinstance(self.backend, LLMSession) and any(isinstance(m.get("content"), list) for m in messages)
+
+    def _estimate_content_len(self, content):
+        if isinstance(content, str): return len(content)
+        if isinstance(content, list):
+            total = 0
+            for part in content:
+                if not isinstance(part, dict): continue
+                if part.get("type") == "text":
+                    total += len(part.get("text", ""))
+                elif part.get("type") == "image_url":
+                    total += 1000
+            return total
+        return len(str(content))
+
+    def _prepare_tool_instruction(self, tools):
         tool_instruction = ""
-        if tools:
-            tools_json = json.dumps(tools, ensure_ascii=False, separators=(',', ':'))
-            tool_instruction = f"""
+        if not tools: return tool_instruction
+        tools_json = json.dumps(tools, ensure_ascii=False, separators=(',', ':'))
+        tool_instruction = f"""
 ### 交互协议 (必须严格遵守，持续有效)
 请按照以下步骤思考并行动，标签之间需要回车换行：
 1. **思考**: 在 `<thinking>` 标签中先进行思考，分析现状和策略。
@@ -428,11 +462,70 @@ class ToolClient:
 ### 可用工具库（已挂载，持续有效）
 {tools_json}
 """
-            if self.auto_save_tokens and self.last_tools == tools_json:
-                tool_instruction = "\n### 工具库状态：持续有效（code_run/file_read等），**可正常调用**。调用协议沿用。\n"
+        if self.auto_save_tokens and self.last_tools == tools_json:
+            tool_instruction = "\n### 工具库状态：持续有效（code_run/file_read等），**可正常调用**。调用协议沿用。\n"
+        else:
+            self.total_cd_tokens = 0
+        self.last_tools = tools_json
+        return tool_instruction
+
+    def _build_backend_messages(self, messages, tools):
+        system_content = next((m['content'] for m in messages if m['role'].lower() == 'system'), "")
+        history_msgs = [m for m in messages if m['role'].lower() != 'system']
+        tool_instruction = self._prepare_tool_instruction(tools)
+        backend_messages = []
+        merged_system = f"{system_content}\n{tool_instruction}".strip() if tool_instruction else system_content
+        if merged_system:
+            backend_messages.append({"role": "system", "content": merged_system})
+        for m in history_msgs:
+            backend_messages.append({"role": m['role'], "content": m['content']})
+            self.total_cd_tokens += self._estimate_content_len(m['content'])
+        if self.total_cd_tokens > 6000: self.last_tools = ''
+        return backend_messages
+
+    def _serialize_messages_for_log(self, messages):
+        logged = []
+        for msg in messages:
+            content = msg.get("content")
+            if isinstance(content, list):
+                parts = []
+                for part in content:
+                    if not isinstance(part, dict): continue
+                    if part.get("type") == "text":
+                        parts.append({"type": "text", "text": part.get("text", "")})
+                    elif part.get("type") == "image_url":
+                        url = (part.get("image_url") or {}).get("url", "")
+                        prefix = url.split(",", 1)[0] if url else "data:image/unknown;base64"
+                        parts.append({"type": "image_url", "image_url": {"url": prefix + ",<omitted>"}})
+                    else:
+                        parts.append(part)
+                logged.append({"role": msg.get("role"), "content": parts})
             else:
-                self.total_cd_tokens = 0
-            self.last_tools = tools_json
+                logged.append(msg)
+        return json.dumps(logged, ensure_ascii=False, indent=2)
+
+    def _chat_structured(self, messages, tools):
+        backend_messages = self._build_backend_messages(messages, tools)
+        print("Structured prompt length:", sum(self._estimate_content_len(m.get("content")) for m in backend_messages), 'chars')
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(script_dir, f'./temp/model_responses_{os.getpid()}.txt'), 'a', encoding='utf-8', errors="replace") as f:
+            f.write(f"=== Prompt === {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n{self._serialize_messages_for_log(backend_messages)}\n")
+        gen = self.backend.raw_ask(backend_messages)
+        raw_text = ''; summarytag = '[NextWillSummary]'
+        for chunk in gen:
+            raw_text += chunk
+            if chunk != summarytag: yield chunk
+        print('Complete response received.')
+        if raw_text.endswith(summarytag):
+            self.last_tools = ''; raw_text = raw_text[:-len(summarytag)]
+        with open(os.path.join(script_dir, f'./temp/model_responses_{os.getpid()}.txt'), 'a', encoding='utf-8', errors="replace") as f:
+            f.write(f"=== Response === {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n{raw_text}\n\n")
+        return self._parse_mixed_response(raw_text)
+
+    def _build_protocol_prompt(self, messages, tools):
+        system_content = next((m['content'] for m in messages if m['role'].lower() == 'system'), "")
+        history_msgs = [m for m in messages if m['role'].lower() != 'system']
+        tool_instruction = self._prepare_tool_instruction(tools)
             
         prompt = ""
         if system_content: prompt += f"=== SYSTEM ===\n{system_content}\n"
@@ -440,7 +533,7 @@ class ToolClient:
         for m in history_msgs:
             role = "USER" if m['role'] == 'user' else "ASSISTANT"
             prompt += f"=== {role} ===\n{m['content']}\n\n"
-            self.total_cd_tokens += len(m['content'])
+            self.total_cd_tokens += self._estimate_content_len(m['content'])
             
         if self.total_cd_tokens > 6000: self.last_tools = ''
 

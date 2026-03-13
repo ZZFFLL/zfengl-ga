@@ -5,7 +5,7 @@ if sys.stderr is None: sys.stderr = open(os.devnull, "w")
 elif hasattr(sys.stderr, 'reconfigure'): sys.stderr.reconfigure(errors='replace')
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from llmcore import SiderLLMSession, LLMSession, ToolClient, ClaudeSession, XaiSession
+from llmcore import SiderLLMSession, LLMSession, ToolClient, ClaudeSession, XaiSession, build_multimodal_content
 from agent_loop import agent_runner_loop, StepOutcome, BaseHandler
 from ga import GenericAgentHandler, smart_format, get_global_memory, format_error
 
@@ -83,16 +83,16 @@ class GeneraticAgent:
         if self.handler is not None: 
             self.handler.code_stop_signal.append(1)
             
-    def put_task(self, query, source="user"):
+    def put_task(self, query, source="user", images=None):
         display_queue = queue.Queue()
-        self.task_queue.put({"query": query, "source": source, "output": display_queue})
+        self.task_queue.put({"query": query, "source": source, "images": images or [], "output": display_queue})
         return display_queue
 
     def run(self):
         while True:
             task = self.task_queue.get()
             self.is_running = True
-            raw_query, source, display_queue = task["query"], task["source"], task["output"]
+            raw_query, source, images, display_queue = task["query"], task["source"], task.get("images") or [], task["output"]
             rquery = smart_format(raw_query.replace('\n', ' '), max_str_len=200)
             self.history.append(f"[USER]: {rquery}")
             
@@ -108,8 +108,14 @@ class GeneraticAgent:
             user_input = raw_query
             if source == 'feishu' and len(self.history) > 1:   # 如果有历史记录且来自飞书，注入到首轮 user_input 中（支持/restore恢复上下文）
                 user_input = handler._get_anchor_prompt() + f"\n\n### 用户当前消息\n{raw_query}"
+            initial_user_content = None
+            if images and isinstance(self.llmclient.backend, LLMSession):
+                initial_user_content = build_multimodal_content(user_input, images)
+            elif images:
+                print(f"[INFO] backend {type(self.llmclient.backend).__name__} does not support direct multimodal input, fallback to text attachment hints.")
             gen = agent_runner_loop(self.llmclient, sys_prompt, user_input, 
-                                handler, TOOLS_SCHEMA, max_turns=40, verbose=self.verbose)
+                                handler, TOOLS_SCHEMA, max_turns=40, verbose=self.verbose,
+                                initial_user_content=initial_user_content)
             try:
                 full_resp = ""; last_pos = 0
                 for chunk in gen:

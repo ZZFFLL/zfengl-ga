@@ -45,10 +45,10 @@ def get_pretty_json(data):
         data["script"] = data["script"].replace("; ", ";\n  ")
     return json.dumps(data, indent=2, ensure_ascii=False).replace('\\n', '\n')
 
-def agent_runner_loop(client, system_prompt, user_input, handler, tools_schema, max_turns=15, verbose=True):
+def agent_runner_loop(client, system_prompt, user_input, handler, tools_schema, max_turns=15, verbose=True, initial_user_content=None):
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_input}
+        {"role": "user", "content": initial_user_content if initial_user_content is not None else user_input}
     ]
     for turn in range(max_turns):
         yield f"**LLM Running (Turn {turn+1}) ...**\n\n"

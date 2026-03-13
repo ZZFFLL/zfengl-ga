@@ -65,6 +65,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('port', nargs='?', default='0'); 
     parser.add_argument('--tg', action='store_true', help='启动 Telegram Bot'); 
+    parser.add_argument('--qq', action='store_true', help='启动 QQ Bot');
+    parser.add_argument('--feishu', '--fs', dest='feishu', action='store_true', help='启动 Feishu Bot');
+    parser.add_argument('--wecom', action='store_true', help='启动 WeCom Bot');
+    parser.add_argument('--dingtalk', '--dt', dest='dingtalk', action='store_true', help='启动 DingTalk Bot');
     parser.add_argument('--no-sched', action='store_true', help='不启动计划任务调度器')
     parser.add_argument('--llm_no', type=int, default=0, help='LLM编号')
     args = parser.parse_args()
@@ -78,6 +82,34 @@ if __name__ == '__main__':
         atexit.register(tgproc.kill)
         print('[Launch] Telegram Bot started')
     else: print('[Launch] Telegram Bot not enabled (use --tg to start)')
+
+    if args.qq:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        qqproc = subprocess.Popen([sys.executable, os.path.join(script_dir, "qqapp.py")], creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
+        atexit.register(qqproc.kill)
+        print('[Launch] QQ Bot started')
+    else: print('[Launch] QQ Bot not enabled (use --qq to start)')
+
+    if args.feishu:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        fsproc = subprocess.Popen([sys.executable, os.path.join(script_dir, "fsapp.py")], creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
+        atexit.register(fsproc.kill)
+        print('[Launch] Feishu Bot started')
+    else: print('[Launch] Feishu Bot not enabled (use --feishu to start)')
+
+    if args.wecom:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        wcproc = subprocess.Popen([sys.executable, os.path.join(script_dir, "wecomapp.py")], creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
+        atexit.register(wcproc.kill)
+        print('[Launch] WeCom Bot started')
+    else: print('[Launch] WeCom Bot not enabled (use --wecom to start)')
+
+    if args.dingtalk:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        dtproc = subprocess.Popen([sys.executable, os.path.join(script_dir, "dingtalkapp.py")], creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
+        atexit.register(dtproc.kill)
+        print('[Launch] DingTalk Bot started')
+    else: print('[Launch] DingTalk Bot not enabled (use --dingtalk to start)')
     
     if not args.no_sched:
         try:
