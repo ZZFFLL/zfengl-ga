@@ -18,15 +18,12 @@ Every time GenericAgent solves a new task, it automatically crystallizes the exe
 
 > **🤖 Self-Bootstrap Proof** — Everything in this repository, from installing Git and running `git init` to every commit message, was completed autonomously by GenericAgent. The author never opened a terminal once.
 
----
-
 ## 📋 Core Features
 - **Self-Evolving**: Automatically crystallizes each task into an SOP. Capabilities grow with every use, forming your personal skill tree.
 - **Minimal Architecture**: ~3,300 lines of core code. Agent Loop is just 92 lines. No complex dependencies, zero deployment overhead.
 - **Strong Execution**: Injects into a real browser (preserving login sessions). 7 atomic tools take direct control of the system.
 - **High Compatibility**: Supports Claude / Gemini / Kimi and other major models. Cross-platform.
 
----
 
 ## 🧬 Self-Evolution Mechanism
 
@@ -55,8 +52,6 @@ After a few weeks, your agent instance will have a skill tree no one else in the
 | 🌐 Autonomous Web Exploration | 💰 Expense Tracking | 💬 Batch Messaging |
 | <img src="assets/demo/autonomous_explore.png" width="100%" alt="Web Exploration"> | <img src="assets/demo/alipay_expense.png" width="100%" alt="Alipay Expense"> | <img src="assets/demo/wechat_batch.png" width="100%" alt="WeChat Batch"> |
 | Autonomously browses and periodically summarizes web content. | *"Find expenses over ¥2K in the last 3 months"* — Drives Alipay via ADB. | Sends bulk WeChat messages, fully driving the WeChat client. |
-
----
 
 ## 📅 Latest News
 
@@ -500,7 +495,6 @@ GenericAgent 通过**分层记忆 × 最小工具集 × 自主执行循环**完�
 
 
 ## ⭐ 支持
-
 如果这个项目对您有帮助，欢迎点一个 **Star!** 🙏
 
 同时也欢迎加入我们的**GenericAgent体验交流群**，一起交流、反馈和共建 👏
@@ -510,5 +504,4 @@ GenericAgent 通过**分层记忆 × 最小工具集 × 自主执行循环**完�
 
 
 ## 📄 许可
-
 MIT License — 详见 [LICENSE](LICENSE)
