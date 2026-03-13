@@ -473,7 +473,3 @@ Agent 拥有 7 个原子工具：`code_run`（执行任意代码）、`file_read
 其余一切——Gmail、微信自动化、视觉 API、游戏下载、股票分析——都是 Agent 在使用中自主构建并记忆的。
 
 </details>
-
-## 许可
-
-MIT
