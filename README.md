@@ -64,8 +64,8 @@ The agent doesn't just execute — it **learns and remembers**.
 
 ```bash
 # 1. Clone
-git clone https://github.com/lsdefine/pc-agent-loop.git
-cd pc-agent-loop
+git clone https://github.com/lsdefine/GenericAgent.git
+cd GenericAgent
 
 # 2. Install minimal deps
 pip install streamlit pywebview
@@ -206,8 +206,8 @@ Agent 不只是执行——它**学习并记忆**。
 
 ```bash
 # 1. 克隆
-git clone https://github.com/lsdefine/pc-agent-loop.git
-cd pc-agent-loop
+git clone https://github.com/lsdefine/GenericAgent.git
+cd GenericAgent
 
 # 2. 安装最小依赖
 pip install streamlit pywebview
