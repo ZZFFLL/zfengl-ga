@@ -5,7 +5,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from sidercall import SiderLLMSession, LLMSession, ToolClient
+from llmcore import SiderLLMSession, LLMSession, ToolClient
 
 
 ask = SiderLLMSession().ask

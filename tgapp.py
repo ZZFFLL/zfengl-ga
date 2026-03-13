@@ -8,7 +8,7 @@ try:
 except:
     print("Please ask the agent install python-telegram-bot to use telegram module.")
     sys.exit(1)
-from sidercall import mykeys
+from llmcore import mykeys
 
 agent = GeneraticAgent()
 agent.verbose = False

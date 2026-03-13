@@ -22,7 +22,7 @@
 
 - Python 3.8+
 - 本项目完整代码
-- LLM API 密钥（Claude/OpenAI 等，已在 `sidercall/mykeys` 中配置）
+- LLM API 密钥（Claude/OpenAI 等，已在 `llmcore/mykeys` 中配置）
 
 ### 安装依赖
 
@@ -177,7 +177,7 @@ fs_allowed_users = [
 
 ### 确认 LLM 配置
 
-确保 `sidercall/mykeys` 中已配置 LLM API 密钥：
+确保 `llmcore/mykeys` 中已配置 LLM API 密钥：
 
 ```python
 # 示例：Claude API

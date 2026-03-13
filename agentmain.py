@@ -5,7 +5,7 @@ if sys.stderr is None: sys.stderr = open(os.devnull, "w")
 elif hasattr(sys.stderr, 'reconfigure'): sys.stderr.reconfigure(errors='replace')
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from sidercall import SiderLLMSession, LLMSession, ToolClient, ClaudeSession, XaiSession
+from llmcore import SiderLLMSession, LLMSession, ToolClient, ClaudeSession, XaiSession
 from agent_loop import agent_runner_loop, StepOutcome, BaseHandler
 from ga import GenericAgentHandler, smart_format, get_global_memory, format_error
 
@@ -40,7 +40,7 @@ class GeneraticAgent:
         script_dir = os.path.dirname(os.path.abspath(__file__))
         temp_dir = os.path.join(script_dir, 'temp')
         if not os.path.exists(temp_dir): os.makedirs(temp_dir)
-        from sidercall import mykeys
+        from llmcore import mykeys
         llm_sessions = []
         for k, cfg in mykeys.items():
             if not any(x in k for x in ['api', 'config', 'cookie']): continue

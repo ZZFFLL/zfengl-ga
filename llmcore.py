@@ -14,8 +14,10 @@ mykeys = _load_mykeys()
 proxy = mykeys.get("proxy", 'http://127.0.0.1:2082')
 proxies = {"http": proxy, "https": proxy} if proxy else None
 
-def compress_history_tags(messages, keep_recent=4, max_len=200):
+def compress_history_tags(messages, keep_recent=10, max_len=500):
     """Compress <thinking>/<tool_use>/<tool_result> tags in older messages to save tokens."""
+    compress_history_tags._cd = getattr(compress_history_tags, '_cd', 0) + 1
+    if compress_history_tags._cd % 5 != 0: return messages
     for i, msg in enumerate(messages):
         if i < len(messages) - keep_recent and 'orig' not in msg:
             msg['orig'] = msg['prompt']
@@ -47,7 +49,7 @@ class SiderLLMSession:
         return full_text   
 
 class ClaudeSession:
-    def __init__(self, api_key, api_base, model="claude-opus", context_win=10000):
+    def __init__(self, api_key, api_base, model="claude-opus", context_win=12000):
         self.api_key, self.api_base, self.default_model, self.context_win = api_key, api_base.rstrip('/'), model, context_win
         self.raw_msgs, self.lock = [], threading.Lock()
     def _trim_messages(self, messages):
@@ -96,7 +98,7 @@ class ClaudeSession:
         return _ask_gen() if stream else ''.join(list(_ask_gen()))
 
 class LLMSession:
-    def __init__(self, api_key, api_base, model, context_win=12000, proxy=None, api_mode="chat_completions",
+    def __init__(self, api_key, api_base, model, context_win=16000, proxy=None, api_mode="chat_completions",
                  max_retries=2, connect_timeout=10, read_timeout=120):
         self.api_key = api_key; self.api_base = api_base.rstrip('/'); self.default_model = model
         self.context_win = context_win; self.raw_msgs = []; self.messages = []

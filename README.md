@@ -136,7 +136,7 @@ The agent starts with 7 primitive tools. Through `code_run`, it can install pack
 **Core engine** (runs the agent):
 - `agent_loop.py` — Sense-Think-Act loop (92 lines)
 - `ga.py` — Tool definitions and execution
-- `sidercall.py` — LLM communication (multi-backend)
+- `llmcore.py` — LLM communication (multi-backend)
 - `agentmain.py` — Session orchestration
 
 **Interface** (talk to the agent):
@@ -255,7 +255,7 @@ Agent 拥有 7 个原子工具：`code_run`（执行任意代码）、`file_read
 **核心引擎**：
 - `agent_loop.py` — 感知-思考-行动循环（92 行）
 - `ga.py` — 工具定义与执行
-- `sidercall.py` — LLM 通信（多后端）
+- `llmcore.py` — LLM 通信（多后端）
 - `agentmain.py` — 会话编排
 
 **交互界面**：
