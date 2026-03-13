@@ -39,6 +39,8 @@ memory/*
 # Allow tracking of specific SOPs
 !memory/web_setup_sop.md
 !memory/autonomous_operation_sop.md
+!memory/autonomous_operation_sop/
+!memory/autonomous_operation_sop/**
 !memory/scheduled_task_sop.md
 
 # ljqCtrl related tools

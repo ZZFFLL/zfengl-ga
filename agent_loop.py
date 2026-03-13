@@ -20,7 +20,7 @@ class BaseHandler:
     def dispatch(self, tool_name, args, response):
         method_name = f"do_{tool_name}"
         if hasattr(self, method_name):
-            _ = yield from try_call_generator(self.tool_before_callback, tool_name, args, response)
+            prer = yield from try_call_generator(self.tool_before_callback, tool_name, args, response)
             ret = yield from try_call_generator(getattr(self, method_name), args, response)
             _ = yield from try_call_generator(self.tool_after_callback, tool_name, args, response, ret)
             return ret
