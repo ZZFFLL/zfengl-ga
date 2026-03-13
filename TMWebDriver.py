@@ -34,7 +34,7 @@ class Session:
 
 
 class TMWebDriver:  
-    def __init__(self, host: str = 'localhost', port: int = 18765):  
+    def __init__(self, host: str = '127.0.0.1', port: int = 18765):  
         self.host, self.port = host, port
         self.sessions, self.results, self.acks = {}, {}, {}
         self.default_session_id = None  
@@ -202,7 +202,7 @@ class TMWebDriver:
         hasjump = acked = False
 
         while exec_id not in self.results:  
-            time.sleep(0.5)  
+            time.sleep(0.2)  
             if not acked and exec_id in self.acks:
                 acked = True; start_time = time.time()
             if tp == 'ws':
@@ -266,4 +266,4 @@ class TMWebDriver:
         return self.execute_js(f'GM_openInTab("{url}");')
     
 if __name__ == "__main__":
-    driver = TMWebDriver(host='localhost', port=18765)
+    driver = TMWebDriver(host='127.0.0.1', port=18765)

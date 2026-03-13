@@ -17,12 +17,14 @@ function createEnhancedDOMCopy() {
     if (sourceNode.nodeType === 3) return sourceNode.cloneNode(false);  
     const clone = sourceNode.cloneNode(false);
     if ((sourceNode.tagName === 'INPUT' || sourceNode.tagName === 'TEXTAREA') && sourceNode.value) clone.setAttribute('value', sourceNode.value);
+    if (sourceNode.tagName === 'INPUT' && (sourceNode.type === 'radio' || sourceNode.type === 'checkbox') && sourceNode.checked) clone.setAttribute('checked', '');
     else if (sourceNode.tagName === 'SELECT' && sourceNode.value) clone.setAttribute('data-selected', sourceNode.value);  
     try { if (sourceNode.matches && sourceNode.matches(':-webkit-autofill')) { clone.setAttribute('data-autofilled', 'true'); if (!sourceNode.value) clone.setAttribute('value', '⚠️受保护-读tmwebdriver_sop的autofill章节提取'); } } catch(e) {}
 
     const isDropdown = sourceNode.classList?.contains('dropdown-menu') ||   
              /dropdown|menu/i.test(sourceNode.className) || sourceNode.getAttribute('role') === 'menu'; 
-    const isSmallDropdown = isDropdown && (sourceNode.querySelectorAll('a, button, [role="menuitem"], li').length <= 7 && sourceNode.textContent.length < 500);  
+    const _ddItems = isDropdown ? sourceNode.querySelectorAll('a, button, [role="menuitem"], li').length : 0;
+    const isSmallDropdown = _ddItems > 0 && _ddItems <= 7 && sourceNode.textContent.length < 500;  
 
     const childNodes = [];  
     for (const child of sourceNode.childNodes) {  
@@ -704,6 +706,7 @@ js_findMainContent = '''
 def optimize_html_for_tokens(html):  
     if type(html) is str: soup = BeautifulSoup(html, 'html.parser')  
     else: soup = html
+    for svg in soup.find_all('svg'): svg.clear()
     [tag.attrs.pop('style', None) for tag in soup.find_all(True)]  
     for tag in soup.find_all(True):  
         if tag.has_attr('src'):  
@@ -788,6 +791,10 @@ def find_changed_elements(before_html, after_html):
     for sig, els in after_sigs.items():
         if sig not in before_sigs: changed.extend(els)
         elif len(els) > len(before_sigs[sig]): changed.extend(els[:len(els) - len(before_sigs[sig])])
+    if len(changed) == 0 and str(before_soup) != str(after_soup):
+        before_els, after_els = before_soup.find_all(True), after_soup.find_all(True)
+        for i in range(min(len(before_els), len(after_els))):
+            if get_sig(before_els[i]) != get_sig(after_els[i]): changed.append(after_els[i])
     # 变化边界: parent不在changed中的元素
     cids = set(id(el) for el in changed)
     boundaries = [el for el in changed if el.parent is None or id(el.parent) not in cids]
