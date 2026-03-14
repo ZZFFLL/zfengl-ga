@@ -1,92 +1,112 @@
-# GenericAgent — 3,300 Lines to Full OS Autonomy
+<div align="center">
+<img src="assets/images/bar.jpg" width="880"/>
+</div>
 
-[English](#english) | [中文](#chinese)
+<p align="center">
+  <a href="#english">English</a> | <a href="#chinese">中文</a>
+</p>
 
+---
 <a name="english"></a>
+## 🌟 Overview
 
-A minimalist autonomous agent framework that gives any LLM physical-level control over your PC — browser, terminal, file system, keyboard, mouse, screen vision, and mobile devices — in ~3,300 lines of Python.
+**GenericAgent** is a minimal, self-evolving autonomous agent framework. Its core is just **~3,300 lines of code**. Through **7 atomic tools + a 92-line Agent Loop**, it grants any LLM system-level control over a local computer — covering browser, terminal, filesystem, keyboard/mouse input, screen vision, and mobile devices (ADB).
 
-No Electron. No Docker. No Mac Mini. No 500K-line codebase. No paid installation service.
+Its design philosophy: **don't preload skills — evolve them.**
 
-## See It in Action
+Every time GenericAgent solves a new task, it automatically crystallizes the execution path into an skill for direct reuse later. The longer you use it, the more skills accumulate — forming a skill tree that belongs entirely to you, grown from 3,300 lines of seed code.
 
-<table>
-<tr>
-<td width="45%" align="center"><img src="assets/demo/order_tea.gif" width="100%"><br><em>"Order me a milk tea" — navigates a delivery app, picks items, and checks out.</em></td>
-<td width="55%" align="center"><img src="assets/demo/selectstock.gif" width="100%"><br><em>"Find GEM stocks with EXPMA golden cross, turnover > 5%" — quantitative screening via mootdx.</em></td>
-</tr>
-</table>
+> **🤖 Self-Bootstrap Proof** — Everything in this repository, from installing Git and running `git init` to every commit message, was completed autonomously by GenericAgent. The author never opened a terminal once.
 
-<table>
-<tr>
-<td width="33%"><img src="assets/demo/autonomous_explore.png" width="100%"><br><em>Autonomous web exploration — browses and summarizes on its own schedule.</em></td>
-<td width="34%"><img src="assets/demo/alipay_expense.png" width="100%"><br><em>"Find expenses over ¥2K in the past 3 months" — drives Alipay on a phone via ADB.</em></td>
-<td width="33%"><img src="assets/demo/wechat_batch.png" width="100%"><br><em>WeChat batch messaging — yes, it can drive WeChat too.</em></td>
-</tr>
-</table>
+## 📋 Core Features
+- **Self-Evolving**: Automatically crystallizes each task into an skill. Capabilities grow with every use, forming your personal skill tree.
+- **Minimal Architecture**: ~3,300 lines of core code. Agent Loop is just 92 lines. No complex dependencies, zero deployment overhead.
+- **Strong Execution**: Injects into a real browser (preserving login sessions). 7 atomic tools take direct control of the system.
+- **High Compatibility**: Supports Claude / Gemini / Kimi and other major models. Cross-platform.
 
-## What Happens When You Use It
+
+## 🧬 Self-Evolution Mechanism
+
+This is what fundamentally distinguishes GenericAgent from every other agent framework.
 
 ```
-You: "Read my WeChat messages"
-Agent: installs dependencies → reverse-engineers DB → writes reader script → saves as SOP
-Next time: instant recall, zero setup.
-
-You: "Monitor stock prices and alert me"
-Agent: installs mootdx → builds screening workflow → sets up scheduled task → saves as SOP
-Next time: one sentence to run.
-
-You: "Send this file via Gmail"
-Agent: configures OAuth → writes send script → saves as SOP
-Next time: just works.
+[New Task] --> [Autonomous Exploration] (install deps, write scripts, debug & verify) -->
+[Crystallize Execution Path into skill] --> [Write to Memory Layer] --> [Direct Recall on Next Similar Task]
 ```
 
-**Dogfooding**: This repository — from installing Git to `git init`, writing this README, to every commit message — was built entirely by GenericAgent without the author opening a terminal once.
+| What you say | What the agent does the first time | Every time after |
+|---|---|---|
+| *"Read my WeChat messages"* | Install deps → reverse DB → write read script → save skill | **one-line invoke** |
+| *"Monitor stocks and alert me"* | Install mootdx → build selection flow → configure cron → save skill | **one-line start** |
+| *"Send this file via Gmail"* | Configure OAuth → write send script → save skill | **ready to use** |
 
-Every task the agent solves becomes a permanent skill. After a few weeks, your instance has a unique skill tree — grown entirely from 3,300 lines of seed code.
+After a few weeks, your agent instance will have a skill tree no one else in the world has — all grown from 3,300 lines of seed code.
 
-## The Seed Philosophy
 
-Most agent frameworks ship as finished products. GenericAgent ships as a **seed**.
+##### 🎯 Demo Showcase
 
-The 5 core SOPs define how the agent thinks, remembers, and operates. From there, every new capability is discovered and recorded by the agent itself:
+| 🧋 Food Delivery Order | 📈 Quantitative Stock Screening |
+|:---:|:---:|
+| <img src="assets/demo/order_tea.gif" width="100%" alt="Order Tea"> | <img src="assets/demo/selectstock.gif" width="100%" alt="Stock Selection"> |
+| *"Order me a milk tea"* — Navigates the delivery app, selects items, and completes checkout automatically. | *"Find GEM stocks with EXPMA golden cross, turnover > 5%"* — Screens stocks with quantitative conditions. |
+| 🌐 Autonomous Web Exploration | 💰 Expense Tracking | 💬 Batch Messaging |
+| <img src="assets/demo/autonomous_explore.png" width="100%" alt="Web Exploration"> | <img src="assets/demo/alipay_expense.png" width="100%" alt="Alipay Expense"> | <img src="assets/demo/wechat_batch.png" width="100%" alt="WeChat Batch"> |
+| Autonomously browses and periodically summarizes web content. | *"Find expenses over ¥2K in the last 3 months"* — Drives Alipay via ADB. | Sends bulk WeChat messages, fully driving the WeChat client. |
 
-1. You ask it to do something new
-2. It figures out how (install dependencies, write scripts, test)
-3. It saves the procedure as a new SOP in its memory
-4. Next time, it recalls and executes directly
+## 📅 Latest News
 
-The agent doesn't just execute — it **learns and remembers**.
+- **2026-03-10:** [Released million-scale Skill Library](https://mp.weixin.qq.com/s/q2gQ7YvWoiAcwxzaiwpuiQ?scene=1&click_id=7)
+- **2026-03-08:** [Released "Dintal Claw" — a GenericAgent-powered government affairs bot](https://mp.weixin.qq.com/s/eiEhwo-j6S-WpLxgBnNxBg)
+- **2026-03-01:** [GenericAgent featured by Jiqizhixin (机器之心)](https://mp.weixin.qq.com/s/uVWpTTF5I1yzAENV_qm7yg)
+- **2026-01-11:** GenericAgent V1.0 public release
 
-## Quick Start
+---
 
-> 💡 **Windows零基础用户**：不知道Python是什么？[下载便携版](http://kw.fudan.edu.cn/resources/PC-Agent-Portable.zip)（19MB，解压即用）
+## 🚀 Quick Start
+
+#### Method 1: Standard Installation
 
 ```bash
-# 1. Clone
+# 1. Clone the repo
 git clone https://github.com/lsdefine/GenericAgent.git
 cd GenericAgent
 
-# 2. Install minimal deps
+# 2. Install minimal dependencies
 pip install streamlit pywebview
 
-# 3. Configure API key
+# 3. Configure API Key
 cp mykey_template.py mykey.py
-# Edit mykey.py with your LLM API key
+# Edit mykey.py and fill in your LLM API Key
 
 # 4. Launch
 python launch.pyw
 ```
 
-## QQ Bot (Optional)
+#### Method 2: Windows Portable Version (Recommended for beginners)
 
-QQ support uses `qq-botpy` over WebSocket, so no public webhook is required.
+[Download portable version](http://kw.fudan.edu.cn/resources/PC-Agent-Portable.zip) (19MB, unzip and run)
+
+Full guide: [WELCOME_NEW_USER.md](WELCOME_NEW_USER.md)
+
+#### Method 3: Android (Termux)
+
+```bash
+cd /sdcard/ga
+python agentmain.py
+```
+---
+
+## 🤖 Bot Interfaces (Optional)
+
+### QQ Bot
+
+Uses `qq-botpy` WebSocket long connection — **no public webhook required**:
 
 ```bash
 pip install qq-botpy
 ```
 
-Then add these fields to `mykey.py` or `mykey.json`:
+Add to `mykey.py`:
 
 ```python
 qq_app_id = "YOUR_APP_ID"
@@ -94,35 +114,21 @@ qq_app_secret = "YOUR_APP_SECRET"
 qq_allowed_users = ["YOUR_USER_OPENID"]  # or ['*'] for public access
 ```
 
-Run QQ directly:
-
 ```bash
 python qqapp.py
-```
-
-Or start it together with the desktop window:
-
-```bash
+# or launch together with the desktop floating window
 python launch.pyw --qq
 ```
 
-Notes:
-- Create the bot at [QQ Open Platform](https://q.qq.com)
-- In sandbox mode, add your own QQ account to the message list first
-- After the first inbound message, the user's openid will be written to `temp/qqapp.log`
+> Create a bot at the [QQ Open Platform](https://q.qq.com) to get AppID / AppSecret. After the first message, user openid is logged in `temp/qqapp.log`.
 
-## Feishu / WeCom / DingTalk (Optional)
 
-Feishu:
+### Lark (Feishu)
 
 ```bash
 pip install lark-oapi
-python fsapp.py
-# or
-python launch.pyw --feishu
+python fsapp.py          # or python launch.pyw --feishu
 ```
-
-Config keys in `mykey.py` / `mykey.json`:
 
 ```python
 fs_app_id = "cli_xxx"
@@ -130,41 +136,33 @@ fs_app_secret = "xxx"
 fs_allowed_users = ["ou_xxx"]  # or ['*']
 ```
 
-Current Feishu support in this repo:
-- inbound: text, post rich text, image, file, audio, media, interactive/share cards
-- images are sent to multimodal-capable OpenAI-compatible backends as true image inputs on the first turn
-- outbound: interactive progress cards, uploaded image replies, uploaded file/media replies
+**Inbound support**: text, rich text post, images, files, audio, media, interactive cards / share cards
+**Outbound support**: streaming progress cards, image replies, file / media replies
+**Vision model**: Images are sent as true multimodal input to OpenAI Vision-compatible backends on the first turn
 
-Detailed setup guide: `assets/SETUP_FEISHU.md`
+Full setup: [assets/SETUP_FEISHU.md](assets/SETUP_FEISHU.md)
 
-WeCom:
+
+### WeCom (Enterprise WeChat)
 
 ```bash
 pip install wecom_aibot_sdk
-python wecomapp.py
-# or
-python launch.pyw --wecom
+python wecomapp.py       # or python launch.pyw --wecom
 ```
-
-Config keys:
 
 ```python
 wecom_bot_id = "your_bot_id"
 wecom_secret = "your_bot_secret"
-wecom_allowed_users = ["your_user_id"]  # or ['*']
-wecom_welcome_message = "Hello"
+wecom_allowed_users = ["your_user_id"]
+wecom_welcome_message = "Hello, I'm online."
 ```
 
-DingTalk:
+### DingTalk
 
 ```bash
 pip install dingtalk-stream
-python dingtalkapp.py
-# or
-python launch.pyw --dingtalk
+python dingtalkapp.py    # or python launch.pyw --dingtalk
 ```
-
-Config keys:
 
 ```python
 dingtalk_client_id = "your_app_key"
@@ -172,138 +170,153 @@ dingtalk_client_secret = "your_app_secret"
 dingtalk_allowed_users = ["your_staff_id"]  # or ['*']
 ```
 
-**Also runs on Android** — tested successfully on Termux with `python agentmain.py` (CLI frontend):
+
+### Telegram Bot
+
+```python
+# mykey.py
+tg_bot_token = 'YOUR_BOT_TOKEN'
+tg_allowed_users = [YOUR_USER_ID]
+```
 
 ```bash
-# In Termux
-cd /sdcard/ga
-python agentmain.py
+python tgapp.py
 ```
 
-Once running, tell the agent: *"Execute web setup SOP to unlock browser tools"* — it handles the rest. See [WELCOME_NEW_USER.md](WELCOME_NEW_USER.md) for the full bootstrap sequence.
 
-## vs. Alternatives
+## 📊 Comparison with Similar Tools
 
-| | GenericAgent | OpenClaw | Claude Code |
-|---|---|---|---|
-| Codebase | ~3,300 lines | ~530,000 lines | Open-source (large) |
-| Deploy | `pip install` + API key | Multi-service orchestration | CLI + subscription |
-| Browser | Injects into real browser (keeps login state) | Sandboxed/headless | Via MCP plugins |
-| OS Control | Keyboard, mouse, vision, ADB | Multi-agent delegation | File + terminal |
-| Self-evolution | Grows SOPs & tools autonomously | Plugin ecosystem | Stateless per session |
-| Core shipped | 10 .py + 5 SOPs | Hundreds of modules | Rich CLI toolkit |
+| Feature | GenericAgent | OpenClaw | Claude Code |
+|------|:---:|:---:|:---:|
+| **Codebase** | ~3,300 lines | ~530,000 lines | Open-sourced (large) |
+| **Deployment** | `pip install` + API Key | Multi-service orchestration | CLI + subscription |
+| **Browser Control** | Real browser (session preserved) | Sandbox / headless browser | Via MCP plugin |
+| **OS Control** | Mouse/kbd, vision, ADB | Multi-agent delegation | File + terminal |
+| **Self-Evolution** | Autonomous skill growth | Plugin ecosystem | Stateless between sessions |
+| **Out of the Box** | 10 .py files + 5 skills | Hundreds of modules | Rich CLI toolset |
 
-## How It Works
+
+## 🧠 How It Works
+
+GenericAgent accomplishes complex tasks through **Layered Memory × Minimal Toolset × Autonomous Execution Loop**, continuously accumulating experience during execution.
+
+1️⃣ **Layered Memory System**
+> _Memory crystallizes throughout task execution, letting the agent build stable, efficient working patterns over time._
+
+- **L0 — Meta Rules**: Core behavioral rules and system constraints of the agent
+- **L2 — Global Facts**: Stable knowledge accumulated over long-term operation
+- **L3 — Task Skillss**: Workflows for completing specific task types
+
+2️⃣ **Autonomous Execution Loop**
+
+> _Perceive environment state → Task reasoning → Execute tools → Write experience to memory → Loop_
+
+The entire core loop is just **92 lines of code** (`agent_loop.py`).
+
+3️⃣ **Minimal Toolset**
+> _GenericAgent provides only **7 atomic tools**, forming the foundational capabilities for interacting with the outside world._
+
+| Tool | Function |
+|------|------|
+| `code_run` | Execute arbitrary code |
+| `file_read` | Read files |
+| `file_write` | Write files |
+| `file_patch` | Patch / modify files |
+| `web_scan` | Perceive web content |
+| `web_execute_js` | Control browser behavior |
+| `ask_user` | Human-in-the-loop confirmation |
+
+4️⃣ **Capability Extension Mechanism**
+> _Capable of dynamically creating new tools._
+
+Via `code_run`, GenericAgent can dynamically install Python packages, write new scripts, call external APIs, or control hardware at runtime — crystallizing temporary abilities into permanent tools.
+
+<div align="center">
+  <img src="assets/images/workflow.jpg" alt="GenericAgent Workflow" width="400"/>
+  <br><em>GenericAgent Workflow Diagram</em>
+</div>
+
+
+## ⭐ Support
+
+If this project helped you, please consider leaving a **Star!** 🙏
+
+You're also welcome to join our **GenericAgent Community Group** for discussion, feedback, and co-building 👏
+
+<div align="center">
+<img src="assets/images/wechat_group.jpg" width="280"/>
+</div>
+
+
+
+## 📄 License
+
+MIT License — see [LICENSE](LICENSE)
+
+
+---
+<a name="chinese"></a>
+## 🌟 项目简介
+
+**GenericAgent** 是一个极简、可自我进化的自主 Agent 框架。核心仅 **~3,300 行代码**，通过 **7 个原子工具 + 92 行 Agent Loop**，赋予任意 LLM 对本地计算机的系统级控制能力，覆盖浏览器、终端、文件系统、键鼠输入、屏幕视觉及移动设备。
+
+它的设计哲学是：**不预设技能，靠进化获得能力。**
+
+每解决一个新任务，GenericAgent 就将执行路径自动固化为 Skill，供后续直接调用。使用时间越长，沉淀的技能越多，形成一棵完全属于你、从 3,300 行种子代码生长出来的专属技能树。
+
+> **🤖 自举实证** — 本仓库的一切，从安装 Git、`git init` 到每一条 commit message，均由 GenericAgent 自主完成。作者全程未打开过一次终端。
+
+## 📋 核心特性
+- **自我进化**: 每次任务自动沉淀 Skill，能力随使用持续增长，形成专属技能树
+- **极简架构**: ~3,300 行核心代码，Agent Loop 仅 92 行，无复杂依赖，部署零负担
+- **强执行力**: 注入真实浏览器（保留登录态），7 个原子工具直接接管系统
+- **高兼容性**: 支持 Claude / Gemini / Kimi 等主流模型，跨平台运行 
+
+## 🧬 自我进化机制
+
+这是 GenericAgent 区别于其他 Agent 框架的根本所在。
 
 ```
-User instruction
-      ↓
-┌─────────────────────┐
-│  agent_loop.py (92L) │  ← Sense-Think-Act cycle
-│  "What do I know?    │
-│   What should I do?" │
-└────────┬────────────┘
-         ↓
-┌─────────────────────┐
-│  7 Atomic Tools      │  ← All capabilities derive from these
-│  code_run            │     Execute any Python/PowerShell
-│  file_read/write     │     Direct disk access
-│  file_patch          │     Surgical code edits
-│  web_scan            │     Read live web pages
-│  web_execute_js      │     Control browser DOM
-│  ask_user            │     Human-in-the-loop
-└────────┬────────────┘
-         ↓
-┌─────────────────────┐
-│  Memory System       │  ← Persistent across sessions
-│  L0: Meta-SOP        │     How to manage memory itself
-│  L2: Global Facts    │     Environment, credentials, paths
-│  L3: Task SOPs       │     Learned procedures (self-growing)
-└─────────────────────┘
+[遇到新任务]-->[自主摸索](安装依赖、编写脚本、调试验证)-->
+[将执行路径固化为 Skill]-->[写入记忆层]-->[下次同类任务直接调用]
 ```
 
-The agent starts with 7 primitive tools. Through `code_run`, it can install packages, write scripts, and interface with any hardware or API — effectively manufacturing new tools at runtime.
+| 你说的一句话 | Agent 第一次做了什么 | 之后每次 |
+|---|---|---|
+| *"监控股票并提醒我"* | 安装 mootdx → 构建选股流程 → 配置定时任务 → 保存 Skill | **一句话启动** |
+| *"用 Gmail 发这个文件"* | 配置 OAuth → 编写发送脚本 → 保存 Skill | **直接可用** |
 
-<details>
-<summary>What Ships in the Box</summary>
+用几周后，你的 Agent 实例将拥有一套任何人都没有的专属技能树，全部从 3,300 行种子代码中生长而来。
 
-**Core engine** (runs the agent):
-- `agent_loop.py` — Sense-Think-Act loop (92 lines)
-- `ga.py` — Tool definitions and execution
-- `llmcore.py` — LLM communication (multi-backend)
-- `agentmain.py` — Session orchestration
+<!-- | *"帮我读取微信消息"* | 安装依赖 → 逆向数据库 → 写读取脚本 → 保存 Skill | **一句话调用** | -->
 
-**Interface** (talk to the agent):
-- `stapp.py` — Streamlit web UI
-- `tgapp.py` — Telegram bot interface
-- `fsapp.py` — Feishu bot interface
-- `qqapp.py` — QQ bot interface
-- `wecomapp.py` — WeCom bot interface
-- `dingtalkapp.py` — DingTalk bot interface
-- `launch.pyw` — One-click launcher with floating window
+#### 🎯 实例展示
 
-**Infrastructure**:
-- `TMWebDriver.py` — Browser injection bridge (not Selenium — injects JS into your real browser via Tampermonkey)
-- `simphtml.py` — HTML→text cleaner for web perception
+| 🧋 外卖下单 | 📈 量化选股 |
+|:---:|:---:|
+| <img src="assets/demo/order_tea.gif" width="100%" alt="Order Tea"> | <img src="assets/demo/selectstock.gif" width="100%" alt="Stock Selection"> |
+| *"Order me a milk tea"* — 自动导航外卖 App，选品并完成结账 | *"Find GEM stocks with EXPMA golden cross, turnover > 5%"* — 量化条件筛股 |
+| 🌐 自主网页探索 | 💰 支出追踪 | 💬 批量消息 |
+| <img src="assets/demo/autonomous_explore.png" width="100%" alt="Web Exploration"> | <img src="assets/demo/alipay_expense.png" width="100%" alt="Alipay Expense"> | <img src="assets/demo/wechat_batch.png" width="100%" alt="WeChat Batch"> |
+| 自主浏览并定时汇总网页信息 | *"查找近 3 个月超 ¥2K 的支出"* — 通过 ADB 驱动支付宝 | 批量发送微信消息，完整驱动微信客户端 |
 
-**5 Core SOPs** (shipped, version-controlled):
-1. `memory_management_sop` — L0 constitution: how the agent manages its own memory
-2. `autonomous_operation_sop` — Self-directed task execution
-3. `scheduled_task_sop` — Cron-like recurring tasks
-4. `web_setup_sop` — Browser environment bootstrap
-5. `ljqCtrl_sop` — Desktop physical control (keyboard, mouse, DPI-aware)
 
-Everything else — Gmail integration, WeChat automation, vision APIs, game downloaders, stock analysis workflows — the agent builds and memorizes on its own through use.
 
-</details>
+## 📅 最新动态
+
+- **2026-03-:** [发布百万级 Skill 库](https://mp.weixin.qq.com/s/q2gQ7YvWoiAcwxzaiwpuiQ?scene=1&click_id=7)
+- **2026-03-08:** [发布以 GenericAgent 为核心的"政务龙虾" Dintal Claw](https://mp.weixin.qq.com/s/eiEhwo-j6S-WpLxgBnNxBg)
+- **2026-03-01:** [GenericAgent 被机器之心报道](https://mp.weixin.qq.com/s/uVWpTTF5I1yzAENV_qm7yg)
+- **2026-01-11:** GenericAgent V1.0 公开版本发布
 
 ---
 
-<a name="chinese"></a>
+## 🚀 快速开始
 
-# GenericAgent — 3,300 行代码，完整 OS 级自主控制
-
-一个极简自主 Agent 框架。用约 3,300 行 Python，让任意 LLM 获得对你 PC 的物理级控制能力——浏览器、终端、文件系统、键鼠、屏幕视觉、移动设备。
-
-不需要 Electron，不需要 Docker，不需要 Mac Mini，不需要 53 万行代码，不需要付费安装服务。
-
-## 用起来是什么样的
-
-```
-你："帮我读取微信消息"
-Agent：安装依赖 → 逆向数据库 → 写读取脚本 → 保存为 SOP
-下次：一句话直接调用，零配置。
-
-你："帮我监控股票并提醒"
-Agent：安装 mootdx → 构建选股工作流 → 设置定时任务 → 保存为 SOP
-下次：一句话启动。
-
-你："用 Gmail 发这个文件"
-Agent：配置 OAuth → 写发送脚本 → 保存为 SOP
-下次：直接能用。
-```
-
-**自举实证**：本仓库从安装 Git、`git init`、编写 README 到每一条 commit message，全程由 GenericAgent 完成——作者没有打开过一次终端。
-
-每个解决过的任务都会变成永久技能。用几周后，你的 Agent 实例会拥有一套独特的技能树——全部从 3,300 行种子代码中生长出来。
-
-## 自举哲学
-
-多数 Agent 框架以成品形态发布。GenericAgent 以**种子**形态发布。
-
-5 个核心 SOP 定义了 Agent 如何思考、记忆和行动。之后的一切能力，由 Agent 在使用中自主发现并记录：
-
-1. 你让它做一件新事
-2. 它自己摸索方法（安装依赖、写脚本、测试）
-3. 把流程保存为新 SOP
-4. 下次直接调用
-
-Agent 不只是执行——它**学习并记忆**。
-
-## 快速开始
+#### 方法一：标准安装
 
 ```bash
-# 1. 克隆
+# 1. 克隆仓库
 git clone https://github.com/lsdefine/GenericAgent.git
 cd GenericAgent
 
@@ -312,67 +325,59 @@ pip install streamlit pywebview
 
 # 3. 配置 API Key
 cp mykey_template.py mykey.py
-# 编辑 mykey.py 填入你的 LLM API Key
+# 编辑 mykey.py，填入你的 LLM API Key
 
 # 4. 启动
 python launch.pyw
 ```
 
-**同样可在 Android 上运行** — 已在 Termux 上测试通过，通过 `python agentmain.py`（CLI 前端）启动：
+#### 方法二：Windows 便携版（推荐新手）
+
+[下载便携版](http://kw.fudan.edu.cn/resources/PC-Agent-Portable.zip)（19MB，解压即用）
+
+完整引导流程见 [WELCOME_NEW_USER.md](WELCOME_NEW_USER.md)。
+
+#### 方法三：Android（Termux）
 
 ```bash
-# 在 Termux 中
 cd /sdcard/ga
 python agentmain.py
 ```
 
-启动后告诉 Agent："执行 web setup SOP 解锁浏览器工具"——剩下的它自己搞定。完整引导流程见 [WELCOME_NEW_USER.md](WELCOME_NEW_USER.md)。
+---
 
-## QQ Bot（可选）
+## 🤖 Bot 接口（可选）
 
-QQ 适配使用 `qq-botpy` 的 WebSocket 长连接，不需要公网 webhook。
+### QQ Bot
+
+使用 `qq-botpy` WebSocket 长连接，**无需公网 webhook**：
 
 ```bash
 pip install qq-botpy
 ```
 
-然后在 `mykey.py` 或 `mykey.json` 中补充：
+在 `mykey.py` 中补充：
 
 ```python
 qq_app_id = "YOUR_APP_ID"
 qq_app_secret = "YOUR_APP_SECRET"
-qq_allowed_users = ["YOUR_USER_OPENID"]  # 或 ['*'] 表示公开访问
+qq_allowed_users = ["YOUR_USER_OPENID"]  # 或 ['*'] 公开访问
 ```
-
-启动方式：
 
 ```bash
 python qqapp.py
-```
-
-或和桌面悬浮窗一起启动：
-
-```bash
+# 或与桌面悬浮窗一起启动
 python launch.pyw --qq
 ```
 
-补充说明：
-- 在 [QQ 开放平台](https://q.qq.com) 创建机器人并拿到 `AppID` / `AppSecret`
-- 沙箱调试时，先把自己的 QQ 号加入消息列表
-- 首次给机器人发消息后，用户 openid 会记录在 `temp/qqapp.log` 中，便于填入 `qq_allowed_users`
+> 在 [QQ 开放平台](https://q.qq.com) 创建机器人获取 AppID / AppSecret。首次消息后，用户 openid 记录于 `temp/qqapp.log`。
 
-## Feishu / WeCom / DingTalk（可选）
-
-Feishu：
+### 飞书（Lark）
 
 ```bash
 pip install lark-oapi
-python fsapp.py
-# 或
-python launch.pyw --feishu
+python fsapp.py          # 或 python launch.pyw --feishu
 ```
-
-配置项：
 
 ```python
 fs_app_id = "cli_xxx"
@@ -380,41 +385,33 @@ fs_app_secret = "xxx"
 fs_allowed_users = ["ou_xxx"]  # 或 ['*']
 ```
 
-当前仓库里的飞书能力：
-- 入站：文本、富文本 post、图片、文件、音频、media、交互卡片/分享卡片
-- 图片首轮会以真正的多模态图片输入发送给支持 OpenAI 兼容视觉的模型后端
-- 出站：流式进度卡片、图片回传、文件或 media 回传
+**入站支持**：文本、富文本 post、图片、文件、音频、media、交互卡片 / 分享卡片  
+**出站支持**：流式进度卡片、图片回传、文件 / media 回传  
+**视觉模型**：图片首轮以真正的多模态输入发送给兼容 OpenAI Vision 的后端
 
-详细配置流程见 `assets/SETUP_FEISHU.md`
+详细配置见 [assets/SETUP_FEISHU.md](assets/SETUP_FEISHU.md)
 
-WeCom(企业微信)：
+
+### 企业微信（WeCom）
 
 ```bash
 pip install wecom_aibot_sdk
-python wecomapp.py
-# 或
-python launch.pyw --wecom
+python wecomapp.py       # 或 python launch.pyw --wecom
 ```
-
-配置项：
 
 ```python
 wecom_bot_id = "your_bot_id"
 wecom_secret = "your_bot_secret"
-wecom_allowed_users = ["your_user_id"]  # 或 ['*']
+wecom_allowed_users = ["your_user_id"]
 wecom_welcome_message = "你好，我在线上。"
 ```
 
-DingTalk(钉钉)：
+### 钉钉（DingTalk）
 
 ```bash
 pip install dingtalk-stream
-python dingtalkapp.py
-# 或
-python launch.pyw --dingtalk
+python dingtalkapp.py    # 或 python launch.pyw --dingtalk
 ```
-
-配置项：
 
 ```python
 dingtalk_client_id = "your_app_key"
@@ -422,54 +419,82 @@ dingtalk_client_secret = "your_app_secret"
 dingtalk_allowed_users = ["your_staff_id"]  # 或 ['*']
 ```
 
-## 对比
 
-| | GenericAgent | OpenClaw | Claude Code |
-|---|---|---|---|
-| 代码量 | ~3,300 行 | ~530,000 行 | 已开源（体量大） |
-| 部署 | `pip install` + API key | 多服务编排 | CLI + 订阅 |
-| 浏览器 | 注入真实浏览器（保留登录态） | 沙箱/无头浏览器 | 通过 MCP 插件 |
-| OS 控制 | 键鼠、视觉、ADB | 多 Agent 委派 | 文件 + 终端 |
-| 自我进化 | 自主生长 SOP 和工具 | 插件生态 | 会话间无状态 |
-| 出厂配置 | 10 个 .py + 5 个 SOP | 数百模块 | 丰富 CLI 工具集 |
+### Telegram Bot
 
-## 工作原理
+```python
+# mykey.py
+tg_bot_token = 'YOUR_BOT_TOKEN'
+tg_allowed_users = [YOUR_USER_ID]
+```
 
-Agent 拥有 7 个原子工具：`code_run`（执行任意代码）、`file_read/write/patch`（文件操作）、`web_scan`（网页感知）、`web_execute_js`（浏览器控制）、`ask_user`（人机协作）。
+```bash
+python tgapp.py
+```
 
-通过 `code_run`，它可以安装任何包、编写任何脚本、对接任何硬件——相当于在运行时制造新工具。学到的流程保存为 SOP，下次直接调用。
 
-核心循环只有 92 行（`agent_loop.py`）：感知 → 思考 → 行动 → 记忆。
+## 📊 与同类产品对比
 
-<details>
-<summary>出厂清单</summary>
+| 特性 | GenericAgent | OpenClaw | Claude Code |
+|------|:---:|:---:|:---:|
+| **代码量** | ~3,300 行 | ~530,000 行 | 已开源（体量大） |
+| **部署方式** | `pip install` + API Key | 多服务编排 | CLI + 订阅 |
+| **浏览器控制** | 注入真实浏览器（保留登录态） | 沙箱 / 无头浏览器 | 通过 MCP 插件 |
+| **OS 控制** | 键鼠、视觉、ADB | 多 Agent 委派 | 文件 + 终端 |
+| **自我进化** | 自主生长 Skill 和工具 | 插件生态 | 会话间无状态 |
+| **出厂配置** | 10 个 .py + 5 个 Skills | 数百模块 | 丰富 CLI 工具集 |
 
-**核心引擎**：
-- `agent_loop.py` — 感知-思考-行动循环（92 行）
-- `ga.py` — 工具定义与执行
-- `llmcore.py` — LLM 通信（多后端）
-- `agentmain.py` — 会话编排
 
-**交互界面**：
-- `stapp.py` — Streamlit Web UI
-- `tgapp.py` — Telegram 机器人
-- `fsapp.py` — 飞书机器人
-- `qqapp.py` — QQ 机器人
-- `wecomapp.py` — 企业微信机器人
-- `dingtalkapp.py` — 钉钉机器人
-- `launch.pyw` — 一键启动 + 悬浮窗
+## 🧠 工作机制
 
-**基础设施**：
-- `TMWebDriver.py` — 浏览器注入桥接（非 Selenium，通过 Tampermonkey 注入真实浏览器）
-- `simphtml.py` — HTML→文本清洗
+GenericAgent 通过**分层记忆 × 最小工具集 × 自主执行循环**完成复杂任务，并在执行过程中持续积累经验。
 
-**5 个核心 SOP**（出厂自带，版本控制）：
-1. `memory_management_sop` — L0 宪法：Agent 如何管理自身记忆
-2. `autonomous_operation_sop` — 自主任务执行
-3. `scheduled_task_sop` — 定时任务
-4. `web_setup_sop` — 浏览器环境引导
-5. `ljqCtrl_sop` — 桌面物理控制（键鼠、DPI 感知）
+1️⃣ **分层记忆系统**
+> 记忆在任务执行过程中持续沉淀，使 Agent 逐步形成稳定且高效的工作方式
 
-其余一切——Gmail、微信自动化、视觉 API、游戏下载、股票分析——都是 Agent 在使用中自主构建并记忆的。
 
-</details>
+- **L0 — 元规则（Meta Rules）**：Agent 的基础行为规则和系统约束
+- **L2 — 全局事实（Global Facts）**：在长期运行过程中积累的稳定知识
+- **L3 — 任务 Skills（Standard Operating Procedure）**：完成特定任务的操作流程
+
+2️⃣ **自主执行循环**
+
+> 感知环境状态  →  任务推理  →  调用工具执行  →  经验写入记忆  →  循环
+
+整个核心循环仅 **92 行代码**（`agent_loop.py`）。
+
+3️⃣ **最小工具集**
+>GenericAgent 仅提供 **7 个原子工具**，构成与外部世界交互的基础能力
+
+| 工具 | 功能 |
+|------|------|
+| `code_run` | 执行任意代码 |
+| `file_read` | 读取文件 |
+| `file_write` | 写入文件 |
+| `file_patch` | 修改文件 |
+| `web_scan` | 感知网页内容 |
+| `web_execute_js` | 控制浏览器行为 |
+| `ask_user` | 人机协作确认 |
+
+4️⃣ **能力扩展机制**
+> 具备动态创建新的工具能力
+>
+通过 `code_run`，GenericAgent 可在运行时动态安装 Python 包、编写新脚本、调用外部 API 或控制硬件，将临时能力固化为永久工具。
+
+<div align="center">
+  <img src="assets/images/workflow.jpg" alt="GenericAgent 工作流程" width="400"/>
+  <br><em>GenericAgent 工作流程图</em>
+</div>
+
+
+## ⭐ 支持
+如果这个项目对您有帮助，欢迎点一个 **Star!** 🙏
+
+同时也欢迎加入我们的**GenericAgent体验交流群**，一起交流、反馈和共建 👏
+<div align="center">
+<img src="assets/images/wechat_group.jpg" width="280"/>
+</div>
+
+
+## 📄 许可
+MIT License — 详见 [LICENSE](LICENSE)
