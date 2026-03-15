@@ -471,13 +471,13 @@ def handle_message(data):
                     _send_generated_files(open_id, raw)
                     break
             if not user_tasks.get(open_id, {}).get("running", True):
-                send_message(open_id, "⏹️ 已停止")
+                send_message(open_id, "已停止")
         except Exception as e:
             import traceback
 
             print(f"[ERROR] run_agent 异常: {e}")
             traceback.print_exc()
-            send_message(open_id, f"❌ 错误: {str(e)}")
+            send_message(open_id, f"错误: {str(e)}")
         finally:
             user_tasks.pop(open_id, None)
 
@@ -489,20 +489,20 @@ def handle_command(open_id, cmd):
         if open_id in user_tasks:
             user_tasks[open_id]["running"] = False
         agent.abort()
-        send_message(open_id, "⏹️ 正在停止...")
+        send_message(open_id, "正在停止...")
     elif cmd == "/new":
         agent.abort()
         agent.history = []
-        send_message(open_id, "🆕 已清空当前共享上下文")
+        send_message(open_id, "已清空当前共享上下文")
     elif cmd == "/help":
-        send_message(open_id, "📖 命令列表:\n/stop - 停止当前任务\n/status - 查看状态\n/restore - 恢复上次对话历史\n/new - 开启新对话\n/help - 显示帮助")
+        send_message(open_id, "命令列表:\n/stop - 停止当前任务\n/status - 查看状态\n/restore - 恢复上次对话历史\n/new - 开启新对话\n/help - 显示帮助")
     elif cmd == "/status":
-        send_message(open_id, f"状态: {'🟢 空闲' if not agent.is_running else '🔴 运行中'}")
+        send_message(open_id, f"状态: {'空闲' if not agent.is_running else '运行中'}")
     elif cmd == "/restore":
         try:
             files = glob.glob("./temp/model_responses_*.txt")
             if not files:
-                return send_message(open_id, "❌ 没有找到历史记录")
+                return send_message(open_id, "没有找到历史记录")
             latest = max(files, key=os.path.getmtime)
             with open(latest, "r", encoding="utf-8") as f:
                 content = f.read()
@@ -515,11 +515,11 @@ def handle_command(open_id, cmd):
                     agent.history.extend([f"[USER]: {u}", f"[Agent] {r}"])
                     count += 1
             agent.abort()
-            send_message(open_id, f"✅ 已恢复 {count} 轮对话\n来源: {os.path.basename(latest)}\n(仅恢复上下文，请输入新问题继续)")
+            send_message(open_id, f"已恢复 {count} 轮对话\n来源: {os.path.basename(latest)}\n(仅恢复上下文，请输入新问题继续)")
         except Exception as e:
-            send_message(open_id, f"❌ 恢复失败: {e}")
+            send_message(open_id, f"恢复失败: {e}")
     else:
-        send_message(open_id, f"❓ 未知命令: {cmd}")
+        send_message(open_id, f"未知命令: {cmd}")
 
 
 def main():
