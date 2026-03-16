@@ -246,8 +246,7 @@ class GenericAgentHandler(BaseHandler):
     '''Generic Agent 工具库，包含多种工具的实现。工具函数自动加上了 do_ 前缀。实际工具名没有前缀。'''
     def __init__(self, parent, last_history=None, cwd='./'):
         self.parent = parent
-        self.key_info = ""
-        self.related_sop = ""
+        self.working = {}
         self.cwd = cwd;  self.current_turn = 0
         self.history_info = last_history if last_history else []
         self.code_stop_signal = []
@@ -408,11 +407,12 @@ class GenericAgentHandler(BaseHandler):
         '''
         key_info = args.get("key_info", "")
         related_sop = args.get("related_sop", "")
-        if "key_info" in args: self.key_info = key_info
-        if "related_sop" in args: self.related_sop = related_sop
+        if "key_info" in args: self.working['key_info'] = key_info
+        if "related_sop" in args: self.working['related_sop'] = related_sop
+        self.working['passed_sessions'] = 0
         yield f"[Info] Updated key_info and related_sop.\n"
-        yield f"key_info:\n{self.key_info}\n\n"
-        yield f"related_sop:\n{self.related_sop}\n\n"
+        yield f"key_info:\n{self.working.get('key_info', '')}\n\n"
+        yield f"related_sop:\n{self.working.get('related_sop', '')}\n\n"
         next_prompt = self._get_anchor_prompt()
         #next_prompt += '\n[SYSTEM TIPS] 此函数一般在任务开始或中间时调用，如果任务已成功完成应该是start_long_term_update用于结算长期记忆。\n'
         return StepOutcome({"status": "success"}, next_prompt=next_prompt)
@@ -477,14 +477,14 @@ class GenericAgentHandler(BaseHandler):
         h_str = "\n".join(self.history_info[-20:])
         prompt = f"\n### [WORKING MEMORY]\n<history>\n{h_str}\n</history>"
         prompt += f"\nCurrent turn: {self.current_turn}\n"
-        if self.key_info: prompt += f"\n<key_info>{self.key_info}</key_info>"
-        if self.related_sop: prompt += f"\n有不清晰的地方请再次读取{self.related_sop}"
+        if self.working.get('key_info'): prompt += f"\n<key_info>{self.working.get('key_info')}</key_info>"
+        if self.working.get('related_sop'): prompt += f"\n有不清晰的地方请再次读取{self.working.get('related_sop')}"
         try: print(prompt)
         except: pass
         return prompt
 
     def next_prompt_patcher(self, next_prompt, outcome, turn):
-        if turn % 35 == 0 and 'plan' not in str(self.related_sop):
+        if turn % 35 == 0 and 'plan' not in str(self.working.get('related_sop')):
             next_prompt += f"\n\n[DANGER] 已连续执行第 {turn} 轮。你必须总结情况进行ask_user，不允许继续重试。"
         elif turn % 7 == 0:
             next_prompt += f"\n\n[DANGER] 已连续执行第 {turn} 轮。禁止无效重试。若无有效进展，必须切换策略：1. 探测物理边界 2. 请求用户协助。如有需要，可调用 update_working_checkpoint 保存关键上下文。"

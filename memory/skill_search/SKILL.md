@@ -1,116 +1,64 @@
-# Skill Search — API 客户端
+# Skill Search — 105K 技能卡检索
 
-> 从 10 万+ 技能卡中智能检索最适合当前环境的 skill。
+> 从 105K+ 技能卡中语义搜索最匹配的 skill。零依赖，内置默认 API 地址，开箱即用。
 
-## 架构
-
-```
-┌─────────────┐     HTTPS/JSON     ┌──────────────────┐
-│  客户端 CLI  │ ──────────────────▶ │  Skill Search    │
-│  (本项目)    │ ◀────────────────── │  API Server      │
-└─────────────┘                     └──────────────────┘
-  • 环境检测                          • 105K+ 技能卡索引
-  • 结果格式化                        • 四层漏斗检索引擎
-  • 零数据依赖                        • 环境过滤 → 安全标注
-                                      → 语义匹配 → 质量排序
-```
-
-## 快速开始
-
-```bash
-# 设置 API 地址
-export SKILL_SEARCH_API="https://your-server.com/api"
-export SKILL_SEARCH_KEY="your-api-key"  # 可选
-
-# 搜索
-python -m skill_search "python testing"
-
-# 限定类别
-python -m skill_search "docker deploy" --category devops
-
-# JSON 输出（适合程序集成）
-python -m skill_search "git workflow" --json
-
-# 查看环境信息
-python -m skill_search --env
-
-# 查看索引统计
-python -m skill_search --stats
-```
-
-## 编程接口
+## 最简调用
 
 ```python
-from skill_search import search, detect_environment
+import sys; sys.path.append('../memory/skill_search')
+from skill_search import search
 
-env = detect_environment()
-results = search(query="python testing", env=env, top_k=5)
-
+results = search("python send email")  # ⚠️ 必须用英文查询，中文匹配效果极差
 for r in results:
-    print(f"{r.skill.name} (score: {r.final_score:.2f})")
-    print(f"  {r.skill.one_line_summary}")
+    s = r.skill
+    print(f"[{r.final_score:.2f}] {s.name} — {s.one_line_summary}")
+    print(f"  key: {s.key}  category: {s.category}  tags: {s.tags[:3]}")
 ```
 
-## 文件结构
+## API 签名
 
-```
-skill_search/
-├── SKILL.md          # 本文档
-└── skill_search/     # Python 包
-    ├── __init__.py   # 公开 API
-    ├── __main__.py   # CLI 入口
-    ├── engine.py     # HTTP 客户端（替代本地检索）
-    ├── index.py      # SkillIndex 数据模型
-    ├── env_detect.py # 本地环境检测
-    └── formatter.py  # 结果格式化输出
+```python
+search(query, env=None, category=None, top_k=10) -> list[SearchResult]
+#  env: 自动检测，一般不传
+#  category: 可选过滤，如 "devops"
+#  top_k: 返回数量，默认10
 ```
 
-## 环境变量
+## 返回结构
 
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| `SKILL_SEARCH_API` | API 服务地址 | `https://skill-search.example.com/api` |
-| `SKILL_SEARCH_KEY` | API 密钥（可选） | 无 |
+```
+SearchResult
+  .final_score    float     综合评分 (0~1)
+  .relevance      float     语义相关度
+  .quality        float     质量分
+  .match_reasons  list[str] 匹配原因
+  .warnings       list[str] 警告
+  .skill          SkillIndex ↓
 
-## API 协议
-
-### POST /search
-
-请求:
-```json
-{
-  "query": "python testing",
-  "env": { "os": "windows", "shell": "powershell", ... },
-  "category": "coding",
-  "top_k": 10
-}
+SkillIndex (常用字段)
+  .key              str       唯一标识/路径
+  .name             str       名称
+  .one_line_summary str       一句话摘要
+  .description      str       详细描述
+  .category         str       类别
+  .tags             list[str] 标签
+  .form             str       形式(sop/script/...)
+  .autonomous_safe  bool      是否自主安全
 ```
 
-响应:
-```json
-{
-  "results": [
-    {
-      "skill": { "key": "org/repo/skill", "name": "...", ... },
-      "relevance": 0.85,
-      "quality": 7.2,
-      "final_score": 0.78,
-      "match_reasons": ["完整短语匹配", "标签匹配: python"],
-      "warnings": []
-    }
-  ]
-}
+## CLI
+
+```bash
+python -m skill_search "python testing"
+python -m skill_search "docker deployment" --category devops --top 5
+python -m skill_search "git" --json
+python -m skill_search --stats
+python -m skill_search --env
 ```
 
-### POST /stats
+## 配置
 
-请求: `{}` 或 `{"env": {...}}`
-
-响应:
-```json
-{
-  "total": 105586,
-  "safe_count": 98234,
-  "categories": { "coding": 45000, "devops": 12000, ... }
-}
-```
+| 项 | 默认值 | 说明 |
+|---|---|---|
+| API地址 | `http://www.fudankw.cn:58787` | 环境变量 `SKILL_SEARCH_API` 可覆盖 |
+| API密钥 | 无(可选) | 环境变量 `SKILL_SEARCH_KEY` |

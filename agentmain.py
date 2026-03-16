@@ -38,8 +38,7 @@ def get_system_prompt():
 class GeneraticAgent:
     def __init__(self):
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        temp_dir = os.path.join(script_dir, 'temp')
-        if not os.path.exists(temp_dir): os.makedirs(temp_dir)
+        os.makedirs(os.path.join(script_dir, 'temp'), exist_ok=True)
         from llmcore import mykeys
         llm_sessions = []
         for k, cfg in mykeys.items():
@@ -99,10 +98,11 @@ class GeneraticAgent:
             sys_prompt = get_system_prompt()
             script_dir = os.path.dirname(os.path.abspath(__file__))
             handler = GenericAgentHandler(None, self.history, os.path.join(script_dir, 'temp'))
-            if self.handler and self.handler.key_info: 
-                handler.key_info = self.handler.key_info
-                if '清除工作记忆' not in handler.key_info:
-                    handler.key_info += '\n[SYSTEM] 若开始新任务，先更新或清除工作记忆\n'
+            if self.handler and 'key_info' in self.handler.working: 
+                ki = re.sub(r'\n\[SYSTEM\] 此为.*?工作记忆[。\n]*', '', self.handler.working['key_info'])  # 去旧
+                handler.working['key_info'] = ki
+                handler.working['passed_sessions'] = ps = self.handler.working.get('passed_sessions', 0) + 1
+                if ps > 0: handler.working['key_info'] += f'\n[SYSTEM] 此为 {ps} 个对话前设置的工作记忆。若已在新任务，先更新或清除工作记忆\n'
             self.handler = handler
             self.llmclient.backend = self.llmclient.backends[self.llm_no]
             user_input = raw_query
@@ -154,7 +154,6 @@ if __name__ == '__main__':
     threading.Thread(target=agent.run, daemon=True).start()
 
     if args.task:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
         d = os.path.join(script_dir, f'temp/{args.task}'); rp = os.path.join(d, 'reply.txt'); nround = ''
         with open(os.path.join(d, 'input.txt'), encoding='utf-8') as f: raw = f.read()
         while True:
@@ -193,8 +192,9 @@ if __name__ == '__main__':
             except Exception as e:
                 if once: raise
                 print(f'[Reflect] drain error: {e}'); result = f'[ERROR] {e}'
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            open(os.path.join(script_dir, './temp/reflect.log'), 'a', encoding='utf-8').write(f'[{datetime.now():%m-%d %H:%M}]\n{result}\n\n')
+            log_dir = os.path.join(script_dir, 'temp/reflect_logs'); os.makedirs(log_dir, exist_ok=True)
+            script_name = os.path.splitext(os.path.basename(args.reflect))[0]
+            open(os.path.join(log_dir, f'{script_name}_{datetime.now():%Y-%m-%d}.log'), 'a', encoding='utf-8').write(f'[{datetime.now():%m-%d %H:%M}]\n{result}\n\n')
             if on_done:
                 try: on_done(result)
                 except Exception as e: print(f'[Reflect] on_done error: {e}')

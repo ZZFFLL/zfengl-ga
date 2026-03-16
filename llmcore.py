@@ -413,23 +413,28 @@ class ToolClient:
         self.total_cd_tokens = 0
 
     def chat(self, messages, tools=None):
-        if self._should_use_structured_messages(messages):
-            return (yield from self._chat_structured(messages, tools))
-        full_prompt = self._build_protocol_prompt(messages, tools)      
-        print("Full prompt length:", len(full_prompt), 'chars')
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        with open(os.path.join(script_dir, f'./temp/model_responses_{os.getpid()}.txt'), 'a', encoding='utf-8', errors="replace") as f:
-            f.write(f"=== Prompt === {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n{full_prompt}\n")
-        gen = self.backend.ask(full_prompt, stream=True)
+        log_path = os.path.join(script_dir, f'./temp/model_responses_{os.getpid()}.txt')
+        if self._should_use_structured_messages(messages):
+            backend_messages = self._build_backend_messages(messages, tools)
+            print("Structured prompt length:", sum(self._estimate_content_len(m.get("content")) for m in backend_messages), 'chars')
+            prompt_log = self._serialize_messages_for_log(backend_messages)
+            gen = self.backend.raw_ask(backend_messages)
+        else:
+            full_prompt = self._build_protocol_prompt(messages, tools)
+            print("Full prompt length:", len(full_prompt), 'chars')
+            prompt_log = full_prompt
+            gen = self.backend.ask(full_prompt, stream=True)
+        with open(log_path, 'a', encoding='utf-8', errors="replace") as f:
+            f.write(f"=== Prompt === {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n{prompt_log}\n")
         raw_text = ''; summarytag = '[NextWillSummary]'
         for chunk in gen:
-            raw_text += chunk; 
+            raw_text += chunk
             if chunk != summarytag: yield chunk
         print('Complete response received.')
         if raw_text.endswith(summarytag):
             self.last_tools = ''; raw_text = raw_text[:-len(summarytag)]
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        with open(os.path.join(script_dir, f'./temp/model_responses_{os.getpid()}.txt'), 'a', encoding='utf-8', errors="replace") as f:
+        with open(log_path, 'a', encoding='utf-8', errors="replace") as f:
             f.write(f"=== Response === {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n{raw_text}\n\n")
         return self._parse_mixed_response(raw_text)
 
@@ -505,24 +510,6 @@ class ToolClient:
             else:
                 logged.append(msg)
         return json.dumps(logged, ensure_ascii=False, indent=2)
-
-    def _chat_structured(self, messages, tools):
-        backend_messages = self._build_backend_messages(messages, tools)
-        print("Structured prompt length:", sum(self._estimate_content_len(m.get("content")) for m in backend_messages), 'chars')
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        with open(os.path.join(script_dir, f'./temp/model_responses_{os.getpid()}.txt'), 'a', encoding='utf-8', errors="replace") as f:
-            f.write(f"=== Prompt === {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n{self._serialize_messages_for_log(backend_messages)}\n")
-        gen = self.backend.raw_ask(backend_messages)
-        raw_text = ''; summarytag = '[NextWillSummary]'
-        for chunk in gen:
-            raw_text += chunk
-            if chunk != summarytag: yield chunk
-        print('Complete response received.')
-        if raw_text.endswith(summarytag):
-            self.last_tools = ''; raw_text = raw_text[:-len(summarytag)]
-        with open(os.path.join(script_dir, f'./temp/model_responses_{os.getpid()}.txt'), 'a', encoding='utf-8', errors="replace") as f:
-            f.write(f"=== Response === {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n{raw_text}\n\n")
-        return self._parse_mixed_response(raw_text)
 
     def _build_protocol_prompt(self, messages, tools):
         system_content = next((m['content'] for m in messages if m['role'].lower() == 'system'), "")
