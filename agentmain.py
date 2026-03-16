@@ -102,7 +102,7 @@ class GeneraticAgent:
                 ki = re.sub(r'\n\[SYSTEM\] 此为.*?工作记忆[。\n]*', '', self.handler.working['key_info'])  # 去旧
                 handler.working['key_info'] = ki
                 handler.working['passed_sessions'] = ps = self.handler.working.get('passed_sessions', 0) + 1
-                if ps > 0: handler.working['key_info'] += f'\n[SYSTEM] 此为 {ps} 个对话前设置的工作记忆。若已在新任务，先更新或清除工作记忆\n'
+                if ps > 0: handler.working['key_info'] += f'\n[SYSTEM] 此为 {ps} 个对话前设置的key_info，若已在新任务，先更新或清除工作记忆。\n'
             self.handler = handler
             self.llmclient.backend = self.llmclient.backends[self.llm_no]
             user_input = raw_query
