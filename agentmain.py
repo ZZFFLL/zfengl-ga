@@ -38,23 +38,16 @@ def get_system_prompt():
 class GeneraticAgent:
     def __init__(self):
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        temp_dir = os.path.join(script_dir, 'temp')
-        if not os.path.exists(temp_dir): os.makedirs(temp_dir)
+        os.makedirs(os.path.join(script_dir, 'temp'), exist_ok=True)
         from llmcore import mykeys
         llm_sessions = []
         for k, cfg in mykeys.items():
             if not any(x in k for x in ['api', 'config', 'cookie']): continue
             try:
-                if 'claude' in k: llm_sessions += [ClaudeSession(api_key=cfg['apikey'], api_base=cfg['apibase'], model=cfg['model'])]
-                if 'oai' in k: llm_sessions += [LLMSession(
-                    api_key=cfg['apikey'], api_base=cfg['apibase'], model=cfg['model'], proxy=cfg.get('proxy'),
-                    api_mode=cfg.get('api_mode', 'chat_completions'),
-                    max_retries=cfg.get('max_retries', 2),
-                    connect_timeout=cfg.get('connect_timeout', 10),
-                    read_timeout=cfg.get('read_timeout', 120),
-                )]
-                if 'xai' in k: llm_sessions += [XaiSession(cfg, mykeys.get('proxy', ''))]
-                if 'sider' in k: llm_sessions += [SiderLLMSession(cfg, default_model=x) for x in \
+                if 'claude' in k: llm_sessions += [ClaudeSession(cfg=cfg)]
+                if 'oai' in k: llm_sessions += [LLMSession(cfg=cfg)]
+                if 'xai' in k: llm_sessions += [XaiSession(cfg=cfg)]
+                if 'sider' in k: llm_sessions += [SiderLLMSession(cfg={'apikey': cfg, 'model': x}) for x in \
                                     ["gemini-3.0-flash", "gpt-5.4"]]
             except: pass
         if len(llm_sessions) > 0: self.llmclient = ToolClient(llm_sessions, auto_save_tokens=True)
@@ -63,10 +56,8 @@ class GeneraticAgent:
         self.history = []               
         self.task_queue = queue.Queue() 
         self.is_running, self.stop_sig = False, False
-        self.llm_no = 0
-        self.inc_out = False
-        self.handler = None
-        self.verbose = True
+        self.llm_no = 0;  self.inc_out = False
+        self.handler = None; self.verbose = True
 
     def next_llm(self, n=-1):
         self.llm_no = ((self.llm_no + 1) if n < 0 else n) % len(self.llmclient.backends)
@@ -80,8 +71,7 @@ class GeneraticAgent:
         print('Abort current task...')
         if not self.is_running: return
         self.stop_sig = True
-        if self.handler is not None: 
-            self.handler.code_stop_signal.append(1)
+        if self.handler is not None: self.handler.code_stop_signal.append(1)
             
     def put_task(self, query, source="user", images=None):
         display_queue = queue.Queue()
@@ -99,10 +89,11 @@ class GeneraticAgent:
             sys_prompt = get_system_prompt()
             script_dir = os.path.dirname(os.path.abspath(__file__))
             handler = GenericAgentHandler(None, self.history, os.path.join(script_dir, 'temp'))
-            if self.handler and self.handler.key_info: 
-                handler.key_info = self.handler.key_info
-                if '清除工作记忆' not in handler.key_info:
-                    handler.key_info += '\n[SYSTEM] 若开始新任务，先更新或清除工作记忆\n'
+            if self.handler and 'key_info' in self.handler.working: 
+                ki = re.sub(r'\n\[SYSTEM\] 此为.*?工作记忆[。\n]*', '', self.handler.working['key_info'])  # 去旧
+                handler.working['key_info'] = ki
+                handler.working['passed_sessions'] = ps = self.handler.working.get('passed_sessions', 0) + 1
+                if ps > 0: handler.working['key_info'] += f'\n[SYSTEM] 此为 {ps} 个对话前设置的key_info，若已在新任务，先更新或清除工作记忆。\n'
             self.handler = handler
             self.llmclient.backend = self.llmclient.backends[self.llm_no]
             user_input = raw_query
@@ -154,7 +145,6 @@ if __name__ == '__main__':
     threading.Thread(target=agent.run, daemon=True).start()
 
     if args.task:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
         d = os.path.join(script_dir, f'temp/{args.task}'); rp = os.path.join(d, 'reply.txt'); nround = ''
         with open(os.path.join(d, 'input.txt'), encoding='utf-8') as f: raw = f.read()
         while True:
@@ -189,11 +179,13 @@ if __name__ == '__main__':
             try:
                 while 'done' not in (item := dq.get(timeout=120)): pass
                 result = item['done']
+                print(result)
             except Exception as e:
                 if once: raise
                 print(f'[Reflect] drain error: {e}'); result = f'[ERROR] {e}'
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            open(os.path.join(script_dir, './temp/reflect.log'), 'a', encoding='utf-8').write(f'[{datetime.now():%m-%d %H:%M}]\n{result}\n\n')
+            log_dir = os.path.join(script_dir, 'temp/reflect_logs'); os.makedirs(log_dir, exist_ok=True)
+            script_name = os.path.splitext(os.path.basename(args.reflect))[0]
+            open(os.path.join(log_dir, f'{script_name}_{datetime.now():%Y-%m-%d}.log'), 'a', encoding='utf-8').write(f'[{datetime.now():%m-%d %H:%M}]\n{result}\n\n')
             if on_done:
                 try: on_done(result)
                 except Exception as e: print(f'[Reflect] on_done error: {e}')

@@ -60,6 +60,11 @@ memory/*
 # Plan SOP
 !memory/plan_sop.md
 
+# Skill Search SOP
+!memory/skill_search/
+!memory/skill_search/**
+memory/skill_search/**/__pycache__/
+
 # ADB UI tool
 !memory/adb_ui.py
 

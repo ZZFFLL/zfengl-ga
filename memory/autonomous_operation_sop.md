@@ -15,7 +15,7 @@
 ## 执行
 
 **启动**：
-- update_working_checkpoint: `自主行动｜报告→./autonomous_reports/R{XX}_简短描述.md｜≤30回合｜收尾：重读sop，写报告+更新history+标记TODO`
+- update_working_checkpoint: `自主行动｜报告→./autonomous_reports/R{XX}_简短描述.md｜≤30回合｜收尾：重读sop，写报告+更新history+标记TODO | 报告严禁放错位置`
 - 读 `./autonomous_reports/history.txt` 推断下一编号RXX + 了解历史避免重复
 
 **执行**：

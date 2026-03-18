@@ -11,7 +11,7 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_openInTab
 // @grant        unsafeWindow
-// @connect      localhost
+// @connect      127.0.0.1
 // @run-at       document-start
 // ==/UserScript==
 
@@ -26,13 +26,13 @@
         return;
     }
 
-    const wsUrl = 'ws://localhost:18765';
-    const httpUrl = 'http://localhost:18766/';
+    const wsUrl = 'ws://127.0.0.1:18765';
+    const httpUrl = 'http://127.0.0.1:18766/';
     
     function isWebSocketServerAlive(callback) {
         GM_xmlhttpRequest({
             method: 'GET',
-            url: 'http://localhost:18765/',
+            url: 'http://127.0.0.1:18765/',
             onload: () => callback(true),
             onerror: () => callback(false)
         });
