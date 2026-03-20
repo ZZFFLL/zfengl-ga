@@ -79,8 +79,7 @@ def agent_runner_loop(client, system_prompt, user_input, handler, tools_schema, 
             yield '`````\n'
             outcome = yield from gen
             yield '`````\n'
-        else:
-            outcome = exhaust(gen)
+        else: outcome = exhaust(gen)
 
         if outcome.next_prompt is None: return {'result': 'CURRENT_TASK_DONE', 'data': outcome.data}
         if outcome.should_exit: return {'result': 'EXITED', 'data': outcome.data}

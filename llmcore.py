@@ -73,8 +73,9 @@ class ClaudeSession:
         self.default_model = cfg.get('model', 'claude-opus')
         self.context_win = cfg.get('context_win', 12000)
         self.raw_msgs, self.lock = [], threading.Lock()
+        self.prompt_cache = cfg.get('prompt_cache', False)
     def _trim_messages(self, messages):
-        compress_history_tags(messages)
+        if not self.prompt_cache: compress_history_tags(messages)
         total = sum(len(m['prompt']) for m in messages)
         if total <= self.context_win * 4: return messages
         target, current, result = self.context_win * 4 * 0.9, 0, []
@@ -270,7 +271,7 @@ class LLMSession:
                 return
 
     def make_messages(self, raw_list, omit_images=True):
-        compress_history_tags(raw_list)
+        if not self.prompt_cache: compress_history_tags(raw_list)
         messages = []
         for i, msg in enumerate(raw_list):
             prompt = msg['prompt']
