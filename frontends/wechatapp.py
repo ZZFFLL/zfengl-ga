@@ -123,10 +123,23 @@ agent.verbose = False
 _TAG_PATS = [r'<' + t + r'>.*?</' + t + r'>' for t in ('thinking', 'summary', 'tool_use')]
 _TAG_PATS.append(r'<file_content>.*?</file_content>')
 
+def _strip_md(t):
+    t = re.sub(r'```[\s\S]*?```', lambda m: m.group().strip('`').split('\n',1)[-1] if '\n' in m.group() else m.group().strip('`'), t)
+    t = re.sub(r'`([^`]+)`', r'\1', t)
+    t = re.sub(r'!\[.*?\]\(.*?\)', '', t)
+    t = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', t)
+    t = re.sub(r'^#{1,6}\s+', '', t, flags=re.M)
+    t = re.sub(r'(\*{1,3}|_{1,3})(.*?)\1', r'\2', t)
+    t = re.sub(r'^\s*[-*+]\s+', '• ', t, flags=re.M)
+    t = re.sub(r'^\s*\d+\.\s+', '', t, flags=re.M)
+    t = re.sub(r'^\s*>\s?', '', t, flags=re.M)
+    t = re.sub(r'^---+$', '', t, flags=re.M)
+    return re.sub(r'\n{3,}', '\n\n', t).strip()
+
 def _clean(t):
     for p in _TAG_PATS:
         t = re.sub(p, '', t, flags=re.DOTALL)
-    return re.sub(r'\n{3,}', '\n\n', t).strip() or '...'
+    return re.sub(r'\n{3,}', '\n\n', _strip_md(t)).strip() or '...'
 
 def _split(text, limit=1800):
     """Split text into chunks respecting line boundaries."""
