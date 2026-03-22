@@ -243,7 +243,7 @@ qq_allowed_users = ["YOUR_USER_OPENID"]  # 或 ['*'] 公开访问
 
 ```bash
 pip install qq-botpy
-python qqapp.py
+python frontends/qqapp.py
 # 或与桌面窗口一起启动
 python launch.pyw --qq
 ```
@@ -252,7 +252,7 @@ python launch.pyw --qq
 - 飞书: [assets/SETUP_FEISHU.md](assets/SETUP_FEISHU.md)
 - 企业微信: `python launch.pyw --wecom`
 - 钉钉: `python launch.pyw --dingtalk`
-- Telegram: `python tgapp.py`
+- Telegram: `python frontends/tgapp.py`
 
 ---
 
