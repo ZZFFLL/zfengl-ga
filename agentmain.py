@@ -55,7 +55,7 @@ class GeneraticAgent:
         self.lock = threading.Lock()
         self.history = []               
         self.task_queue = queue.Queue() 
-        self.is_running, self.stop_sig = False, False
+        self.is_running = False; self.stop_sig = False
         self.llm_no = 0;  self.inc_out = False
         self.handler = None; self.verbose = True
         self.llmclient = self.llmclients[self.llm_no]
@@ -141,7 +141,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     agent = GeneraticAgent()
-    agent.llm_no = args.llm_no
+    agent.next_llm(args.llm_no)
     agent.verbose = False
     threading.Thread(target=agent.run, daemon=True).start()
 

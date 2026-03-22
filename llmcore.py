@@ -234,7 +234,7 @@ class LLMSession:
                                 streamed_any = True
                                 yield delta; buffer += delta
                             if finish_reason: break
-                        if '</tool_use>' in buffer[-30:]: break
+                        #if '</tool_use>' in buffer[-30:]: break
                     return
             except requests.HTTPError as e:
                 resp = getattr(e, "response", None)
@@ -331,7 +331,7 @@ class LLMSession:
   
 class GeminiSession:
     def __init__(self, cfg):
-        self.api_key = cfg.get('apikey') or google_api_key
+        self.api_key = cfg.get('apikey')
         if not self.api_key: raise ValueError("google_api_key 未配置或为空，请在 mykey.py 中设置")
         self.default_model = cfg.get('model', 'gemini-2.0-flash-001')
         p = cfg.get('proxy', proxy)
