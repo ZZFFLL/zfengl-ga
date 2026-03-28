@@ -20,7 +20,7 @@ def compress_history_tags(messages, keep_recent=10, max_len=800):
     compress_history_tags._cd = getattr(compress_history_tags, '_cd', 0) + 1
     if compress_history_tags._cd % 5 != 0: return messages
     _before = sum(len(json.dumps(m, ensure_ascii=False)) for m in messages)
-    _pats = {tag: re.compile(rf'(<{tag}>)([\s\S]*?)(</{tag}>)') for tag in ('thinking', 'tool_use', 'tool_result')}
+    _pats = {tag: re.compile(rf'(<{tag}>)([\s\S]*?)(</{tag}>)') for tag in ('thinking', 'think', 'tool_use', 'tool_result')}
     def _trunc(text):
         for pat in _pats.values(): text = pat.sub(lambda m: m.group(1) + m.group(2)[:max_len] + '...' + m.group(3) if len(m.group(2)) > max_len else m.group(0), text)
         return text
@@ -225,7 +225,9 @@ def _openai_stream(api_base, api_key, messages, model, api_mode='chat_completion
                    temperature=0.5, max_tokens=None, tools=None, reasoning_effort=None,
                    max_retries=0, connect_timeout=10, read_timeout=300, proxies=None):
     """Shared OpenAI-compatible streaming request with retry. Yields text chunks, returns list[content_block]."""
-    if 'kimi' in model.lower() or 'moonshot' in model.lower(): temperature = 1.0
+    ml = model.lower()
+    if 'kimi' in ml or 'moonshot' in ml: temperature = 1.0
+    elif 'minimax' in ml: temperature = max(0.01, min(temperature, 1.0))  # MiniMax requires temp in (0, 1]
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json", "Accept": "text/event-stream"}
     if api_mode == "responses":
         url = auto_make_url(api_base, "responses")
@@ -345,7 +347,9 @@ class ClaudeSession:
         return result[::-1] or raw_msgs[-2:]
     def raw_ask(self, messages, model=None, temperature=0.5, max_tokens=6144):
         model = model or self.default_model
-        if 'kimi' in model.lower() or 'moonshot' in model.lower(): temperature = 1.0  # kimi/moonshot only accepts temp 1.0
+        ml = model.lower()
+        if 'kimi' in ml or 'moonshot' in ml: temperature = 1.0  # kimi/moonshot only accepts temp 1.0
+        elif 'minimax' in ml: temperature = max(0.01, min(temperature, 1.0))  # MiniMax requires temp in (0, 1]
         headers = {"x-api-key": self.api_key, "Content-Type": "application/json", "anthropic-version": "2023-06-01", "anthropic-beta": "prompt-caching-2024-07-31"}
         payload = {"model": model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens, "stream": True}
         if self.system: payload["system"] = [{"type": "text", "text": self.system, "cache_control": {"type": "persistent"}}]
@@ -517,7 +521,7 @@ class NativeOAISession:
                 tool_calls = [MockToolCall(b["name"], b.get("input", {}), id=b.get("id", "")) for b in raw if b.get("type") == "tool_use"]
                 content = content[:idx].strip()
             except: pass
-        think_pattern = r"<thinking>(.*?)</thinking>"; thinking = ''
+        think_pattern = r"<think(?:ing)?>(.*?)</think(?:ing)?>"; thinking = ''
         think_match = re.search(think_pattern, content, re.DOTALL)
         if think_match:
             thinking = think_match.group(1).strip()
@@ -733,7 +737,7 @@ class ToolClient:
 
     def _parse_mixed_response(self, text):
         remaining_text = text; thinking = ''
-        think_pattern = r"<thinking>(.*?)</thinking>"
+        think_pattern = r"<think(?:ing)?>(.*?)</think(?:ing)?>"
         think_match = re.search(think_pattern, text, re.DOTALL)
         
         if think_match:
@@ -875,10 +879,10 @@ class NativeToolClient:
         if resp:
             _write_llm_log('Response', resp.raw)
             text = resp.content
-            think_match = re.search(r'<thinking>(.*?)</thinking>', text, re.DOTALL)
+            think_match = re.search(r'<think(?:ing)?>(.*?)</think(?:ing)?>', text, re.DOTALL)
             if think_match:
                 resp.thinking = think_match.group(1).strip()
-                text = re.sub(r'<thinking>.*?</thinking>', '', text, flags=re.DOTALL)
+                text = re.sub(r'<think(?:ing)?>.*?</think(?:ing)?>', '', text, flags=re.DOTALL)
             resp.content = text.strip()
         if resp and hasattr(resp, 'tool_calls') and resp.tool_calls and isinstance(self.backend, NativeClaudeSession):
             self._pending_tool_ids = [tc.id for tc in resp.tool_calls]
