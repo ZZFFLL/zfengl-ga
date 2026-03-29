@@ -801,21 +801,28 @@ def tryparse(json_str):
 
 
 class MixinSession:
-    """Multi-session fallback with exponential backoff on Error: detection."""
+    """Multi-session fallback with spring-back to primary."""
     def __init__(self, all_sessions, cfg):
         self._retries, self._base_delay = cfg.get('max_retries', 3), cfg.get('base_delay', 1.5)
+        self._spring_sec = cfg.get('spring_back', 300)
         self._sessions = [all_sessions[i].backend for i in cfg.get('llm_nos', [])]
         assert 'Native' not in self._sessions[0].__class__.__name__
         assert len(set(type(s) for s in self._sessions)) == 1, f'MixinSession: all sessions must be same type, got {[type(s).__name__ for s in self._sessions]}'
         self._orig_raw_asks = [s.raw_ask for s in self._sessions]
         self._sessions[0].raw_ask = self._raw_ask
         self.default_model = getattr(self._sessions[0], 'default_model', None)
+        self._cur_idx, self._switched_at = 0, 0.0
     def __getattr__(self, name): return getattr(self._sessions[0], name)
     @property
     def primary(self): return self._sessions[0]
+    def _pick(self):
+        if self._cur_idx and time.time() - self._switched_at > self._spring_sec: self._cur_idx = 0
+        return self._cur_idx
     def _raw_ask(self, *args, **kwargs):
+        base, n = self._pick(), len(self._sessions)
         for attempt in range(self._retries + 1):
-            gen = self._orig_raw_asks[attempt % len(self._sessions)](*args, **kwargs)
+            idx = (base + attempt) % n
+            gen = self._orig_raw_asks[idx](*args, **kwargs)
             last_chunk, return_val, yielded = None, [], False
             try:
                 while True:
@@ -823,11 +830,19 @@ class MixinSession:
                     if not yielded and isinstance(chunk, str) and chunk.startswith('Error:'): continue
                     yield chunk; yielded = True
             except StopIteration as e: return_val = e.value or []
-            if isinstance(last_chunk, str) and last_chunk.startswith('Error:') and attempt < self._retries:
-                delay = min(30, self._base_delay * (2 ** attempt))
-                print(f'[MixinSession] {last_chunk[:80]}, retry {attempt+1}/{self._retries} in {delay:.1f}s')
-                time.sleep(delay); continue
-            return return_val
+            is_err = isinstance(last_chunk, str) and last_chunk.startswith('Error:')
+            if not is_err:
+                if attempt > 0: self._cur_idx = idx; self._switched_at = time.time()
+                return return_val
+            if attempt >= self._retries:
+                yield last_chunk; return return_val
+            nxt = (base + attempt + 1) % n
+            if nxt == base:  # full round failed, delay before next
+                rnd = (attempt + 1) // n
+                delay = min(30, self._base_delay * (2 ** rnd))
+                print(f'[MixinSession] {last_chunk[:80]}, round {rnd} exhausted, retry in {delay:.1f}s')
+                time.sleep(delay)
+            else: print(f'[MixinSession] {last_chunk[:80]}, retry {attempt+1}/{self._retries} (s{idx}→s{nxt})')
 
 class NativeToolClient:
     THINKING_PROMPT = """
