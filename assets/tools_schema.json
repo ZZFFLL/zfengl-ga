@@ -3,7 +3,7 @@
     "name": "code_run",
     "description": "Code executor. Prefer python. No concurrent calls. Put code in ```python/powershell blocks in reply body to avoid escaping. No hardcoding bulk data",
     "parameters": {"type": "object", "properties": {
-      "script": {"type": "string", "description": "[Optional] Code to execute. Prefer code blocks in reply body to avoid escaping (leave empty when using code blocks)"},
+      "script": {"type": "string", "description": "[Optional] NEVER use this param when code is in ```python/powershell blocks in reply body. Only use when no code block in reply. Mutually exclusive with reply code blocks"},
       "type": {"type": "string", "enum": ["python", "powershell"], "description": "Code type", "default": "python"},
       "timeout": {"type": "integer", "description": "Timeout in seconds", "default": 60},
       "cwd": {"type": "string", "description": "Working directory, defaults to cwd"}}}
@@ -45,7 +45,7 @@
     "name": "web_execute_js",
     "description": "Execute JS to control browser. Use precisely to reduce web_scan calls. Put code in ```javascript blocks in reply body to avoid escaping",
     "parameters": {"type": "object", "properties": {
-      "script": {"type": "string", "description": "[Optional] JS code or path. Prefer code blocks in reply body to avoid escaping (mutually exclusive with this param)"},
+      "script": {"type": "string", "description": "[Optional] JS code or file path. NEVER use this param when code is in ```javascript blocks in reply body. Only use when no code block in reply. Mutually exclusive with reply code blocks"},
       "save_to_file": {"type": "string", "description": "Save result to file, for long return values", "default": ""},
       "no_monitor": {"type": "boolean", "description": "Skip page change monitoring, saves 2-3s. Only set for pure reads, not for page actions", "default": false}}}
   }},

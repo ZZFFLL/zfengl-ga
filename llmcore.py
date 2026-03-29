@@ -328,7 +328,7 @@ class ClaudeSession:
     def __init__(self, cfg):
         self.api_key = cfg['apikey']; self.api_base = cfg['apibase'].rstrip('/')
         self.default_model = cfg.get('model', 'claude-opus')
-        self.context_win = cfg.get('context_win', 18000)
+        self.context_win = cfg.get('context_win', 20000)
         self.raw_msgs, self.lock = [], threading.Lock()
         self.system = ""
     def _trim_messages(self, raw_msgs):
@@ -375,7 +375,7 @@ class LLMSession:
     def __init__(self, cfg):
         self.api_key = cfg['apikey']; self.api_base = cfg['apibase'].rstrip('/')
         self.default_model = cfg['model']
-        self.context_win = cfg.get('context_win', 18000)
+        self.context_win = cfg.get('context_win', 20000)
         self.raw_msgs, self.messages = [], []
         proxy = cfg.get('proxy')
         self.proxies = {"http": proxy, "https": proxy} if proxy else None

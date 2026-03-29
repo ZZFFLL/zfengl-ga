@@ -287,8 +287,7 @@ class GenericAgentHandler(BaseHandler):
         return matches[-1].strip() if matches else None
 
     def do_code_run(self, args, response):
-        '''执行代码片段，有长度限制，不允许代码中放大量数据，如有需要应当通过文件读取进行。
-        '''
+        '''执行代码片段，有长度限制，不允许代码中放大量数据，如有需要应当通过文件读取进行。'''
         if response.tool_calls and sum(1 for tc in response.tool_calls[:args.get('_index', 0)] if tc.function.name == 'code_run') > 0:
             return StepOutcome("[BLANK]", next_prompt="no multi code_run in one round!") 
         code_type = args.get("type", "python")
@@ -477,8 +476,7 @@ class GenericAgentHandler(BaseHandler):
         return StepOutcome(response, next_prompt=None, should_exit=True)
     
     def do_start_long_term_update(self, args, response):
-        '''Agent觉得当前任务完成后有重要信息需要记忆时调用此工具。
-        '''
+        '''Agent觉得当前任务完成后有重要信息需要记忆时调用此工具。'''
         prompt = '''### [总结提炼经验] 既然你觉得当前任务有重要信息需要记忆，请提取最近一次任务中【事实验证成功且长期有效】的环境事实、用户偏好、重要步骤，更新记忆。
 本工具是标记开启结算过程，若已在更新记忆过程或没有值得记忆的点，忽略本次调用。
 **提取行动验证成功的信息**：
