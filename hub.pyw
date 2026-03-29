@@ -206,12 +206,16 @@ class LauncherApp:
         if not self.selected:
             return
         lines = self.mgr.get_output(self.selected)
-        at_bottom = self.output_text.yview()[1] >= 0.99
+        top_frac, bot_frac = self.output_text.yview()
+        at_bottom = bot_frac >= 0.99
         self.output_text.configure(state='normal')
         self.output_text.delete('1.0', 'end')
         self.output_text.insert('end', ''.join(lines[-200:]))
         self.output_text.configure(state='disabled')
-        if at_bottom: self.output_text.see('end')
+        if at_bottom:
+            self.output_text.see('end')
+        else:
+            self.output_text.yview_moveto(top_frac)
 
     def _poll(self):
         for svc in self.services:

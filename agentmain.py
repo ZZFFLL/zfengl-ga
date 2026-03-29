@@ -10,9 +10,11 @@ from agent_loop import agent_runner_loop
 from ga import GenericAgentHandler, smart_format, get_global_memory, format_error
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
-with open(os.path.join(script_dir, 'assets/tools_schema.json'), 'r', encoding='utf-8') as f:
-    TS = f.read()
+def load_tool_schema(suffix=''):
+    global TOOLS_SCHEMA
+    TS = open(os.path.join(script_dir, f'assets/tools_schema{suffix}.json'), 'r', encoding='utf-8').read()
     TOOLS_SCHEMA = json.loads(TS if os.name == 'nt' else TS.replace('powershell', 'bash'))
+load_tool_schema()
 
 mem_dir = os.path.join(script_dir, 'memory')
 if not os.path.exists(mem_dir): os.makedirs(mem_dir)
@@ -69,6 +71,9 @@ class GeneraticAgent:
         self.llm_no = ((self.llm_no + 1) if n < 0 else n) % len(self.llmclients)
         self.llmclient = self.llmclients[self.llm_no]
         self.llmclient.last_tools = ''
+        name = self.get_llm_name()
+        if 'glm' in name or 'minimax' in name or 'kimi' in name: load_tool_schema('_cn')
+        else: load_tool_schema()
     def list_llms(self): return [(i, f"{type(b.backend).__name__}/{b.backend.default_model}", i == self.llm_no) for i, b in enumerate(self.llmclients)]
     def get_llm_name(self):
         b = self.llmclient
