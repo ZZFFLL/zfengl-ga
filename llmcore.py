@@ -690,8 +690,7 @@ class ToolClient:
         tool_instruction = self._prepare_tool_instruction(tools)
         backend_messages = []
         merged_system = f"{system_content}\n{tool_instruction}".strip() if tool_instruction else system_content
-        if merged_system:
-            backend_messages.append({"role": "system", "content": merged_system})
+        if merged_system: backend_messages.append({"role": "system", "content": merged_system})
         for m in history_msgs:
             backend_messages.append({"role": m['role'], "content": m['content']})
             self.total_cd_tokens += self._estimate_content_len(m['content'])
@@ -787,7 +786,9 @@ class ToolClient:
         return MockResponse(thinking, content, tool_calls, text)
 
 def _write_llm_log(label, content):
-    log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), f'temp/model_responses_{os.getpid()}.txt')
+    log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'temp/model_responses')
+    os.makedirs(log_dir, exist_ok=True)
+    log_path = os.path.join(log_dir, f'model_responses_{os.getpid()}.txt')
     ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     with open(log_path, 'a', encoding='utf-8', errors='replace') as f:
         f.write(f"=== {label} === {ts}\n{content}\n\n")
@@ -824,6 +825,7 @@ class MixinSession:
         return self._cur_idx
     def _raw_ask(self, *args, **kwargs):
         base, n = self._pick(), len(self._sessions)
+        test_error = lambda x: isinstance(x, str) and (x.startswith('Error:') or x.startswith('[Error:'))
         for attempt in range(self._retries + 1):
             idx = (base + attempt) % n
             gen = self._orig_raw_asks[idx](*args, **kwargs)
@@ -831,10 +833,10 @@ class MixinSession:
             try:
                 while True:
                     chunk = next(gen); last_chunk = chunk
-                    if not yielded and isinstance(chunk, str) and chunk.startswith('Error:'): continue
+                    if not yielded and test_error(chunk): continue
                     yield chunk; yielded = True
             except StopIteration as e: return_val = e.value or []
-            is_err = isinstance(last_chunk, str) and last_chunk.startswith('Error:')
+            is_err = test_error(last_chunk)
             if not is_err:
                 if attempt > 0: self._cur_idx = idx; self._switched_at = time.time()
                 return return_val
