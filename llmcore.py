@@ -517,13 +517,15 @@ class NativeOAISession:
         text_parts = [b["text"] for b in content_blocks if b.get("type") == "text"]
         content = "\n".join(text_parts).strip()
         tool_calls = [MockToolCall(b["name"], b.get("input", {}), id=b.get("id", "")) for b in content_blocks if b.get("type") == "tool_use"]
-        if len(tool_calls) == 0 and content.endswith('}]') and '[{"type":"tool_use"' in content:
-            try:
-                idx = content.index('[{"type":"tool_use"')
-                raw = json.loads(content[idx:])
-                tool_calls = [MockToolCall(b["name"], b.get("input", {}), id=b.get("id", "")) for b in raw if b.get("type") == "tool_use"]
-                content = content[:idx].strip()
-            except: pass
+        if len(tool_calls) == 0 and content.endswith('}]'):
+            _pat = next((p for p in ['[{"type":"tool_use"', '[{"type": "tool_use"'] if p in content), None)
+            if _pat:
+                try:
+                    idx = content.index(_pat)
+                    raw = json.loads(content[idx:])
+                    tool_calls = [MockToolCall(b["name"], b.get("input", {}), id=b.get("id", "")) for b in raw if b.get("type") == "tool_use"]
+                    content = content[:idx].strip()
+                except: pass
         think_pattern = r"<think(?:ing)?>(.*?)</think(?:ing)?>"; thinking = ''
         think_match = re.search(think_pattern, content, re.DOTALL)
         if think_match:
