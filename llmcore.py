@@ -510,7 +510,10 @@ class NativeOAISession:
             while True: yield next(gen)
         except StopIteration as e: content_blocks = e.value or []
         if content_blocks and not (len(content_blocks) == 1 and content_blocks[0].get("text", "").startswith("Error:")):
-            self.history.append({"role": "assistant", "content": [b if b.get("type") != "tool_use" else {"type": "text", "text": json.dumps(b, ensure_ascii=False)} for b in content_blocks]})
+            hist_texts = [b for b in content_blocks if b.get("type") != "tool_use"]
+            hist_tools = [b for b in content_blocks if b.get("type") == "tool_use"]
+            if hist_tools: hist_texts.append({"type": "text", "text": json.dumps(hist_tools, ensure_ascii=False)})
+            self.history.append({"role": "assistant", "content": hist_texts or content_blocks})
         text_parts = [b["text"] for b in content_blocks if b.get("type") == "text"]
         content = "\n".join(text_parts).strip()
         tool_calls = [MockToolCall(b["name"], b.get("input", {}), id=b.get("id", "")) for b in content_blocks if b.get("type") == "tool_use"]
