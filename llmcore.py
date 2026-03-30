@@ -200,10 +200,10 @@ def _parse_openai_sse(resp_lines, api_mode="chat_completions"):
             try: evt = json.loads(data_str)
             except: continue
             ch = (evt.get("choices") or [{}])[0]
-            delta = ch.get("delta", {})
+            delta = ch.get("delta") or {}
             if delta.get("content"):
                 text = delta["content"]; content_text += text; yield text
-            for tc in delta.get("tool_calls", []):
+            for tc in (delta.get("tool_calls") or []):
                 idx = tc.get("index", 0)
                 if idx not in tc_buf: tc_buf[idx] = {"id": tc.get("id", ""), "name": "", "args": ""}
                 if tc.get("function", {}).get("name"): tc_buf[idx]["name"] = tc["function"]["name"]
@@ -521,8 +521,7 @@ class NativeOAISession:
             _pat = next((p for p in ['[{"type":"tool_use"', '[{"type": "tool_use"'] if p in content), None)
             if _pat:
                 try:
-                    idx = content.index(_pat)
-                    raw = json.loads(content[idx:])
+                    idx = content.index(_pat); raw = json.loads(content[idx:])
                     tool_calls = [MockToolCall(b["name"], b.get("input", {}), id=b.get("id", "")) for b in raw if b.get("type") == "tool_use"]
                     content = content[:idx].strip()
                 except: pass
