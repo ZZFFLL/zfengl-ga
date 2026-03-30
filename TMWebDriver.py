@@ -133,7 +133,7 @@ class TMWebDriver:
                         current_tab_ids = {str(tab['id']) for tab in tabs}
                         for sid in list(driver.sessions.keys()):
                             sess = driver.sessions[sid]
-                            if sess.type == 'ext_ws' and sess.ws_client == self and sid not in current_tab_ids:
+                            if sess.type == 'ext_ws' and sid not in current_tab_ids:
                                 sess.mark_disconnected()
                         for tab in tabs:
                             session_id = str(tab['id'])
@@ -172,13 +172,10 @@ class TMWebDriver:
 
         self.latest_session_id = session_id
         if self.default_session_id is None: self.default_session_id = session_id 
-
     
     def _unregister_client(self, client: WebSocket) -> None:  
         for session in self.sessions.values():
-            if session.ws_client == client:
-                session.mark_disconnected()
-                break  
+            if session.ws_client == client: session.mark_disconnected()
     
     def execute_js(self, code, timeout=15, session_id=None) -> Any:  
         if session_id is None: session_id = self.default_session_id  

@@ -1,9 +1,10 @@
 # TMWebDriver SOP
 
 - 禁止import，直接用web_scan/web_execute_js工具。本文件只记录特性和坑。
-- 底层：`../TMWebDriver.py`通过Tampermonkey脚本接管用户浏览器（保留登录态/Cookie）
+- 底层：`../TMWebDriver.py`通过Chrome扩展(非Tampermonkey)接管用户浏览器（保留登录态/Cookie）
 - 非Selenium/Playwright，不需调试浏览器或新数据目录
 - 支撑 `web_scan`(只读DOM) / `web_execute_js`(执行JS) 等高层工具
+- ⚠扩展更新后，已打开的旧tab不会自动加载新版脚本→scan/execute_js无ACK→需刷新页面或切到新tab
 
 ## 通用特性
 - ✅web_execute_js**完美支持顶层await**（v0.4+），可直接`await fetch()`/`await new Promise()`等
@@ -44,9 +45,9 @@ fetch('PDF_URL').then(r=>r.blob()).then(b=>{
 
 ## Chrome后台标签节流
 - 后台标签中`setTimeout`被Chrome intensive throttling延迟到≥1min/次
-- TM脚本中detect_newtab的轮询(`setTimeout 150ms × 10`)会超时
-- 已修复：移除TM脚本内轮询，改由Python侧`get_session_dict()`前后对比检测新标签
-- 同理：TM脚本中任何后台逻辑都应避免依赖setTimeout轮询
+- 扩展content script中detect_newtab的轮询(`setTimeout 150ms × 10`)会超时
+- 已修复：移除脚本内轮询，改由Python侧`get_session_dict()`前后对比检测新标签
+- 同理：扩展脚本中任何后台逻辑都应避免依赖setTimeout轮询
 
 ## CDP桥(tmwd_cdp_bridge扩展) ⭐首选
 扩展路径：`assets/tmwd_cdp_bridge/`(需安装，含debugger权限)
@@ -108,7 +109,11 @@ document.body.appendChild(el);  // 响应写回el.textContent
   var realX = x * zoom; var realY = y * zoom;
   ```
 - iframe内元素CDP点击：坐标需合成 `finalX = iframeRect.x + elRect.x`
-  - 跨域iframe拿不到contentDocument：用CDP `Target.getTargets`找iframe targetId → `Target.attachToTarget`建独立会话
+  - 跨域iframe拿不到contentDocument：
+  - ⚠`Target.getTargets`/`Target.attachToTarget`在CDP桥中返回"Not allowed"(chrome.debugger权限限制)
+  - ⭐**已验证方案**：`Page.getFrameTree`找iframe frameId → `Page.createIsolatedWorld({frameId})`获取contextId → `Runtime.evaluate({expression, contextId})`在iframe中执行JS
+  - batch链式引用：`$0.frameTree.childFrames`遍历找url匹配的frame，`$1.executionContextId`传给evaluate
+  - postMessage中继方案仅在content script已注入iframe时有效，第三方支付iframe通常无注入
 
 ## CDP文本输入（未验证，BBS#23）
 - `Input.insertText({text:'...'})` — 直接插入，快，不触发keydown/keyup
@@ -143,7 +148,6 @@ document.body.appendChild(el);  // 响应写回el.textContent
 - ⭐首选CDP截图：`Page.captureScreenshot`(format:'png')→返回base64，无需前台/后台tab也行，全页高清
 - 验证码canvas/img：JS `canvas.toDataURL()` 直接拿base64最干净
 - 备选：`window.open(location.href,'_blank')` 前台开新标签→win32截图→完后close
-  - GM_openInTab在web_execute_js不可用（非油猴上下文）
 
 ## 直接import(仅作调试使用)
 - `sys.path.insert(0, GenericAgent根目录)`, `from TMWebDriver import TMWebDriver`
@@ -152,7 +156,7 @@ document.body.appendChild(el);  // 响应写回el.textContent
 
 ## 跨域iframe操控(postMessage中继)
 - 跨域iframe的contentDocument不可访问，web_execute_js只在顶层执行
-- TM脚本已改造：iframe内不return，改为监听postMessage并eval执行+回传结果
+- 扩展content script已支持：iframe内不return，改为监听postMessage并eval执行+回传结果
 - 顶层发送：`iframe.contentWindow.postMessage({type:'ljq_exec', id, code}, '*')`
 - iframe回传：`{type:'ljq_result', id, result}` 通过window.addEventListener('message')接收
 - ⚠只能eval表达式，不支持return/函数体包装，构造代码时注意
@@ -161,8 +165,8 @@ document.body.appendChild(el);  // 响应写回el.textContent
 
 ## 连不上排查
 web_scan失败时按序排查：
-①TM没装？→遍历本机所有Chromium浏览器(Chrome/Edge/Brave…)用户数据目录下Extensions/，各子目录manifest.json搜"tampermonkey"
-  没找到→走web_setup_sop；找到→记住装在哪个浏览器
+①扩展没装？→检查Chrome扩展列表(chrome://extensions)是否有TMWebDriver扩展
+  没找到→走web_setup_sop；找到→确认已启用
 ②浏览器没开？→检查①对应的浏览器进程是否在跑(tasklist/ps)，没有则启动并打开正常URL（⚠about:blank等内部页不加载扩展）
 ③WS后台挂了？→socket.connect_ex(('127.0.0.1',18766))非0即dead→手动`from TMWebDriver import TMWebDriver; TMWebDriver()`起master
 

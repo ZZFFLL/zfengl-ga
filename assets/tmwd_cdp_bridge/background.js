@@ -153,9 +153,27 @@ function buildPageScript(code) {
   })()`;
 }
 
-// --- Minimal CDP script: no smartProcessResult, returnByValue handles serialization ---
+// --- CDP script: includes smartProcessResult to avoid "Object reference chain is too long" ---
 function buildCdpScript(code) {
   return `(async () => {
+    function smartProcessResult(result) {
+      if (result === null || result === undefined || typeof result !== 'object') return result;
+      if (typeof jQuery !== 'undefined' && result instanceof jQuery) {
+        const elements = []; for (let i = 0; i < result.length; i++) { if (result[i] && result[i].nodeType === 1) elements.push(result[i].outerHTML); } return elements;
+      }
+      if (result instanceof NodeList || result instanceof HTMLCollection) {
+        const elements = []; for (let i = 0; i < result.length; i++) { if (result[i] && result[i].nodeType === 1) elements.push(result[i].outerHTML); } return elements;
+      }
+      if (result.nodeType === 1) return result.outerHTML;
+      if (!Array.isArray(result) && typeof result === 'object' && 'length' in result && typeof result.length === 'number') {
+        const firstElement = result[0];
+        if (firstElement && firstElement.nodeType === 1) {
+          const elements = []; const length = Math.min(result.length, 100);
+          for (let i = 0; i < length; i++) { const elem = result[i]; if (elem && elem.nodeType === 1) elements.push(elem.outerHTML); } return elements;
+        }
+      }
+      try { return JSON.parse(JSON.stringify(result, function(key, value) { if (typeof value === 'object' && value !== null) { if (value.nodeType === 1) return value.outerHTML; if (value === window || value === document) return '[Object]'; } return value; })); } catch (e) { return '[无法序列化: ' + e.message + ']'; }
+    }
     try {
       const jsCode = ${JSON.stringify(code)}.trim();
       const lines = jsCode.split(/\\r?\\n/).filter(l => l.trim());
@@ -169,7 +187,7 @@ function buildCdpScript(code) {
           if (e instanceof SyntaxError && (/return/i.test(e.message) || /await/i.test(e.message))) { r = await (new AsyncFunction(jsCode))(); } else throw e;
         }
       }
-      return { ok: true, data: r };
+      return { ok: true, data: smartProcessResult(r) };
     } catch (e) {
       return { ok: false, error: { name: e.name || 'Error', message: e.message || String(e), stack: e.stack || '' } };
     }
@@ -253,6 +271,10 @@ function connectWS() {
               args: [buildPageScript(data.code)]
             });
             res = result[0]?.result;
+            if (res === null || res === undefined) {
+              console.log('[TMWD-WS] executeScript returned null/undefined, treating as CSP issue');
+              res = { ok: false, error: { name: 'Error', message: 'executeScript returned null (possible CSP or context issue)', stack: '' }, csp: true };
+            }
           } catch (e) {
             console.log('[TMWD-WS] scripting.executeScript failed:', e.message);
             res = { ok: false, error: { name: e.name || 'Error', message: e.message || String(e), stack: e.stack || '' }, csp: true };
@@ -282,6 +304,7 @@ function connectWS() {
           if (res?.ok) {
             ws.send(JSON.stringify({ type: 'result', id: data.id, result: res.data, newTabs }));
           } else {
+            console.log(res);
             ws.send(JSON.stringify({ type: 'error', id: data.id, error: res?.error || 'Unknown error', newTabs }));
           }
         } catch (e) {
