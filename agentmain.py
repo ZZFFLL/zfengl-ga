@@ -138,7 +138,7 @@ class GeneraticAgent:
             finally:
                 if self.stop_sig:
                     print('User aborted the task.')
-                    with self.task_queue.mutex: self.task_queue.queue.clear()
+                    #with self.task_queue.mutex: self.task_queue.queue.clear()
                 self.is_running = self.stop_sig = False
                 self.task_queue.task_done()
                 if self.handler is not None: self.handler.code_stop_signal.append(1)

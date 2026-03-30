@@ -866,12 +866,14 @@ def execute_js_rich(script, driver, no_monitor=False):
         "environment": {"reloaded": reloaded},
         "tab_id": driver.default_session_id
     }  
-    after = driver.get_session_dict()
-    new_sids = {k: v for k, v in after.items() if k not in before_sids}
-    if new_sids:
-        newTabs = [{'id': k, 'url': v} for k, v in new_sids.items()]
-        rr['environment']['newTabs'] = newTabs
-        rr['suggestion'] = "页面已刷新，以上新标签页在执行期间连接。"
+    if response.get('newTabs'): rr['environment']['newTabs'] = response['newTabs']
+    else:
+        after = driver.get_session_dict()
+        new_sids = {k: v for k, v in after.items() if k not in before_sids}
+        if new_sids:
+            newTabs = [{'id': k, 'url': v} for k, v in new_sids.items()]
+            rr['environment']['newTabs'] = newTabs
+            rr['suggestion'] = "页面已刷新，以上新标签页在执行期间连接。"
     if error_msg: rr['error'] = error_msg
     if no_monitor: return rr
     if not reloaded:
