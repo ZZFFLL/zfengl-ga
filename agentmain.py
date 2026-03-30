@@ -151,8 +151,20 @@ if __name__ == '__main__':
     parser.add_argument('--scheduled', action='store_true', help='计划任务轮询模式')
     parser.add_argument('--task', metavar='IODIR', help='一次性任务模式(文件IO)')
     parser.add_argument('--reflect', metavar='SCRIPT', help='反射模式：加载监控脚本，check()触发时发任务')
+    parser.add_argument('--input', help='任务内容')
     parser.add_argument('--llm_no', type=int, default=0, help='LLM编号')
+    parser.add_argument('--bg', action='store_true', help='后台自举: spawn自身去掉--bg, print PID, exit')
     args = parser.parse_args()
+
+    if args.bg:
+        import subprocess, platform
+        cmd = [sys.executable, os.path.abspath(__file__)] + [a for a in sys.argv[1:] if a != '--bg']
+        d = os.path.join(script_dir, f'temp/{args.task}'); os.makedirs(d, exist_ok=True)
+        p = subprocess.Popen(cmd, cwd=script_dir,
+            creationflags=0x08000000 if platform.system() == 'Windows' else 0,
+            stdout=open(os.path.join(d, 'stdout.log'), 'w', encoding='utf-8'),
+            stderr=open(os.path.join(d, 'stderr.log'), 'w', encoding='utf-8'))
+        print(p.pid); sys.exit(0)
 
     agent = GeneraticAgent()
     agent.next_llm(args.llm_no)
@@ -160,8 +172,13 @@ if __name__ == '__main__':
     threading.Thread(target=agent.run, daemon=True).start()
 
     if args.task:
-        d = os.path.join(script_dir, f'temp/{args.task}'); rp = os.path.join(d, 'reply.txt'); nround = ''
-        with open(os.path.join(d, 'input.txt'), encoding='utf-8') as f: raw = f.read()
+        d = os.path.join(script_dir, f'temp/{args.task}'); nround = ''
+        rp = os.path.join(d, 'reply.txt'); infile = os.path.join(d, 'input.txt')
+        if args.input:
+            os.makedirs(d, exist_ok=True)
+            import glob; [os.remove(f) for f in glob.glob(os.path.join(d, 'output*.txt'))]
+            with open(infile, 'w', encoding='utf-8') as f: f.write(args.input)
+        with open(infile, encoding='utf-8') as f: raw = f.read()
         while True:
             dq = agent.put_task(raw, source='task')
             while 'done' not in (item := dq.get(timeout=120)): 
