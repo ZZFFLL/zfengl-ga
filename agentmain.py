@@ -100,7 +100,7 @@ class GeneraticAgent:
             
             sys_prompt = get_system_prompt()
             script_dir = os.path.dirname(os.path.abspath(__file__))
-            handler = GenericAgentHandler(None, self.history, os.path.join(script_dir, 'temp'))
+            handler = GenericAgentHandler(self, self.history, os.path.join(script_dir, 'temp'))
             if self.handler and 'key_info' in self.handler.working: 
                 ki = re.sub(r'\n\[SYSTEM\] 此为.*?工作记忆[。\n]*', '', self.handler.working['key_info'])  # 去旧
                 handler.working['key_info'] = ki
@@ -115,6 +115,7 @@ class GeneraticAgent:
                 initial_user_content = build_multimodal_content(user_input, images)
             elif images:
                 print(f"[INFO] backend {type(self.llmclient.backend).__name__} does not support direct multimodal input, fallback to text attachment hints.")
+            # although new handler, the **full** history is in llmclient, so it is full history!
             gen = agent_runner_loop(self.llmclient, sys_prompt, user_input, 
                                 handler, TOOLS_SCHEMA, max_turns=40, verbose=self.verbose,
                                 initial_user_content=initial_user_content)
@@ -135,6 +136,9 @@ class GeneraticAgent:
                 print(f"Backend Error: {format_error(e)}")
                 display_queue.put({'done': full_resp + f'\n```\n{format_error(e)}\n```', 'source': source})
             finally:
+                if self.stop_sig:
+                    print('User aborted the task.')
+                    with self.task_queue.mutex: self.task_queue.queue.clear()
                 self.is_running = self.stop_sig = False
                 self.task_queue.task_done()
                 if self.handler is not None: self.handler.code_stop_signal.append(1)
