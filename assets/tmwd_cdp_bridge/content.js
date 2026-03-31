@@ -28,13 +28,13 @@ async function handle(el) {
     const cmd = req.cmd || 'cookies';
     let resp;
     if (cmd === 'cookies') {
-      resp = await chrome.runtime.sendMessage({ action: 'cookies', url: req.url || location.href });
+      resp = await chrome.runtime.sendMessage({ cmd: 'cookies', url: req.url || location.href });
     } else if (cmd === 'cdp') {
-      resp = await chrome.runtime.sendMessage({ action: 'cdp', method: req.method, params: req.params || {}, tabId: req.tabId });
+      resp = await chrome.runtime.sendMessage({ cmd: 'cdp', method: req.method, params: req.params || {}, tabId: req.tabId });
     } else if (cmd === 'batch') {
-      resp = await chrome.runtime.sendMessage({ action: 'batch', commands: req.commands, tabId: req.tabId });
+      resp = await chrome.runtime.sendMessage({ cmd: 'batch', commands: req.commands, tabId: req.tabId });
     } else if (cmd === 'tabs') {
-      resp = await chrome.runtime.sendMessage({ action: 'tabs', method: req.method, tabId: req.tabId });
+      resp = await chrome.runtime.sendMessage({ cmd: 'tabs', method: req.method, tabId: req.tabId });
     } else {
       resp = { ok: false, error: 'unknown cmd: ' + cmd };
     }

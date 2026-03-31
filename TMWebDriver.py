@@ -30,6 +30,7 @@ class Session:
         self.connect_at = time.time()
         self.disconnect_at = None
     def mark_disconnected(self):
+        print(f"Tab disconnected: {self.url} (Session: {self.id})")
         self.disconnect_at = time.time()
 
 
@@ -131,6 +132,7 @@ class TMWebDriver:
                     elif data.get('type') in ['ext_ready', 'tabs_update']:
                         tabs = data.get('tabs', [])
                         current_tab_ids = {str(tab['id']) for tab in tabs}
+                        print(f"Received tabs update: {current_tab_ids}")
                         for sid in list(driver.sessions.keys()):
                             sess = driver.sessions[sid]
                             if sess.type == 'ext_ws' and sid not in current_tab_ids:
@@ -150,7 +152,9 @@ class TMWebDriver:
                     print(f"Error handling message: {e}")  
                     if hasattr(self, 'data'): print(self.data)  
             def connected(self): (f"New connection from {self.address}")  
-            def handle_close(self): driver._unregister_client(self)  
+            def handle_close(self): 
+                print(f"WS Connection closed: {self.address}")
+                driver._unregister_client(self)  
         
         self.server = WebSocketServer(self.host, self.port, JSExecutor)  
         server_thread = threading.Thread(target=self.server.serve_forever)  

@@ -53,19 +53,20 @@ fetch('PDF_URL').then(r=>r.blob()).then(b=>{
 ## CDP桥(tmwd_cdp_bridge扩展) ⭐首选
 扩展路径：`assets/tmwd_cdp_bridge/`(需安装，含debugger权限)
 ⚠TID密钥：首次运行自动生成到`assets/tmwd_cdp_bridge/config.js`(已gitignore)，扩展通过manifest引用
-调用：MutationObserver监听addedNodes(id=TID)，⚠每次必须remove旧→createElement新→设textContent JSON→appendChild
+调用：`web_execute_js` script直传JSON字符串（工具层自动识别对象格式，走WS→background.js cmd路由）
 ```js
-// TID从assets/tmwd_cdp_bridge/config.js读取
-const old = document.getElementById(TID);
-if (old) old.remove();
-const el = document.createElement('div');
-el.id = TID; el.style.display = 'none';
-el.textContent = JSON.stringify({cmd:'...', ...});
-document.body.appendChild(el);  // 响应写回el.textContent
+// 直接传JSON字符串作为script参数，无需DOM操作
+web_execute_js script='{"cmd": "cookies"}'
+web_execute_js script='{"cmd": "tabs"}'
+web_execute_js script='{"cmd": "cdp", "tabId": N, "method": "...", "params": {...}}'
+web_execute_js script='{"cmd": "batch", "commands": [...]}'
+// 返回值直接是JSON结果
 ```
+⚠旧DOM方式(TID元素+MutationObserver)仍可用但已不推荐
 单命令：`{cmd:'tabs'}` | `{cmd:'cookies'}` | `{cmd:'cdp', tabId:N, method:'...', params:{...}}`
 - ⭐batch混合：`{cmd:'batch', commands:[{cmd:'cookies'},{cmd:'tabs'},{cmd:'cdp',...},...]}`
   - 返回`{ok:true, results:[...]}`，一次请求多命令，CDP懒attach复用session
+  - 子命令会自动继承外层batch的tabId（如cookies命令可正确获取当前页面URL）
   - `$N.path`引用第N个结果字段(0-indexed)，如`"nodeId":"$2.root.nodeId"`
   - ⚠batch前序命令失败时后续`$N`引用拿到undefined，整条链路**静默失败不报错**，需检查返回results数组中每项的ok状态（未验证，BBS#46）
   - 典型：文件上传三连 getDocument(**depth:1**性能优化，200ms+→个位数ms)→querySelector(input[type=file])→setFileInputFiles（未验证，BBS#38）
