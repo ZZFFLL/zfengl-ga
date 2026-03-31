@@ -9,6 +9,7 @@
 ## 通用特性
 - ✅web_execute_js**完美支持顶层await**（v0.4+），可直接`await fetch()`/`await new Promise()`等
   - ⚠使用await时需**显式`return`**才能拿到返回值（底层async包裹，不写return则返回null）
+- ✅web_scan**自动穿透同源iframe**：无需手动操作，scan直接递归输出iframe内部DOM。跨域iframe则需CDP或postMessage（见下方章节）
 
 ## 限制(isTrusted)
 - JS dispatch的事件`isTrusted=false`，敏感操作(文件上传/部分按钮)会被浏览器拦截

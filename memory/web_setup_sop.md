@@ -1,5 +1,7 @@
 # Web 工具链初始化执行 SOP
 
+⚠ **当前只需安装 `assets/tmwd_cdp_bridge` Chrome 扩展即可，Tampermonkey 方案将在未来移除。**
+
 若 web_scan 和 web_execute_js 已测试可用，无需执行此 SOP。
 仅供初始安装时，code_run 可用但 web 工具尚未配置的场景。
 
