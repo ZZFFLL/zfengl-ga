@@ -203,6 +203,11 @@ function scheduleProbe() {
   chrome.alarms.create('tmwd-ws-probe', { delayInMinutes: 0.083 }); // ~5s
 }
 
+function scheduleKeepalive() {
+  // Keep SW alive while WS is connected (~25s, under 30s SW timeout)
+  chrome.alarms.create('tmwd-ws-keepalive', { delayInMinutes: 0.4 }); // ~24s
+}
+
 async function isServerAlive() {
   try {
     const ctrl = new AbortController();
@@ -215,6 +220,17 @@ async function isServerAlive() {
 }
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name === 'tmwd-ws-keepalive') {
+    // Keepalive: ping to keep SW alive + detect dead connections
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      try { ws.send('{"type":"ping"}'); } catch (_) {}
+      scheduleKeepalive();
+    } else {
+      // Connection lost, switch to probe mode
+      ws = null;
+      scheduleProbe();
+    }
+  }
   if (alarm.name === 'tmwd-ws-probe') {
     if (ws && ws.readyState <= 1) return; // Already connected/connecting
     if (await isServerAlive()) {
@@ -240,7 +256,7 @@ function connectWS() {
   }
   ws.onopen = async () => {
     console.log('[TMWD-WS] Connected!');
-    chrome.alarms.clear('tmwd-ws-probe');
+    scheduleKeepalive(); // Keep SW alive while connected
     const tabs = (await chrome.tabs.query({})).filter(t => isScriptable(t.url));
     ws.send(JSON.stringify({
       type: 'ext_ready',
