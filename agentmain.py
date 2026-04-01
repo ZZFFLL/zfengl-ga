@@ -56,7 +56,10 @@ class GeneraticAgent:
             except: pass
         for i, s in enumerate(llm_sessions):
             if isinstance(s, dict) and 'mixin_cfg' in s:
-                try: llm_sessions[i] = ToolClient(MixinSession(llm_sessions, s['mixin_cfg']))
+                try:
+                    mixin = MixinSession(llm_sessions, s['mixin_cfg'])
+                    if isinstance(mixin._sessions[0], (NativeClaudeSession, NativeOAISession)): llm_sessions[i] = NativeToolClient(mixin)
+                    else: llm_sessions[i] = ToolClient(mixin)
                 except Exception as e: print(f'[WARN] Failed to init MixinSession with cfg {s["mixin_cfg"]}: {e}')
         self.llmclients = llm_sessions
         self.lock = threading.Lock()

@@ -62,7 +62,7 @@ def trim_messages_history(history, context_win):
     print(f'[Debug] Current context: {cost} chars, {len(history)} messages.')
     if cost > context_win * 3: 
         target = context_win * 3 * 0.6
-        while len(history) > 4 and cost > target:
+        while len(history) > 5 and cost > target:
             history.pop(0)
             while history and history[0].get('role') != 'user': history.pop(0)
             if history and history[0].get('role') == 'user': history[0] = _sanitize_leading_user_msg(history[0])
@@ -434,8 +434,16 @@ class BaseSession:
                 self.history.append({"role": "user", "content": [{"type": "text", "text": prompt}]})
                 trim_messages_history(self.history, self.context_win)
                 messages = self.make_messages(self.history)
-            for chunk in self.raw_ask(messages, model):
-                content += chunk; yield chunk
+            content_blocks = None
+            gen = self.raw_ask(messages, model)
+            try:
+                while True: chunk = next(gen); content += chunk; yield chunk
+            except StopIteration as e: content_blocks = e.value or []
+            print(f"[DEBUG BaseSession.ask] content_blocks: {content_blocks}")
+            for block in (content_blocks or []):
+                if block.get('type', '') == 'tool_use':
+                    tu = {'name': block.get('name', ''), 'arguments': block.get('input', {})}
+                    yield f'<tool_use>{json.dumps(tu, ensure_ascii=False)}</tool_use>'
             if not content.startswith("Error:"): self.history.append({"role": "assistant", "content": [{"type": "text", "text": content}]})
         return _ask_gen() if stream else ''.join(list(_ask_gen()))
 
@@ -448,11 +456,13 @@ class ClaudeSession(BaseSession):
         headers = {"x-api-key": self.api_key, "Content-Type": "application/json", "anthropic-version": "2023-06-01", "anthropic-beta": "prompt-caching-2024-07-31"}
         payload = {"model": model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens, "stream": True}
         if self.system: payload["system"] = [{"type": "text", "text": self.system, "cache_control": {"type": "persistent"}}]
+        content_blocks = []
         try:
             with requests.post(auto_make_url(self.api_base, "messages"), headers=headers, json=payload, stream=True, timeout=(5,30)) as r:
                 r.raise_for_status()
-                yield from _parse_claude_sse(r.iter_lines())
+                content_blocks = yield from _parse_claude_sse(r.iter_lines())
         except Exception as e: yield f"Error: {str(e)}"
+        return content_blocks or []
     def make_messages(self, raw_list):
         msgs = [{"role": m['role'], "content": list(m['content'])} for m in raw_list]
         c = msgs[-1]["content"]
@@ -462,10 +472,10 @@ class ClaudeSession(BaseSession):
 class LLMSession(BaseSession):
     def raw_ask(self, messages, model=None, temperature=0.5):
         if model is None: model = self.default_model
-        yield from _openai_stream(self.api_base, self.api_key, messages, model, self.api_mode,
+        return (yield from _openai_stream(self.api_base, self.api_key, messages, model, self.api_mode,
                                   temperature=temperature, reasoning_effort=self.reasoning_effort,
                                   max_retries=self.max_retries, connect_timeout=self.connect_timeout,
-                                  read_timeout=self.read_timeout, proxies=self.proxies)
+                                  read_timeout=self.read_timeout, proxies=self.proxies))
     def make_messages(self, raw_list): return _msgs_claude2oai(raw_list)
 
 class NativeClaudeSession(BaseSession):
@@ -620,11 +630,11 @@ class ToolClient:
         tools_json = json.dumps(tools, ensure_ascii=False, separators=(',', ':'))
         tool_instruction = f"""
 ### 交互协议 (必须严格遵守，持续有效)
-请按照以下步骤思考并行动，标签之间需要回车换行：
+请按照以下步骤思考并行动：
 1. **思考**: 在 `<thinking>` 标签中先进行思考，分析现状和策略。
 2. **总结**: 在 `<summary>` 中输出*极为简短*的高度概括的单行（<30字）物理快照，包括上次工具调用结果产生的新信息+本次工具调用意图。此内容将进入长期工作记忆，记录关键信息，严禁输出无实际信息增量的描述。
-3. **行动**: 如需调用工具，请在回复正文之后输出一个（或多个）**<tool_use>块**，然后结束，我会稍后给你返回<tool_result>块。
-   格式: ```<tool_use>\n{{"name": "工具名", "arguments": {{参数}}}}\n</tool_use>\n```
+3. **行动**: 如需调用工具，请在回复正文之后输出一个（或多个）**<tool_use>块**，然后结束。
+格式: ```<tool_use>{{"name": "工具名", "arguments": {{参数}}}}</tool_use>```
 
 ### 可用工具库（已挂载，持续有效）
 {tools_json}
