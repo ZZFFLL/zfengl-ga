@@ -748,7 +748,7 @@ class ToolClient:
             remaining_text = re.sub(think_pattern, "", remaining_text, flags=re.DOTALL)
         
         tool_calls = []; json_strs = []; errors = []
-        tool_pattern = r"<tool_use>((?:(?!<tool_use>).){15,}?)</tool_use>"
+        tool_pattern = r"<(?:tool_use|tool_call)>((?:(?!<(?:tool_use|tool_call)>).){0,}?)</(?:tool_use|tool_call)>"}
         tool_all = re.findall(tool_pattern, remaining_text, re.DOTALL)
         
         if tool_all:
@@ -764,9 +764,9 @@ class ToolClient:
                 json_strs.append(json_str)
             remaining_text = remaining_text.replace('<tool_use>'+weaktoolstr, "")
         elif '"name":' in remaining_text and '"arguments":' in remaining_text:
-            json_match = re.search(r"(\{.*\"name\":.*?\})", remaining_text, re.DOTALL | re.MULTILINE)
+            json_match = re.search(r'\{.*"name":.*\}', remaining_text, re.DOTALL)
             if json_match:
-                json_str = json_match.group(1).strip()
+                json_str = json_match.group(0).strip()
                 json_strs.append(json_str)
                 remaining_text = remaining_text.replace(json_str, "").strip()
 
