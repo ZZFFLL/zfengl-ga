@@ -439,7 +439,7 @@ class BaseSession:
             try:
                 while True: chunk = next(gen); content += chunk; yield chunk
             except StopIteration as e: content_blocks = e.value or []
-            print(f"[DEBUG BaseSession.ask] content_blocks: {content_blocks}")
+            if len(content_blocks) > 1: print(f"[DEBUG BaseSession.ask] content_blocks: {content_blocks}")
             for block in (content_blocks or []):
                 if block.get('type', '') == 'tool_use':
                     tu = {'name': block.get('name', ''), 'arguments': block.get('input', {})}
@@ -680,7 +680,7 @@ class ToolClient:
             json_strs.extend([s for s in tool_all if s.startswith('{') and s.endswith('}')])
             remaining_text = re.sub(tool_pattern, "", remaining_text, flags=re.DOTALL)
         elif '<tool_use>' in remaining_text:
-            weaktoolstr = remaining_text.split('<tool_use>')[-1].strip()
+            weaktoolstr = remaining_text.split('<tool_use>')[-1].strip().strip('><')
             json_str = weaktoolstr if weaktoolstr.endswith('}') else ''
             if json_str == '' and '```' in weaktoolstr and weaktoolstr.split('```')[0].strip().endswith('}'):
                 json_str = weaktoolstr.split('```')[0].strip()
