@@ -486,6 +486,7 @@ class NativeClaudeSession(BaseSession):
         self._account_uuid = str(uuid.uuid4())
         self._device_id = uuid.uuid4().hex + uuid.uuid4().hex[:32]
         self.tools = None
+        self.claude_tools_format = True
     def raw_ask(self, messages, tools=None, system=None, model=None, temperature=0.5, max_tokens=6144):
         model = model or self.default_model
         headers = {"Content-Type": "application/json", "anthropic-version": "2023-06-01",
@@ -495,6 +496,7 @@ class NativeClaudeSession(BaseSession):
         payload = {"model": model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens, "stream": True}
         payload["metadata"] = {"user_id": json.dumps({"device_id": self._device_id, "account_uuid": self._account_uuid, "session_id": self._session_id}, separators=(',', ':'))}
         if tools:
+            if self.claude_tools_format: tools = openai_tools_to_claude(tools)
             tools = [dict(t) for t in tools]; tools[-1]["cache_control"] = {"type": "ephemeral"}
             payload["tools"] = tools
         payload['system'] = [{"type": "text", "text": "You are Claude Code, Anthropic's official CLI for Claude.", "cache_control": {"type": "ephemeral"}}]
@@ -549,6 +551,9 @@ class NativeClaudeSession(BaseSession):
         return MockResponse(thinking, content, tool_calls, str(content_blocks))
 
 class NativeOAISession(NativeClaudeSession):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.claude_tools_format = False  
     def raw_ask(self, messages, tools=None, system=None, model=None, temperature=0.5, max_tokens=6144, **kw):
         """OpenAI streaming. yields text chunks, generator return = list[content_block]"""
         model = model or self.default_model
