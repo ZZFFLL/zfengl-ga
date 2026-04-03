@@ -15,32 +15,31 @@ proxy = mykeys.get("proxy", 'http://127.0.0.1:2082')
 proxies = {"http": proxy, "https": proxy} if proxy else None
 
 def compress_history_tags(messages, keep_recent=10, max_len=800):
-    """Compress <thinking>/<tool_use>/<tool_result> tags in older messages to save tokens.
-    Supports both prompt-style (ClaudeSession/LLMSession) and content-style (NativeClaudeSession) messages."""
+    """Compress <thinking>/<tool_use>/<tool_result> tags in older messages to save tokens."""
     compress_history_tags._cd = getattr(compress_history_tags, '_cd', 0) + 1
     if compress_history_tags._cd % 5 != 0: return messages
     _before = sum(len(json.dumps(m, ensure_ascii=False)) for m in messages)
     _pats = {tag: re.compile(rf'(<{tag}>)([\s\S]*?)(</{tag}>)') for tag in ('thinking', 'think', 'tool_use', 'tool_result')}
+    _hist_pat = re.compile(r'<(history|key_info)>[\s\S]*?</\1>')
     def _trunc(text):
+        text = _hist_pat.sub(lambda m: f'<{m.group(1)}>[...]</{m.group(1)}>', text)
         for pat in _pats.values(): text = pat.sub(lambda m: m.group(1) + m.group(2)[:max_len] + '...' + m.group(3) if len(m.group(2)) > max_len else m.group(0), text)
         return text
     for i, msg in enumerate(messages):
         if i >= len(messages) - keep_recent: break
-        if 'prompt' in msg: msg['prompt'] = _trunc(msg['prompt'])
-        elif 'content' in msg and 'prompt' not in msg:
-            c = msg['content']
-            if isinstance(c, str): msg['content'] = _trunc(c)
-            elif isinstance(c, list):
-                for block in c:
-                    if isinstance(block, dict) and block.get('type') == 'text' and isinstance(block.get('text'), str):
-                        block['text'] = _trunc(block['text'])
+        c = msg['content']
+        if isinstance(c, str): msg['content'] = _trunc(c)
+        elif isinstance(c, list):
+            for block in c:
+                if isinstance(block, dict) and block.get('type') == 'text' and isinstance(block.get('text'), str):
+                    block['text'] = _trunc(block['text'])
     print(f"[Cut] {_before} -> {sum(len(json.dumps(m, ensure_ascii=False)) for m in messages)}")
     return messages
 
 def _sanitize_leading_user_msg(msg):
     """把 user 消息里的 tool_result 块改写成纯文本，避免孤立引用。
     history 统一使用 Claude content-block 格式：content 是 list of blocks。"""
-    msg = dict(msg)  # 浅拷贝外层 dict；content 在 L56 整体替换而非原地修改，故原对象的 content 不受影响
+    msg = dict(msg)  # 浅拷贝外层 dict
     content = msg.get('content')
     if not isinstance(content, list): return msg
     texts = []
@@ -411,7 +410,7 @@ class BaseSession:
         self.api_key = cfg['apikey']
         self.api_base = cfg['apibase'].rstrip('/')
         self.default_model = cfg.get('model', '')
-        self.context_win = cfg.get('context_win', 20000)
+        self.context_win = cfg.get('context_win', 24000)
         self.history = []
         self.lock = threading.Lock()
         self.system = ""
@@ -481,7 +480,7 @@ class LLMSession(BaseSession):
 class NativeClaudeSession(BaseSession):
     def __init__(self, cfg):
         super().__init__(cfg)
-        self.context_win = cfg.get("context_win", 24000)
+        self.context_win = cfg.get("context_win", 28000)
         self.no_system_prompt = cfg.get("no_system_prompt", False)
 
     def raw_ask(self, messages, tools=None, system=None, model=None, temperature=0.5, max_tokens=6144):

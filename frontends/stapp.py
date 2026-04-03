@@ -66,6 +66,23 @@ def render_sidebar():
         st.caption("🔴 自主行动已停止")
 with st.sidebar: render_sidebar()
 
+def fold_turns(text):
+    parts = re.split(r'(\**LLM Running \(Turn \d+\) \.\.\.*\**)', text)
+    if len(parts) < 4: return text
+    result = parts[0]
+    turns = []
+    for i in range(1, len(parts), 2):
+        marker = parts[i].strip('*')
+        content = parts[i+1] if i+1 < len(parts) else ''
+        turns.append((marker, content))
+    for idx, (marker, content) in enumerate(turns):
+        if idx < len(turns) - 1:
+            m = re.search(r'<summary>\s*(.*?)\|*</summary>', content, re.DOTALL)
+            title = m.group(1).strip() if m else marker
+            result += f'<details><summary>{title}</summary>\n\n{content}\n</details>\n\n'
+        else:
+            result += marker + content
+    return result
 
 def agent_backend_stream(prompt):
     display_queue = agent.put_task(prompt, source="user")
@@ -84,7 +101,11 @@ def agent_backend_stream(prompt):
 
 if "messages" not in st.session_state: st.session_state.messages = []
 for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]): st.markdown(msg["content"], unsafe_allow_html=False)
+    with st.chat_message(msg["role"]):
+        if msg["role"] == "assistant":
+            st.markdown(fold_turns(msg["content"]), unsafe_allow_html=True)
+        else:
+            st.markdown(msg["content"], unsafe_allow_html=False)
 
 # IME composition fix (macOS only) - prevents Enter from submitting during CJK input
 if os.name != 'nt':
@@ -99,8 +120,8 @@ if prompt := st.chat_input("请输入指令"):
         message_placeholder = st.empty()
         response = ''
         for response in agent_backend_stream(prompt):
-            message_placeholder.markdown(response + "▌", unsafe_allow_html=False)
-        message_placeholder.markdown(response, unsafe_allow_html=False)
+            message_placeholder.markdown(fold_turns(response) + "...", unsafe_allow_html=True)
+        message_placeholder.markdown(fold_turns(response), unsafe_allow_html=True)
     st.session_state.messages.append({"role": "assistant", "content": response})
     st.session_state.last_reply_time = int(time.time())
 

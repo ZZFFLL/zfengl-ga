@@ -73,12 +73,12 @@ def code_run(code, code_type="python", timeout=60, cwd=None, code_cwd=None, stop
         status = "success" if exit_code == 0 else "error"
         status_icon = "✅" if exit_code == 0 else "❌"
         if exit_code is None: status_icon = "⏳" 
-        output_snippet = smart_format(stdout_str, max_str_len=600, omit_str='\n[omitted long output]\n')
+        output_snippet = smart_format(stdout_str, max_str_len=600, omit_str='\n\n[omitted long output]\n\n')
         yield f"[Status] {status_icon} Exit Code: {exit_code}\n[Stdout]\n{output_snippet}\n"
         if process.stdout: threading.Thread(target=process.stdout.close, daemon=True).start()
         return {
             "status": status,
-            "stdout": smart_format(stdout_str, max_str_len=8000, omit_str='\n[omitted long output]\n'),
+            "stdout": smart_format(stdout_str, max_str_len=10000, omit_str='\n\n[omitted long output]\n\n'),
             "exit_code": exit_code
         }
     except Exception as e:
@@ -137,7 +137,7 @@ def web_scan(tabs_only=False, switch_tab_id=None, text_only=False):
                 "active_tab": driver.default_session_id
             }
         }
-        if not tabs_only: result["content"] = get_html(driver, cutlist=True, maxchars=28000, text_only=text_only)
+        if not tabs_only: result["content"] = get_html(driver, cutlist=True, maxchars=38000, text_only=text_only)
         return result
     except Exception as e:
         return {"status": "error", "msg": format_error(e)}
@@ -354,7 +354,7 @@ class GenericAgentHandler(BaseHandler):
         except: pass
         yield f"JS 执行结果:\n{smart_format(result)}\n"
         next_prompt = self._get_anchor_prompt(skip=args.get('_index', 0) > 0)
-        return StepOutcome(smart_format(result, max_str_len=5000), next_prompt=next_prompt)
+        return StepOutcome(smart_format(result, max_str_len=8000), next_prompt=next_prompt)
     
     def do_file_patch(self, args, response):
         path = self._get_abs_path(args.get("path", ""))
