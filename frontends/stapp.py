@@ -74,7 +74,7 @@ def fold_turns(text):
     if parts[0].strip(): segments.append({'type': 'text', 'content': parts[0]})
     turns = []
     for i in range(1, len(parts), 2):
-        marker = parts[i].strip('*')
+        marker = parts[i]
         content = parts[i+1] if i+1 < len(parts) else ''
         turns.append((marker, content))
     for idx, (marker, content) in enumerate(turns):
@@ -84,17 +84,25 @@ def fold_turns(text):
                 title = m.group(1).strip()
                 title = title.split('\n')[0]
                 if len(title) > 50: title = title[:50] + '...'
-            else: title = marker
+            else: title = marker.strip('*')
             segments.append({'type': 'fold', 'title': title, 'content': content})
         else: segments.append({'type': 'text', 'content': marker + content})
     return segments
-def render_segments(segments, container=None):
-    """Render fold_turns output using st.expander (no unsafe_allow_html needed)."""
-    c = container or st
-    for seg in segments:
+def render_segments(segments, placeholders=None, rendered_cache=None, suffix='', force_text=False):
+    def _render_seg(target, seg, suf=''):
         if seg['type'] == 'fold':
-            with c.expander(seg['title'], expanded=False): st.markdown(seg['content'])
-        else: c.markdown(seg['content'])
+            with target.expander(seg['title'], expanded=False): st.markdown(seg['content'])
+        else: target.markdown(seg['content'] + suf, unsafe_allow_html=not not suf)
+    if placeholders is not None:  
+        while len(placeholders) < len(segments):
+            placeholders.append(st.empty()); rendered_cache.append(None)
+        for i, seg in enumerate(segments):
+            if rendered_cache[i] != (seg, suffix):
+                if not force_text or seg['type'] == 'text':
+                    with placeholders[i].container(): _render_seg(st, seg, suffix)
+                    rendered_cache[i] = (seg, suffix)
+    else: 
+        for seg in segments: _render_seg(st, seg)
 
 def agent_backend_stream(prompt):
     display_queue = agent.put_task(prompt, source="user")
@@ -127,21 +135,10 @@ if prompt := st.chat_input("请输入指令"):
     with st.chat_message("user"): st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        turn_placeholders = []
-        rendered_segments = []
-        response = ''
+        turns = []; cache = []; response = ''
         for response in agent_backend_stream(prompt):
-            segments = fold_turns(response)
-            while len(turn_placeholders) < len(segments):
-                turn_placeholders.append(st.empty())
-                rendered_segments.append(None)
-            for i, seg in enumerate(segments):
-                if rendered_segments[i] != seg:
-                    with turn_placeholders[i].container():
-                        if seg['type'] == 'fold':
-                            with st.expander(seg['title']): st.markdown(seg['content'])
-                        else: st.markdown(seg['content'])
-                    rendered_segments[i] = seg
+            render_segments(fold_turns(response), placeholders=turns, rendered_cache=cache, suffix='<span style="animation: blink 1s step-start infinite; color: #0066cc;">▌</span><style>@keyframes blink { 50% { opacity: 0; } }</style>')
+        render_segments(fold_turns(response), placeholders=turns, rendered_cache=cache, force_text=True)
     st.session_state.messages.append({"role": "assistant", "content": response})
     st.session_state.last_reply_time = int(time.time())
 
