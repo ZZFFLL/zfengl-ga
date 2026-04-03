@@ -289,12 +289,12 @@ class GenericAgentHandler(BaseHandler):
     def do_code_run(self, args, response):
         '''执行代码片段，有长度限制，不允许代码中放大量数据，如有需要应当通过文件读取进行。'''
         if response.tool_calls and sum(1 for tc in response.tool_calls[:args.get('_index', 0)] if tc.function.name == 'code_run') > 0:
-            return StepOutcome("[BLANK]", next_prompt="no multi code_run in one round!") 
+            return StepOutcome("[ERROR] no multi code_run in one round!", next_prompt="\n") 
         code_type = args.get("type", "python")
         code = args.get("code") or args.get("script")
         if not code:
             code = self._extract_code_block(response, code_type)
-            if not code: return StepOutcome(None, next_prompt=f"[Error] Code missing. Use ```{code_type} block or 'script' arg.")
+            if not code: return StepOutcome("[Error] Code missing. Use ```{code_type} block or 'script' arg.", next_prompt="\n")
         timeout = args.get("timeout", 60)
         raw_path = os.path.join(self.cwd, args.get("cwd", './'))
         cwd = os.path.normpath(os.path.abspath(raw_path))
@@ -333,7 +333,7 @@ class GenericAgentHandler(BaseHandler):
     def do_web_execute_js(self, args, response):
         '''web情况下的优先使用工具，执行任何js达成对浏览器的*完全*控制。支持将结果保存到文件供后续读取分析。'''
         script = args.get("script", "") or self._extract_code_block(response, "javascript")
-        if not script: return StepOutcome(None, next_prompt="[Error] Script missing. Use ```javascript block or 'script' arg.")
+        if not script: return StepOutcome("[Error] Script missing. Use ```javascript block or 'script' arg.", next_prompt="\n")
         abs_path = self._get_abs_path(script.strip())
         if os.path.isfile(abs_path):
             with open(abs_path, 'r', encoding='utf-8') as f: script = f.read()

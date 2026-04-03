@@ -20,7 +20,6 @@ oai_config = {
     'model': 'openai/gpt-5.1',
     'api_mode': 'chat_completions',  # 'chat_completions' | 'responses'
     # 'reasoning_effort': 'low',     # none|low|medium|high|xhigh (OpenAI o系列)
-    # 'prompt_cache': False,
     'max_retries': 2,                # 429/timeout/5xx 重试次数
     'connect_timeout': 10,           # 秒
     'read_timeout': 120,             # 秒（流式读取）

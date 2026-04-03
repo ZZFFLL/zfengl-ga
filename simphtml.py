@@ -72,10 +72,9 @@ function createEnhancedDOMCopy() {
     const nonTextChildren = childNodes.filter(child => child.nodeType !== 3);  
     const hasValidChildren = nonTextChildren.length > 0;  
           
-    if (!isVisible && nonTextChildren.length > 0) {
-      const visChild = nonTextChildren.find(child => 
-          nodeInfo.has(child) && nodeInfo.get(child).isVisible);
-      if (visChild) info = nodeInfo.get(visChild);
+    if (hasValidChildren) {
+      const maxC = nonTextChildren.map(c => nodeInfo.get(c)).filter(i => i?.isVisible).sort((a, b) => b.area - a.area)[0];
+      if (maxC && maxC.area > 10000 && (!isVisible || maxC.area > info.area * 5)) info = maxC;
     }
     nodeInfo.set(clone, info);
 
@@ -136,7 +135,7 @@ function analyzeNode(node, pPathType='main') {
     const childrenInfo = children.map(child => {  
       const info = getNodeInfo(child) || { rect: {}, style: {} };  
       return { node: child, rect: info.rect, style: info.style, 
-          area: info.area, zIndex: info.zIndex };  
+          area: info.area, zIndex: info.zIndex, isVisible: info.isVisible };  
     }).sort((a, b) => b.area - a.area);  
     
     // 检测是划分还是覆盖  
@@ -168,10 +167,11 @@ function analyzeNode(node, pPathType='main') {
       childrenInfo[0].node.dataset.mark = 'K:main';
       for (let i = 1; i < childrenInfo.length; i++) {  
         const child = childrenInfo[i];  
+        let className = (child.node.getAttribute('class') || '').toLowerCase();
         let isSecondary = containsButton(child.node);
-        if (child.node.className.toLowerCase().includes('nav')) isSecondary = true;
-        if (child.node.className.toLowerCase().includes('breadcrumbs')) isSecondary = true;
-        if (child.node.className.toLowerCase().includes('header') && child.node.className.toLowerCase().includes('table')) isSecondary = true;
+        if (className.includes('nav')) isSecondary = true;
+        if (className.includes('breadcrumbs')) isSecondary = true;
+        if (className.includes('header') && className.includes('table')) isSecondary = true;
         if (child.node.innerHTML.trim().replace(/\s+/g, '').length < 500) isSecondary = true;
         if (child.node.textContent.trim().length > 200) isSecondary = true;  // P3: 有实质文本内容则保留
         if (child.style.visibility === 'hidden') isSecondary = false;
@@ -179,7 +179,7 @@ function analyzeNode(node, pPathType='main') {
         else child.node.dataset.mark = 'R:nonEssential';  
       }  
     } else {  
-      const uniqueClassNames = new Set(childrenInfo.map(item => item.node.className)).size;  
+      const uniqueClassNames = new Set(childrenInfo.map(item => item.node.getAttribute('class') || '')).size;  
       const highClassNameVariety = uniqueClassNames >= childrenInfo.length * 0.8;  
       if (pathType !== 'main' && highClassNameVariety && childrenInfo.length > 5) {
         childrenInfo.forEach(child => child.node.dataset.mark = 'R:equalmany');  
@@ -215,7 +215,7 @@ function analyzeNode(node, pPathType='main') {
     const minDimensionRatio = Math.min(rect.width / window.innerWidth, rect.height / window.innerHeight);  
     const maxDimensionRatio = Math.max(rect.width / window.innerWidth, rect.height / window.innerHeight);  
     const isNearTop = rect.top < 50;  
-    const isDialog = top.node.querySelector('iframe') && centerDiff < 0.3;
+    const isDialog = (top.node.querySelector('iframe') || top.node.querySelector('button') || top.node.querySelector('input')) && centerDiff < 0.3;
 
     if (isComplex && centerDiff < 0.2 && 
         ((minDimensionRatio > 0.2 && rect.width/window.innerWidth < 0.98) || minDimensionRatio > 0.95)) {  
@@ -253,6 +253,18 @@ function analyzeNode(node, pPathType='main') {
     );  
 }
 
+// Hoist top 1-2 deep fixed dialogs to body level for overlay detection
+const _fc = [...domCopy.querySelectorAll('*')].filter(el => {
+  if (el.parentNode === domCopy) return false;
+  const info = getNodeInfo(el);
+  if (!info?.rect || (info.style.position !== 'fixed' && info.style.position !== 'sticky')) return false;
+  const r = info.rect, cover = (r.width * r.height) / viewportArea;
+  const cd = Math.abs((r.left + r.width/2) - window.innerWidth/2) / window.innerWidth;
+  return cover > 0.15 && cd < 0.3 && el.querySelector('button, input, a, [role="button"], iframe');
+}).filter((el, _, arr) => !arr.some(o => o !== el && o.contains(el)))
+  .sort((a, b) => (getNodeInfo(b).rect.width * getNodeInfo(b).rect.height) - (getNodeInfo(a).rect.width * getNodeInfo(a).rect.height))
+  .slice(0, 2);
+_fc.forEach(el => { const r = getNodeInfo(el).rect; console.log('[simphtml] Hoisted fixed dialog:', el.tagName + (el.id ? '#'+el.id : '') + (el.className ? '.'+String(el.className).split(' ')[0] : ''), Math.round(r.width)+'x'+Math.round(r.height), Math.round(100*r.width*r.height/viewportArea)+'%'); el.parentNode.removeChild(el); domCopy.appendChild(el); });
 const result = analyzeNode(domCopy); 
 domCopy.querySelectorAll('[data-mark^="R:"]').forEach(el=>el.parentNode?.removeChild(el));  
 let root = domCopy;  
@@ -718,7 +730,8 @@ js_findMainContent = '''
 def optimize_html_for_tokens(html):  
     if type(html) is str: soup = BeautifulSoup(html, 'html.parser')  
     else: soup = html
-    for svg in soup.find_all('svg'): svg.clear()
+    for svg in soup.find_all('svg'):
+        svg.clear(); svg.attrs = {}
     [tag.attrs.pop('style', None) for tag in soup.find_all(True)]  
     for tag in soup.find_all(True):  
         if tag.has_attr('src'):  
@@ -780,7 +793,7 @@ def get_temp_texts(driver):
         print(e)
         return []
     
-import time, re
+import time, re, os
 def get_main_block(driver, extra_js="", text_only=False): 
     page = driver.execute_js(f"{extra_js}\n{js_optHTML}\nreturn optHTML({str(text_only).lower()});").get('data', '')
     if text_only:
@@ -826,6 +839,7 @@ def find_changed_elements(before_html, after_html):
 def get_html(driver, cutlist=False, maxchars=38000, instruction="", extra_js="", text_only=False):
     page = get_main_block(driver, extra_js=extra_js, text_only=text_only)
     if text_only: return page
+    warning = ''
     soup = optimize_html_for_tokens(page)
     html = str(soup)
     if not cutlist or len(html) <= maxchars: return html
@@ -838,10 +852,11 @@ def get_html(driver, cutlist=False, maxchars=38000, instruction="", extra_js="",
         keep = hit[:6] if hit else items[:3]
         for it in items:
             if it not in keep: it.decompose()
-        ss = '[SYSTEM] Found item list, only show some items ...\n' + str(optimize_html_for_tokens(s))
+        ss = str(optimize_html_for_tokens(s))
+        warning = '[SYSTEM] Found item list, only show some items ...\n'
     else: ss = html
     if len(ss) > maxchars: ss = ss[:maxchars] + ' ... [TRUNCATED]'
-    return ss
+    return warning + str(ss)
 
 def execute_js_rich(script, driver, no_monitor=False):
     last_html = None

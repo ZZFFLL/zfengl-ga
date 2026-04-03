@@ -84,7 +84,7 @@ def agent_backend_stream(prompt):
 
 if "messages" not in st.session_state: st.session_state.messages = []
 for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]): st.markdown(msg["content"], unsafe_allow_html=True)
+    with st.chat_message(msg["role"]): st.markdown(msg["content"], unsafe_allow_html=False)
 
 # IME composition fix (macOS only) - prevents Enter from submitting during CJK input
 if os.name != 'nt':
