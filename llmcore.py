@@ -481,7 +481,10 @@ class NativeClaudeSession(BaseSession):
     def __init__(self, cfg):
         super().__init__(cfg)
         self.context_win = cfg.get("context_win", 28000)
-        self.no_system_prompt = cfg.get("no_system_prompt", False)
+        self.fake_cc_system_prompt = cfg.get("fake_cc_system_prompt", False)
+        self._session_id = str(uuid.uuid4())
+        self._account_uuid = str(uuid.uuid4())
+        self._device_id = uuid.uuid4().hex + uuid.uuid4().hex[:32]
 
     def raw_ask(self, messages, tools=None, system=None, model=None, temperature=0.5, max_tokens=6144):
         model = model or self.default_model
@@ -490,14 +493,14 @@ class NativeClaudeSession(BaseSession):
         if self.api_key.startswith("cr_"): headers["authorization"] = f"Bearer {self.api_key}"
         else: headers["x-api-key"] = self.api_key
         payload = {"model": model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens, "stream": True}
-        payload["metadata"] = {"user_id": json.dumps({"device_id":uuid.uuid4().hex+uuid.uuid4().hex[:32],"account_uuid":"","session_id":str(uuid.uuid4())},separators=(',',':'))}
+        payload["metadata"] = {"user_id": json.dumps({"device_id": self._device_id, "account_uuid": self._account_uuid, "session_id": self._session_id}, separators=(',', ':'))}
         if tools:
             tools = [dict(t) for t in tools]; tools[-1]["cache_control"] = {"type": "ephemeral"}
             payload["tools"] = tools
-        payload['system'] = []
+        payload['system'] = [{"type": "text", "text": "You are Claude Code, Anthropic's official CLI for Claude.", "cache_control": {"type": "ephemeral"}}]
         if system:
-            if self.no_system_prompt: messages[0]["content"].insert(0, {"type": "text", "text": f"{system}\n"})
-            else: payload["system"] = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+            if self.fake_cc_system_prompt: messages[0]["content"].insert(0, {"type": "text", "text": system})
+            else: payload["system"] = [{"type": "text", "text": system}]
         messages[-1] = {**messages[-1], "content": list(messages[-1]["content"])}
         messages[-1]["content"][-1] = dict(messages[-1]["content"][-1], cache_control={"type": "ephemeral"})
         try:
@@ -518,7 +521,7 @@ class NativeClaudeSession(BaseSession):
         with self.lock:
             self.history.append(msg)
             trim_messages_history(self.history, self.context_win)
-            messages = list(self.history)
+            messages = [{"role": m["role"], "content": list(m["content"])} for m in self.history]
 
         content_blocks = None
         gen = self.raw_ask(messages, tools, self.system, model)

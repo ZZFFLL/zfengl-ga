@@ -1,4 +1,4 @@
-import sys, os, re, json, time, threading
+import sys, os, re, json, time, threading, importlib
 from datetime import datetime
 from pathlib import Path
 import tempfile, traceback, subprocess, itertools, collections
@@ -94,10 +94,8 @@ def ask_user(question: str, candidates: list = None):
     return {"status": "INTERRUPT", "intent": "HUMAN_INTERVENTION",
         "data": {"question": question, "candidates": candidates or []}}
 
-from simphtml import execute_js_rich, get_html
-
+import simphtml
 driver = None
-
 def first_init_driver():
     global driver
     from TMWebDriver import TMWebDriver
@@ -137,7 +135,8 @@ def web_scan(tabs_only=False, switch_tab_id=None, text_only=False):
                 "active_tab": driver.default_session_id
             }
         }
-        if not tabs_only: result["content"] = get_html(driver, cutlist=True, maxchars=38000, text_only=text_only)
+        if not tabs_only: 
+            importlib.reload(simphtml); result["content"] = simphtml.get_html(driver, cutlist=True, maxchars=38000, text_only=text_only)
         return result
     except Exception as e:
         return {"status": "error", "msg": format_error(e)}
@@ -183,7 +182,7 @@ def web_execute_js(script, switch_tab_id=None, no_monitor=False):
         if driver is None: first_init_driver()
         if len(driver.get_all_sessions()) == 0: return {"status": "error", "msg": "没有可用的浏览器标签页，查L3记忆分析原因。"}
         if switch_tab_id: driver.default_session_id = switch_tab_id
-        result = execute_js_rich(script, driver, no_monitor=no_monitor)
+        result = simphtml.execute_js_rich(script, driver, no_monitor=no_monitor)
         return result
     except Exception as e:
         return {"status": "error", "msg": format_error(e)}
@@ -236,14 +235,13 @@ def file_read(path, start=1, keyword=None, count=200, show_linenos=True):
             else: res = list(itertools.islice(stream, count))
             realcnt = len(res); L_MAX = max(100, 512000//realcnt); TAG = " ... [TRUNCATED]"
             remaining = sum(1 for _ in itertools.islice(stream, 5000))
-            total_lines = (start - 1) + realcnt + remaining
+            total_lines = (res[0][0] - 1 if res else start - 1) + realcnt + remaining
             total_tag = "[FILE] Total " + (f"{total_lines}+" if remaining >= 5000 else str(total_lines)) + ' lines\n'
             res = [(i, l if len(l) <= L_MAX else l[:L_MAX] + TAG) for i, l in res]
             result = "\n".join(f"{i}|{l}" if show_linenos else l for i, l in res)
             if show_linenos: result = total_tag + result
             return result
-    except Exception as e:
-        return f"Error: {str(e)}"
+    except Exception as e: return f"Error: {str(e)}"
 
 def smart_format(data, max_depth=2, max_str_len=100, omit_str=' ... '):
     def truncate(obj, depth):
@@ -516,7 +514,7 @@ def get_global_memory():
     prompt = "\n"
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        with open(os.path.join(script_dir, 'memory/global_mem_insight.txt'), 'r', encoding='utf-8') as f: insight = f.read()
+        with open(os.path.join(script_dir, 'memory/global_mem_insight.txt'), 'r', encoding='utf-8', errors='replace') as f: insight = f.read()
         with open(os.path.join(script_dir, 'assets/insight_fixed_structure.txt'), 'r', encoding='utf-8') as f: structure = f.read()
         prompt += f'cwd = {os.path.abspath("./temp")} （用./引用）\n'
         prompt += f"\n[Memory] (../memory)\n"
