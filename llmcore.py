@@ -485,7 +485,7 @@ class NativeClaudeSession(BaseSession):
         self._session_id = str(uuid.uuid4())
         self._account_uuid = str(uuid.uuid4())
         self._device_id = uuid.uuid4().hex + uuid.uuid4().hex[:32]
-
+        self.tools = None
     def raw_ask(self, messages, tools=None, system=None, model=None, temperature=0.5, max_tokens=6144):
         model = model or self.default_model
         headers = {"Content-Type": "application/json", "anthropic-version": "2023-06-01",
@@ -516,7 +516,7 @@ class NativeClaudeSession(BaseSession):
         content_blocks = yield from _parse_claude_sse(resp.iter_lines())
         return content_blocks or []
 
-    def ask(self, msg, tools=None, model=None):
+    def ask(self, msg, model=None):
         assert type(msg) is dict
         with self.lock:
             self.history.append(msg)
@@ -524,7 +524,7 @@ class NativeClaudeSession(BaseSession):
             messages = [{"role": m["role"], "content": list(m["content"])} for m in self.history]
 
         content_blocks = None
-        gen = self.raw_ask(messages, tools, self.system, model)
+        gen = self.raw_ask(messages, self.tools, self.system, model)
         try:
             while True: yield next(gen)
         except StopIteration as e: content_blocks = e.value or []
@@ -750,6 +750,12 @@ class MixinSession:
         self.default_model = getattr(self._sessions[0], 'default_model', None)
         self._cur_idx, self._switched_at = 0, 0.0
     def __getattr__(self, name): return getattr(self._sessions[0], name)
+    def __setattr__(self, name, value):
+        if name in ('system', 'tools'):
+            for s in self._sessions:
+                v = openai_tools_to_claude(value) if name == 'tools' and type(s) is NativeClaudeSession else value
+                setattr(s, name, v)
+        else: object.__setattr__(self, name, value)
     @property
     def primary(self): return self._sessions[0]
     def _pick(self):
@@ -793,7 +799,6 @@ class NativeToolClient:
     def __init__(self, backend):
         self.backend = backend
         self.backend.system = self.THINKING_PROMPT
-        self.tools = {}
         self.name = self.backend.name
         self._pending_tool_ids = []
     def set_system(self, extra_system):
@@ -801,7 +806,7 @@ class NativeToolClient:
         if combined != self.backend.system: print(f"[Debug] Updated system prompt, length {len(combined)} chars.")
         self.backend.system = combined
     def chat(self, messages, tools=None):
-        if tools: self.tools = openai_tools_to_claude(tools) if type(self.backend) is NativeClaudeSession else tools
+        if tools: self.backend.tools = tools
         combined_content = []; resp = None; tool_results = []
         for msg in messages:
             c = msg.get('content', '')
@@ -821,7 +826,7 @@ class NativeToolClient:
         self._pending_tool_ids = []
         merged = {"role": "user", "content": tool_result_blocks + combined_content}
         _write_llm_log('Prompt', json.dumps(merged, ensure_ascii=False, indent=2))
-        gen = self.backend.ask(merged, self.tools); 
+        gen = self.backend.ask(merged)
         try:
             while True: 
                 chunk = next(gen); yield chunk
