@@ -151,10 +151,19 @@ web_execute_js script='{"cmd": "batch", "commands": [...]}'
 - 验证码canvas/img：JS `canvas.toDataURL()` 直接拿base64最干净
 - 备选：`window.open(location.href,'_blank')` 前台开新标签→win32截图→完后close
 
-## 直接import(仅作调试使用)
-- `sys.path.insert(0, GenericAgent根目录)`, `from TMWebDriver import TMWebDriver`
+## simphtml与TMWebDriver调试
+- ⭐**simphtml唯一调试方法**：必须通过 `code_run` 注入JS到真实浏览器执行，因为Python端无法完全模拟DOM行为。
+  ```python
+  import sys
+  sys.path.append('../')
+  from TMWebDriver import *
+  from simphtml import *
+  driver = TMWebDriver()
+  res = driver.execute_js(js_optHTML) # js_optHTML为simphtml中注入的JS代码
+  ```
 - `d=TMWebDriver()`, `d.set_session('url_pattern')`, `d.execute_js('code')` → 返回`{'data': value}`(非裸值)
 - 配合simphtml：`str(simphtml.optimize_html_for_tokens(html))` → 注意返回BS4 Tag需str()
+- ⚠**DOMRect坑点(hasOverlap)**：`DOMRect` 对象在某些浏览器/上下文中可能缺少 `x` 和 `y` 属性（只有 `left`/`top`），直接访问 `rect.x` 会得到 `undefined`，导致数学计算（如重叠判定）变成 `NaN`，从而引发逻辑错误（如错误判定为重叠导致元素被误删）。必须兼容：`const x = rect.x !== undefined ? rect.x : rect.left;`
 
 ## 跨域iframe操控(postMessage中继)
 - 跨域iframe的contentDocument不可访问，web_execute_js只在顶层执行

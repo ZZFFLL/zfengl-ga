@@ -102,6 +102,10 @@ function createEnhancedDOMCopy() {
     if (sourceNode.nodeType === 1 && sourceNode.tagName === 'DIV') {    
       if (!hasValidChildren && !sourceNode.textContent.trim()) return null; 
     }  
+    // aria-hidden + not visible = truly hidden (e.g. mobile menus), remove even if has children
+    if (sourceNode.getAttribute && sourceNode.getAttribute('aria-hidden') === 'true' && !info.isVisible) {
+      return null;
+    }
     if (info.isVisible || hasValidChildren || keep) {  
       childNodes.forEach(child => clone.appendChild(child));  
       return clone;  
@@ -197,9 +201,10 @@ function analyzeNode(node, pPathType='main') {
         if (child.node.textContent.trim().length > 200) isSecondary = true;  // P3: 有实质文本内容则保留
         if (child.style.visibility === 'hidden') isSecondary = false;
         if (isSecondary) child.node.dataset.mark = 'K:secondary';  
-        else child.node.dataset.mark = 'R:nonEssential';  
+        else child.node.dataset.mark = 'K:nonEssential';  
       }  
     } else {  
+      return; // relaxed: skip equalmany filtering, list truncation handles token budget
       const uniqueClassNames = new Set(childrenInfo.map(item => item.node.getAttribute('class') || '')).size;  
       const highClassNameVariety = uniqueClassNames >= childrenInfo.length * 0.8;  
       if (pathType !== 'main' && highClassNameVariety && childrenInfo.length > 5) {
@@ -267,8 +272,12 @@ function analyzeNode(node, pPathType='main') {
         const r1 = a.rect, r2 = b.rect;  
         if (!r1.width || !r2.width || !r1.height || !r2.height) {return false;}
         const epsilon = 1;
-        return !(r1.x + r1.width <= r2.x + epsilon || r1.x >= r2.x + r2.width - epsilon || 
-            r1.y + r1.height <= r2.y + epsilon || r1.y >= r2.y + r2.height - epsilon
+        const x1 = r1.x !== undefined ? r1.x : r1.left;
+        const y1 = r1.y !== undefined ? r1.y : r1.top;
+        const x2 = r2.x !== undefined ? r2.x : r2.left;
+        const y2 = r2.y !== undefined ? r2.y : r2.top;
+        return !(x1 + r1.width <= x2 + epsilon || x1 >= x2 + r2.width - epsilon || 
+            y1 + r1.height <= y2 + epsilon || y1 >= y2 + r2.height - epsilon
         );
       })
     );  
@@ -309,6 +318,7 @@ js_findMainList = r'''function findMainList(startElement = null) {
         const containers = [];
         const allEls = root.querySelectorAll('*');
         for (const node of allEls) {
+            if (node.closest('svg')) continue;
             if (node.children.length >= MIN_CHILDREN) {
                 containers.push(node);
             }
@@ -363,9 +373,9 @@ js_findMainList = r'''function findMainList(startElement = null) {
             };
             let prefix = '';
             if (cId) {
-                prefix = '#' + cId;
+                prefix = '#' + CSS.escape(cId);
             } else if (cClass) {
-                prefix = (cTag || '').toLowerCase() + cClass.split(/\s+/).slice(0, 3).map(c => '.' + c).join('');
+                prefix = (cTag || '').toLowerCase() + cClass.split(/\s+/).slice(0, 3).map(c => '.' + CSS.escape(c)).join('');
             }
             if (selector) result.selector = prefix ? (prefix + ' > ' + selector) : selector;
             if (score !== undefined) result.score = score;
@@ -382,7 +392,7 @@ js_findMainList = r'''function findMainList(startElement = null) {
     }
     
     function findTopGroups(container, limit) {
-        const children = Array.from(container.children);
+        const children = Array.from(container.children).filter(c => !c.closest('svg'));
         const totalChildren = children.length;
         if (totalChildren < 3) return [];
 
@@ -437,7 +447,7 @@ js_findMainList = r'''function findMainList(startElement = null) {
         // 添加类组
         Object.keys(classFreq).forEach(cls => {
             if (classFreq[cls] >= minGroupSize) {
-                const selector = '.' + cls;
+                const selector = '.' + CSS.escape(cls);
                 groups.push({
                     selector,
                     elements: classMap[cls],
@@ -458,7 +468,7 @@ js_findMainList = r'''function findMainList(startElement = null) {
                                                 );
 
                 if (elements.length >= minGroupSize) {
-                    const selector = tag + '.' + cls;
+                    const selector = tag + '.' + CSS.escape(cls);
                     groups.push({selector, elements, score: scoreGroup(selector, elements)});
                 }
             });
@@ -471,7 +481,7 @@ js_findMainList = r'''function findMainList(startElement = null) {
                                                  el.className && el.className.split(/\s+/).includes(topClasses[i]) && el.className.split(/\s+/).includes(topClasses[j]));
 
                 if (elements.length >= minGroupSize) {
-                    const selector = '.' + topClasses[i] + '.' + topClasses[j];
+                    const selector = '.' + CSS.escape(topClasses[i]) + '.' + CSS.escape(topClasses[j]);
                     groups.push({selector, elements,score: scoreGroup(selector, elements)});
                 }
             }
@@ -692,12 +702,13 @@ def get_html(driver, cutlist=False, maxchars=38000, instruction="", extra_js="",
     for entry in lists:
         sel = entry.get('selector') if isinstance(entry, dict) else None
         if not sel: continue
-        items = soup.select(sel)
+        try: items = soup.select(sel)
+        except Exception: print(f'[cutlist] skip invalid selector: {sel}'); continue
         if len(items) < 5: continue
         total_len = sum(len(str(it)) for it in items)
         avg_len = total_len / len(items)
-        if avg_len < 500 or (avg_len < 1000 and total_len < len(html) * 0.3): continue
-        print(f"[cutlist]   '{sel}': {len(items)} items, avg {avg_len:.0f} chars, total {total_len}, keep 3, save ~{total_len - 3 * avg_len:.0f} chars")
+        print(f"[cutlist]   '{sel}': {len(items)} items, avg {avg_len:.0f} chars, total {total_len}, if keep 3, save ~{total_len - 3 * avg_len:.0f} chars")
+        if avg_len < 400 or (avg_len < 800 and total_len < 4000): continue
         hit = [it for it in items if instruction and instruction.strip() and instruction in it.get_text(" ",strip=True)]
         keep = hit[:6] if hit else items[:3]
         removed = [it for it in items if it not in keep]
