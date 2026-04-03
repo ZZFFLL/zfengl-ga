@@ -127,7 +127,7 @@ class GeneraticAgent:
                 for chunk in gen:
                     if self.stop_sig: break
                     full_resp += chunk
-                    if len(full_resp) - last_pos > 50:
+                    if len(full_resp) - last_pos > 50 or 'LLM Running' in chunk:
                         display_queue.put({'next': full_resp[last_pos:] if self.inc_out else full_resp, 'source': source})
                         last_pos = len(full_resp)
                 if self.inc_out and last_pos < len(full_resp): display_queue.put({'next': full_resp[last_pos:], 'source': source})

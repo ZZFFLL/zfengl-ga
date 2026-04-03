@@ -67,9 +67,11 @@ def render_sidebar():
 with st.sidebar: render_sidebar()
 
 def fold_turns(text):
-    parts = re.split(r'(\**LLM Running \(Turn \d+\) \.\.\.*\**)', text)
-    if len(parts) < 4: return text
-    result = parts[0]
+    """Return list of segments: [{'type':'text','content':...}, {'type':'fold','title':...,'content':...}]"""
+    parts = re.split(r'(\**LLM Running \(Turn \d+\) \.\.\.\*\**)', text)
+    if len(parts) < 4: return [{'type': 'text', 'content': text}]
+    segments = []
+    if parts[0].strip(): segments.append({'type': 'text', 'content': parts[0]})
     turns = []
     for i in range(1, len(parts), 2):
         marker = parts[i].strip('*')
@@ -77,12 +79,22 @@ def fold_turns(text):
         turns.append((marker, content))
     for idx, (marker, content) in enumerate(turns):
         if idx < len(turns) - 1:
-            m = re.search(r'<summary>\s*(.*?)\|*</summary>', content, re.DOTALL)
-            title = m.group(1).strip() if m else marker
-            result += f'<details><summary>{title}</summary>\n\n{content}\n</details>\n\n'
-        else:
-            result += marker + content
-    return result
+            m = re.search(r'<summary>\s*(.*?)\s*</summary>', content, re.DOTALL)
+            if m:
+                title = m.group(1).strip()
+                title = title.split('\n')[0]
+                if len(title) > 50: title = title[:50] + '...'
+            else: title = marker
+            segments.append({'type': 'fold', 'title': title, 'content': content})
+        else: segments.append({'type': 'text', 'content': marker + content})
+    return segments
+def render_segments(segments, container=None):
+    """Render fold_turns output using st.expander (no unsafe_allow_html needed)."""
+    c = container or st
+    for seg in segments:
+        if seg['type'] == 'fold':
+            with c.expander(seg['title'], expanded=False): st.markdown(seg['content'])
+        else: c.markdown(seg['content'])
 
 def agent_backend_stream(prompt):
     display_queue = agent.put_task(prompt, source="user")
@@ -102,10 +114,8 @@ def agent_backend_stream(prompt):
 if "messages" not in st.session_state: st.session_state.messages = []
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
-        if msg["role"] == "assistant":
-            st.markdown(fold_turns(msg["content"]), unsafe_allow_html=True)
-        else:
-            st.markdown(msg["content"], unsafe_allow_html=False)
+        if msg["role"] == "assistant": render_segments(fold_turns(msg["content"]))
+        else: st.markdown(msg["content"])
 
 # IME composition fix (macOS only) - prevents Enter from submitting during CJK input
 if os.name != 'nt':
@@ -114,17 +124,26 @@ if os.name != 'nt':
 
 if prompt := st.chat_input("请输入指令"):
     st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"): st.markdown(prompt, unsafe_allow_html=False)  # 小心 XSS
+    with st.chat_message("user"): st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        message_placeholder = st.empty()
+        turn_placeholders = []
+        rendered_segments = []
         response = ''
         for response in agent_backend_stream(prompt):
-            message_placeholder.markdown(fold_turns(response) + "...", unsafe_allow_html=True)
-        message_placeholder.markdown(fold_turns(response), unsafe_allow_html=True)
+            segments = fold_turns(response)
+            while len(turn_placeholders) < len(segments):
+                turn_placeholders.append(st.empty())
+                rendered_segments.append(None)
+            for i, seg in enumerate(segments):
+                if rendered_segments[i] != seg:
+                    with turn_placeholders[i].container():
+                        if seg['type'] == 'fold':
+                            with st.expander(seg['title']): st.markdown(seg['content'])
+                        else: st.markdown(seg['content'])
+                    rendered_segments[i] = seg
     st.session_state.messages.append({"role": "assistant", "content": response})
     st.session_state.last_reply_time = int(time.time())
 
 if st.session_state.autonomous_enabled:
     st.markdown(f"""<div id="last-reply-time" style="display:none">{st.session_state.get('last_reply_time', int(time.time()))}</div>""", unsafe_allow_html=True)
-
