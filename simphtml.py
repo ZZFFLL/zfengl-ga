@@ -73,8 +73,29 @@ function createEnhancedDOMCopy() {
     const hasValidChildren = nonTextChildren.length > 0;  
           
     if (hasValidChildren) {
-      const maxC = nonTextChildren.map(c => nodeInfo.get(c)).filter(i => i?.isVisible).sort((a, b) => b.area - a.area)[0];
-      if (maxC && maxC.area > 10000 && (!isVisible || maxC.area > info.area * 5)) info = maxC;
+      const childrenInfos = nonTextChildren.map(c => nodeInfo.get(c)).filter(i => i && i.rect && i.rect.width > 0 && i.rect.height > 0);
+      const bgAlpha = (() => {
+        const c = style.backgroundColor;
+        if (!c || c === 'transparent') return 0;
+        const m = c.match(/rgba?\([^)]+,\s*([\d.]+)\)/);
+        return m ? parseFloat(m[1]) : 1;
+      })();
+      const hasVisualBg = bgAlpha > 0.1 || style.backgroundImage !== 'none' || (style.backdropFilter && style.backdropFilter !== 'none') || style.boxShadow !== 'none';
+      
+      if (!hasVisualBg && childrenInfos.length > 0) {
+        let minL = Infinity, minT = Infinity, maxR = -Infinity, maxB = -Infinity;
+        for (const cInfo of childrenInfos) {
+          minL = Math.min(minL, cInfo.rect.left);
+          minT = Math.min(minT, cInfo.rect.top);
+          maxR = Math.max(maxR, cInfo.rect.right);
+          maxB = Math.max(maxB, cInfo.rect.bottom);
+        }
+        info.rect = { left: minL, top: minT, right: maxR, bottom: maxB, width: maxR - minL, height: maxB - minT };
+        info.area = info.rect.width * info.rect.height;
+      } else {
+        const maxC = childrenInfos.filter(i => i.isVisible).sort((a, b) => b.area - a.area)[0];
+        if (maxC && maxC.area > 10000 && (!isVisible || maxC.area > info.area * 5)) info = maxC;
+      }
     }
     nodeInfo.set(clone, info);
 
