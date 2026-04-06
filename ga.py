@@ -136,7 +136,7 @@ def web_scan(tabs_only=False, switch_tab_id=None, text_only=False):
             }
         }
         if not tabs_only: 
-            importlib.reload(simphtml); result["content"] = simphtml.get_html(driver, cutlist=True, maxchars=38000, text_only=text_only)
+            importlib.reload(simphtml); result["content"] = simphtml.get_html(driver, cutlist=True, maxchars=35000, text_only=text_only)
         return result
     except Exception as e:
         return {"status": "error", "msg": format_error(e)}
@@ -378,7 +378,7 @@ class GenericAgentHandler(BaseHandler):
         yield f"[Action] {action_str} file: {os.path.basename(path)}\n"
 
         def extract_robust_content(text):
-            tag = re.search(r"<file_content>(.*)</file_content>", text, re.DOTALL)
+            tag = re.search(r"<file_content[^>]*>(.*)</file_content>", text, re.DOTALL)
             if tag: return tag.group(1).strip()
             s, e = text.find("```"), text.rfind("```")
             if -1 < s < e: return text[text.find("\n", s)+1 : e].strip()

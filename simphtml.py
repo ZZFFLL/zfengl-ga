@@ -301,10 +301,20 @@ let root = domCopy;
 while (root.children.length === 1) {  
   root = root.children[0];  
 }  
-for (let ii = 0; ii < 3; ii++) 
+for (let ii = 0; ii < 3; ii++) {
   root.querySelectorAll('div').forEach(div => (!div.textContent.trim() && div.children.length === 0) && div.remove());
+}
 root.querySelectorAll('[data-mark]').forEach(e => e.removeAttribute('data-mark'));  
-root.removeAttribute('data-mark');  
+root.removeAttribute('data-mark');
+root.querySelectorAll('iframe').forEach(f => {
+  if (f.children.length) {
+    const d = document.createElement('div');
+    for (const a of f.attributes) d.setAttribute(a.name, a.value);
+    d.setAttribute('data-tag', 'iframe');
+    while (f.firstChild) d.appendChild(f.firstChild);
+    f.parentNode.replaceChild(d, f);
+  }
+});
 return root.outerHTML;
     }
 optHTML()'''
@@ -690,10 +700,12 @@ def find_changed_elements(before_html, after_html):
         result["top_change"] = h if len(h) <= 2000 else h[:2000] + '...[TRUNCATED]'
     return result
 
-def get_html(driver, cutlist=False, maxchars=38000, instruction="", extra_js="", text_only=False):
+def get_html(driver, cutlist=False, maxchars=35000, instruction="", extra_js="", text_only=False):
     page = get_main_block(driver, extra_js=extra_js, text_only=text_only)
     if text_only: return page
     soup = optimize_html_for_tokens(page)
+    for div in soup.select('div[data-tag="iframe"]'):
+        div.name = 'iframe'; del div['data-tag']
     html = str(soup)
     if not cutlist: return html
     rr = driver.execute_js(js_findMainList + """return findMainList(document.body);""").get('data', [])
@@ -724,8 +736,25 @@ def get_html(driver, cutlist=False, maxchars=38000, instruction="", extra_js="",
         for it in removed: it.decompose()
     ss = str(optimize_html_for_tokens(soup)) if lists else html
     if lists: print(f"[cutlist] Result: {len(html)} -> {len(ss)} chars ({100-len(ss)*100//len(html)}% saved)")
-    if len(ss) > maxchars: ss = ss[:maxchars] + ' ... [TRUNCATED]'
+    if len(ss) > maxchars: ss = str(truncate_biggest(soup, maxchars))
     return ss
+
+def truncate_biggest(soup, budget):
+    over = len(str(soup)) - budget
+    if over <= 0: return soup
+    t = max((t for t in soup.find_all(True) if len(str(t)) > over and t.parent), key=lambda x: len(str(x)))
+    # 穿透空壳: 最胖子Tag占>70%就深入, 跳过html/body/单传div
+    while (kids := [(c, len(str(c))) for c in t.children if c.name]) and max(kids, key=lambda x: x[1])[1] > len(str(t)) * .7:
+        t = max(kids, key=lambda x: x[1])[0]
+    acc, keep = 0, len(str(t)) - over
+    for c in list(t.children):
+        if (acc := acc + len(str(c))) > keep:
+            tail = list(c.next_siblings)
+            c.replace_with(BeautifulSoup(str(c)[:max(0, keep-acc+len(str(c)))] + f' [TRUNCATED {over//1000}k chars]', 'html.parser'))
+            for s in tail: s.extract()
+            break
+    print(f"[truncate] finally {len(str(soup))} chars, cut <{t.name}> by {over}")
+    return soup
 
 def execute_js_rich(script, driver, no_monitor=False):
     last_html = None
