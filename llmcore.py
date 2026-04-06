@@ -14,9 +14,10 @@ mykeys = _load_mykeys()
 proxy = mykeys.get("proxy", 'http://127.0.0.1:2082')
 proxies = {"http": proxy, "https": proxy} if proxy else None
 
-def compress_history_tags(messages, keep_recent=10, max_len=800):
+def compress_history_tags(messages, keep_recent=10, max_len=800, force=False):
     """Compress <thinking>/<tool_use>/<tool_result> tags in older messages to save tokens."""
     compress_history_tags._cd = getattr(compress_history_tags, '_cd', 0) + 1
+    if force: compress_history_tags._cd = 0
     if compress_history_tags._cd % 5 != 0: return messages
     _before = sum(len(json.dumps(m, ensure_ascii=False)) for m in messages)
     _pats = {tag: re.compile(rf'(<{tag}>)([\s\S]*?)(</{tag}>)') for tag in ('thinking', 'think', 'tool_use', 'tool_result')}
@@ -60,6 +61,7 @@ def trim_messages_history(history, context_win):
     cost = sum(len(json.dumps(m, ensure_ascii=False)) for m in history) 
     print(f'[Debug] Current context: {cost} chars, {len(history)} messages.')
     if cost > context_win * 3: 
+        compress_history_tags(history, keep_recent=4, force=True)   # trim breaks cache, so compress more btw
         target = context_win * 3 * 0.6
         while len(history) > 5 and cost > target:
             history.pop(0)
