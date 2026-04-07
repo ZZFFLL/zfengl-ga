@@ -160,8 +160,9 @@ function analyzeNode(node, pPathType='main') {
     const childrenInfo = children.map(child => {  
       const info = getNodeInfo(child) || { rect: {}, style: {} };  
       return { node: child, rect: info.rect, style: info.style, 
-          area: info.area, zIndex: info.zIndex, isVisible: info.isVisible };  
-    }).sort((a, b) => b.area - a.area);  
+          area: info.area, zIndex: (info.zIndex || 0), isVisible: info.isVisible };  
+    });
+    childrenInfo.sort((a, b) => b.area - a.area);  
     
     // 检测是划分还是覆盖  
     const isOverlay = hasOverlap(childrenInfo);  
@@ -223,6 +224,9 @@ function analyzeNode(node, pPathType='main') {
   }   
   
   function handleOverlayContainer(childrenInfo, pathType) {  
+    // elementFromPoint ground truth: 让浏览器告诉我们谁在视觉最上层
+    const _efp = document.elementFromPoint(window.innerWidth/2, window.innerHeight/2);
+    if (_efp) { let _el = _efp; while (_el) { const _h = childrenInfo.find(c => c.node.id && c.node.id === _el.id); if (_h) { _h.zIndex = 9999; break; } _el = _el.parentElement; } }
     const sorted = [...childrenInfo].sort((a, b) => b.zIndex - a.zIndex);  
     console.log('排序后的子元素:', sorted);
     if (sorted.length === 0) return;  
@@ -324,22 +328,20 @@ js_findMainList = r'''function findMainList(startElement = null) {
         const MIN_CHILDREN = 8;
         const MAX_CONTAINERS = 20;
 
-        // 全局扫描：收集所有子元素足够多的容器
-        const containers = [];
+        // 全局扫描：收集候选容器，按 l1 + l2*0.1 排序（l2=孙子元素数，捕获表格等多层结构）
+        const candidates = [];
         const allEls = root.querySelectorAll('*');
         for (const node of allEls) {
             if (node.closest('svg')) continue;
-            if (node.children.length >= MIN_CHILDREN) {
-                containers.push(node);
-            }
+            const l1 = node.children.length;
+            if (l1 < 5) continue;
+            let l2 = 0;
+            for (const child of node.children) l2 += child.children.length;
+            const score = l1 + l2 * 0.1;
+            if (score >= MIN_CHILDREN) candidates.push({node, score});
         }
-        if (root.children.length >= MIN_CHILDREN && !containers.includes(root)) {
-            containers.unshift(root);
-        }
-
-        // 按子元素数量降序，取前 MAX_CONTAINERS 个
-        containers.sort((a, b) => b.children.length - a.children.length);
-        const toProcess = containers.slice(0, MAX_CONTAINERS);
+        candidates.sort((a, b) => b.score - a.score);
+        const toProcess = candidates.slice(0, MAX_CONTAINERS).map(c => c.node);
 
         // 对每个容器找候选组并评分
         let allCandidates = [];
@@ -374,6 +376,7 @@ js_findMainList = r'''function findMainList(startElement = null) {
         }
 
         function describeResult(container, items, selector, score) {
+            if(container&&!container.id)container.id='_ljq'+(window._lci=(window._lci||0)+1);
             const cTag = container ? container.tagName : null;
             const cId = container ? (container.id || '') : '';
             const cClass = container ? (String(container.className || '').trim()) : '';
@@ -382,11 +385,7 @@ js_findMainList = r'''function findMainList(startElement = null) {
                 itemCount: items.length,
             };
             let prefix = '';
-            if (cId) {
-                prefix = '#' + CSS.escape(cId);
-            } else if (cClass) {
-                prefix = (cTag || '').toLowerCase() + cClass.split(/\s+/).slice(0, 3).map(c => '.' + CSS.escape(c)).join('');
-            }
+            if (cId) prefix = '#' + CSS.escape(cId);
             if (selector) result.selector = prefix ? (prefix + ' > ' + selector) : selector;
             if (score !== undefined) result.score = score;
             if (items.length > 0) {
@@ -701,6 +700,7 @@ def find_changed_elements(before_html, after_html):
     return result
 
 def get_html(driver, cutlist=False, maxchars=35000, instruction="", extra_js="", text_only=False):
+    if cutlist: rr = driver.execute_js(js_findMainList + "return findMainList(document.body);").get('data', [])
     page = get_main_block(driver, extra_js=extra_js, text_only=text_only)
     if text_only: return page
     soup = optimize_html_for_tokens(page)
@@ -708,7 +708,6 @@ def get_html(driver, cutlist=False, maxchars=35000, instruction="", extra_js="",
         div.name = 'iframe'; del div['data-tag']
     html = str(soup)
     if not cutlist: return html
-    rr = driver.execute_js(js_findMainList + """return findMainList(document.body);""").get('data', [])
     lists = rr if isinstance(rr, list) else ([rr] if isinstance(rr, dict) and rr.get('selector') else [])
     if lists: print(f"[cutlist] Found {len(lists)} list(s): {[e.get('selector','?') if isinstance(e,dict) else '?' for e in lists]}")
     for entry in lists:
@@ -720,7 +719,7 @@ def get_html(driver, cutlist=False, maxchars=35000, instruction="", extra_js="",
         total_len = sum(len(str(it)) for it in items)
         avg_len = total_len / len(items)
         print(f"[cutlist]   '{sel}': {len(items)} items, avg {avg_len:.0f} chars, total {total_len}, if keep 3, save ~{total_len - 3 * avg_len:.0f} chars")
-        if avg_len < 400 or (avg_len < 800 and total_len < 4000): continue
+        if avg_len < 200 or (avg_len < 700 and total_len < 2500): continue
         hit = [it for it in items if instruction and instruction.strip() and instruction in it.get_text(" ",strip=True)]
         keep = hit[:6] if hit else items[:3]
         removed = [it for it in items if it not in keep]
@@ -736,24 +735,83 @@ def get_html(driver, cutlist=False, maxchars=35000, instruction="", extra_js="",
         for it in removed: it.decompose()
     ss = str(optimize_html_for_tokens(soup)) if lists else html
     if lists: print(f"[cutlist] Result: {len(html)} -> {len(ss)} chars ({100-len(ss)*100//len(html)}% saved)")
-    if len(ss) > maxchars: ss = str(truncate_biggest(soup, maxchars))
+    if len(ss) > maxchars: ss = str(smart_truncate(soup, maxchars))
     return ss
 
-def truncate_biggest(soup, budget):
-    over = len(str(soup)) - budget
+def smart_truncate(soup, budget, _depth=0):
+    """原地截断 soup 使其接近 budget 字符。
+    策略：穿透单子元素找分叉点；top3 能扛住 over 则按比例分担，否则从尾部删子元素。"""
+    CUT_THRESHOLD = 8000  # 小于此值直接去尾，大于则继续递归找分叉点
+    indent = '  ' * _depth
+    def cut(ele, keep):
+        from bs4 import NavigableString
+        s = str(ele)
+        over = len(s) - keep
+        if over <= 0: return
+        # 保护 FAKE ELEMENT 提示标签
+        protected = [c.extract() for c in ele.find_all(lambda tag: tag.string and '[FAKE ELEMENT]' in tag.string)]
+        s = str(ele)
+        over = len(s) - keep
+        if over <= 0:
+            for p in protected: ele.append(p)
+            return
+        marker = f' [TRUNCATED {over//1000}k chars]'
+        inner = ele.decode_contents()
+        tag_overhead = len(s) - len(inner)
+        inner_keep = max(keep - tag_overhead - len(marker), 0)
+        ele.clear()
+        if inner_keep > 0:
+            ele.append(BeautifulSoup(inner[:inner_keep], 'html.parser'))
+        ele.append(NavigableString(marker))
+        for p in protected: ele.append(p)
+    total = len(str(soup))
+    if total <= budget: return soup
+    kids = [(c, len(str(c))) for c in soup.children if c.name and not (c.string and '[FAKE ELEMENT]' in c.string)]
+    if not kids: return soup
+    selflen = total - sum(l for _, l in kids)
+    remaining_budget = max(budget - selflen, 0)
+    tag = getattr(soup, 'name', '?')
+    print(f'{indent}[smart_truncate] <{tag}> total={total} budget={budget} selflen={selflen} kids={len(kids)}')
+    # === 1 kid: 穿透 ===
+    if len(kids) == 1:
+        print(f'{indent}  -> single child, recurse into <{kids[0][0].name}>')
+        smart_truncate(kids[0][0], remaining_budget, _depth)
+        return soup
+    over = sum(l for _, l in kids) - remaining_budget
     if over <= 0: return soup
-    t = max((t for t in soup.find_all(True) if len(str(t)) > over and t.parent), key=lambda x: len(str(x)))
-    # 穿透空壳: 最胖子Tag占>70%就深入, 跳过html/body/单传div
-    while (kids := [(c, len(str(c))) for c in t.children if c.name]) and max(kids, key=lambda x: x[1])[1] > len(str(t)) * .7:
-        t = max(kids, key=lambda x: x[1])[0]
-    acc, keep = 0, len(str(t)) - over
-    for c in list(t.children):
-        if (acc := acc + len(str(c))) > keep:
-            tail = list(c.next_siblings)
-            c.replace_with(BeautifulSoup(str(c)[:max(0, keep-acc+len(str(c)))] + f' [TRUNCATED {over//1000}k chars]', 'html.parser'))
-            for s in tail: s.extract()
-            break
-    print(f"[truncate] finally {len(str(soup))} chars, cut <{t.name}> by {over}")
+    # 看 top 3 能否承担 over
+    ranked = sorted(range(len(kids)), key=lambda i: kids[i][1], reverse=True)
+    tops = list(ranked[:min(3, len(ranked))])
+    top_total = sum(kids[i][1] for i in tops)
+    if top_total < over:
+        # === top 3 扛不住，从尾部删子元素 ===
+        removed = 0
+        removed_count = 0
+        while kids and removed < over:
+            c, l = kids.pop(); c.decompose()
+            removed += l; removed_count += 1
+        print(f'{indent}  -> tail-cut: removed {removed_count} children ({removed//1000}k chars) from end')
+        return soup
+    # === top 2-3 按比例分担 ===
+    # 过滤掉太小的 kid（不到最大的 10%），让大的全扛
+    max_size = kids[ranked[0]][1]
+    filtered = [i for i in tops if kids[i][1] >= max_size * 0.1]
+    filtered_total = sum(kids[i][1] for i in filtered)
+    if filtered_total >= over:
+        tops, top_total = filtered, filtered_total
+    # 先打印所有分配计划
+    actions = []
+    for i in tops:
+        c, l = kids[i]
+        share = int(over * l / top_total)
+        new_keep = l - share
+        print(f'{indent}  -> <{c.name}> {l} -> {new_keep} (share={share})')
+        actions.append((c, l, new_keep))
+    # 再统一执行
+    for c, l, new_keep in actions:
+        if new_keep <= 0: c.decompose()
+        elif new_keep > CUT_THRESHOLD: smart_truncate(c, new_keep, _depth + 1)
+        else: cut(c, new_keep)
     return soup
 
 def execute_js_rich(script, driver, no_monitor=False):
