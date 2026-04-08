@@ -114,13 +114,6 @@ web_execute_js script='{"cmd": "batch", "commands": [...]}'
 - simphtml：`str(simphtml.optimize_html_for_tokens(html))` — 返回BS4 Tag需str()
 - ⚠**DOMRect坑(hasOverlap)**：某些上下文`rect.x/y`为undefined(只有left/top)，导致NaN→误判重叠。兼容：`rect.x ?? rect.left`
 
-## 跨域iframe操控(postMessage中继)
-- 扩展content script支持：顶层发postMessage到iframe，iframe内eval+回传结果
-- 顶层发送：`iframe.contentWindow.postMessage({type:'ljq_exec', id, code}, '*')`
-- iframe回传：`{type:'ljq_result', id, result}` 通过window.addEventListener('message')接收
-- ⚠只能eval表达式，不支持return/函数体包装
-- 已验证：读取iframe内DOM、填写input均成功
-
 ## 连不上排查
 web_scan失败时按序排查：
 ①扩展没装？→检查Chrome扩展列表(chrome://extensions)是否有TMWebDriver扩展

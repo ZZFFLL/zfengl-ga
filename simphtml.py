@@ -734,7 +734,7 @@ def get_html(driver, cutlist=False, maxchars=35000, instruction="", extra_js="",
         if keep: keep[-1].insert_after(hint_tag)
         for it in removed: it.decompose()
     ss = str(optimize_html_for_tokens(soup)) if lists else html
-    if lists: print(f"[cutlist] Result: {len(html)} -> {len(ss)} chars ({100-len(ss)*100//len(html)}% saved)")
+    print(f"[get_html] Result: {len(html)} -> {len(ss)} chars after cutlist ({100-len(ss)*100//len(html)}% saved)")
     if len(ss) > maxchars: ss = str(smart_truncate(soup, maxchars))
     return ss
 
@@ -844,7 +844,7 @@ def execute_js_rich(script, driver, no_monitor=False):
         new_sids = {k: v for k, v in after.items() if k not in before_sids}
         if new_sids:
             newTabs = [{'id': k, 'url': v} for k, v in new_sids.items()]
-            rr['environment']['newTabs'] = newTabs
+            rr['newTabs'] = newTabs
             rr['suggestion'] = "页面已刷新，以上新标签页在执行期间连接。"
     if error_msg: rr['error'] = error_msg
     if no_monitor: return rr
