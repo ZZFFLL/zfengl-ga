@@ -79,9 +79,9 @@ def fold_turns(text):
         turns.append((marker, content))
     for idx, (marker, content) in enumerate(turns):
         if idx < len(turns) - 1:
-            m = re.search(r'<summary>\s*(.*?)\s*</summary>', content, re.DOTALL)
-            if m:
-                title = m.group(1).strip()
+            matches = re.findall(r'<summary>\s*((?:(?!<summary>).)*?)\s*</summary>', content, re.DOTALL)
+            if matches:
+                title = matches[-1].strip()
                 title = title.split('\n')[0]
                 if len(title) > 50: title = title[:50] + '...'
             else: title = marker.strip('*')

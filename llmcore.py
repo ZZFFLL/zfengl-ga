@@ -22,18 +22,28 @@ def compress_history_tags(messages, keep_recent=10, max_len=800, force=False):
     _before = sum(len(json.dumps(m, ensure_ascii=False)) for m in messages)
     _pats = {tag: re.compile(rf'(<{tag}>)([\s\S]*?)(</{tag}>)') for tag in ('thinking', 'think', 'tool_use', 'tool_result')}
     _hist_pat = re.compile(r'<(history|key_info)>[\s\S]*?</\1>')
+    def _trunc_str(s): return s[:max_len//2] + '\n...[Truncated]...\n' + s[-max_len//2:] if isinstance(s, str) and len(s) > max_len else s
     def _trunc(text):
         text = _hist_pat.sub(lambda m: f'<{m.group(1)}>[...]</{m.group(1)}>', text)
-        for pat in _pats.values(): text = pat.sub(lambda m: m.group(1) + m.group(2)[:max_len] + '...' + m.group(3) if len(m.group(2)) > max_len else m.group(0), text)
+        for pat in _pats.values(): text = pat.sub(lambda m: m.group(1) + _trunc_str(m.group(2)) + m.group(3), text)
         return text
     for i, msg in enumerate(messages):
         if i >= len(messages) - keep_recent: break
         c = msg['content']
         if isinstance(c, str): msg['content'] = _trunc(c)
         elif isinstance(c, list):
-            for block in c:
-                if isinstance(block, dict) and block.get('type') == 'text' and isinstance(block.get('text'), str):
-                    block['text'] = _trunc(block['text'])
+            for b in c:
+                if not isinstance(b, dict): continue
+                t = b.get('type')
+                if t == 'text' and isinstance(b.get('text'), str): b['text'] = _trunc(b['text'])
+                elif t == 'tool_result':
+                    tc = b.get('content')
+                    if isinstance(tc, str): b['content'] = _trunc_str(tc)
+                    elif isinstance(tc, list):
+                        for sub in tc:
+                            if isinstance(sub, dict) and sub.get('type') == 'text': sub['text'] = _trunc_str(sub.get('text'))
+                elif t == 'tool_use' and isinstance(b.get('input'), dict):
+                    for k, v in b['input'].items(): b['input'][k] = _trunc_str(v)
     print(f"[Cut] {_before} -> {sum(len(json.dumps(m, ensure_ascii=False)) for m in messages)}")
     return messages
 
@@ -420,8 +430,8 @@ class BaseSession:
         proxy = cfg.get('proxy')
         self.proxies = {"http": proxy, "https": proxy} if proxy else None
         self.max_retries = max(0, int(cfg.get('max_retries', 2)))
-        self.connect_timeout = max(1, int(cfg.get('connect_timeout', 10)))
-        self.read_timeout = max(5, int(cfg.get('read_timeout', 60)))
+        self.connect_timeout = max(1, int(cfg.get('timeout', 5)))
+        self.read_timeout = max(5, int(cfg.get('read_timeout', 30)))
         effort = cfg.get('reasoning_effort')
         effort = None if effort is None else str(effort).strip().lower()
         self.reasoning_effort = effort if effort in ('none', 'minimal', 'low', 'medium', 'high', 'xhigh') else None
@@ -457,13 +467,13 @@ class ClaudeSession(BaseSession):
         headers = {"x-api-key": self.api_key, "Content-Type": "application/json", "anthropic-version": "2023-06-01", "anthropic-beta": "prompt-caching-2024-07-31"}
         payload = {"model": model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens, "stream": True}
         if self.system: payload["system"] = [{"type": "text", "text": self.system, "cache_control": {"type": "persistent"}}]
-        content_blocks = []
         try:
-            with requests.post(auto_make_url(self.api_base, "messages"), headers=headers, json=payload, stream=True, timeout=(5,30)) as r:
-                r.raise_for_status()
-                content_blocks = yield from _parse_claude_sse(r.iter_lines())
-        except Exception as e: yield f"Error: {str(e)}"
-        return content_blocks or []
+            with requests.post(auto_make_url(self.api_base, "messages"), headers=headers, json=payload, stream=True, timeout=(self.connect_timeout, self.read_timeout)) as r:
+                if r.status_code != 200: raise Exception(f"HTTP {r.status_code} {r.text[:500]}")
+                return (yield from _parse_claude_sse(r.iter_lines())) or []
+        except Exception as e:
+            yield (err := f"Error: {e}")
+            return [{"type": "text", "text": err}]
     def make_messages(self, raw_list):
         msgs = [{"role": m['role'], "content": list(m['content'])} for m in raw_list]
         c = msgs[-1]["content"]
@@ -508,17 +518,12 @@ class NativeClaudeSession(BaseSession):
         messages[-1] = {**messages[-1], "content": list(messages[-1]["content"])}
         messages[-1]["content"][-1] = dict(messages[-1]["content"][-1], cache_control={"type": "ephemeral"})
         try:
-            resp = requests.post(auto_make_url(self.api_base, "messages"), headers=headers, json=payload, stream=True, timeout=60)
-            if resp.status_code != 200:
-                error_msg = f"Error: HTTP {resp.status_code} {resp.text[:500]}"
-                yield error_msg
-                return [{"type": "text", "text": error_msg}]
+            resp = requests.post(auto_make_url(self.api_base, "messages"), headers=headers, json=payload, stream=True, timeout=(self.connect_timeout, self.read_timeout))
+            if resp.status_code != 200: raise Exception(f"HTTP {resp.status_code} {resp.text[:500]}")
+            return (yield from _parse_claude_sse(resp.iter_lines())) or []
         except Exception as e:
-            error_msg = f"Error: {e}"
-            yield error_msg
-            return [{"type": "text", "text": error_msg}]
-        content_blocks = yield from _parse_claude_sse(resp.iter_lines())
-        return content_blocks or []
+            yield (err := f"Error: {e}")
+            return [{"type": "text", "text": err}]
 
     def ask(self, msg, model=None):
         assert type(msg) is dict
