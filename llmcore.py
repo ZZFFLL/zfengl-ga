@@ -413,13 +413,10 @@ def _msgs_claude2oai(messages):
                     src = b.get("source") or {}
                     if src.get("type") == "base64" and src.get("data"):
                         text_parts.append({"type": "image_url", "image_url": {"url": f"data:{src.get('media_type', 'image/png')};base64,{src.get('data', '')}"}})
-                elif b.get("type") == "image_url":
-                    text_parts.append(b)
-                elif b.get("type") == "text":
-                    text_parts.append({"type": "text", "text": b.get("text", "")})
+                elif b.get("type") == "image_url": text_parts.append(b)
+                elif b.get("type") == "text": text_parts.append({"type": "text", "text": b.get("text", "")})
             if text_parts: result.append({"role": "user", "content": text_parts})
-        else:
-            result.append(msg)
+        else: result.append(msg)
     return result
 
 

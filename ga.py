@@ -383,7 +383,7 @@ class GenericAgentHandler(BaseHandler):
         blocks = extract_robust_content(response.content)
         if not blocks:
             yield f"[Status] ❌ 失败: 未在回复中找到<file_content>代码块内容\n"
-            return StepOutcome({"status": "error", "msg": "No content found, if you want a blank, you should use code_run"}, next_prompt="\n")
+            return StepOutcome({"status": "error", "msg": "No content found. Put content inside <file_content>...</file_content> tags in your reply body and call file_write."}, next_prompt="\n")
         try:
             new_content = expand_file_refs(blocks, base_dir=self.cwd)
             if mode == "prepend":
