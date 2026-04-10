@@ -75,6 +75,7 @@ restore_commit.txt
 sche_tasks/
 # CDP Bridge 密钥配置（首次运行自动生成）
 assets/tmwd_cdp_bridge/config.js
+assets/copilot_proxy.pyw
 **log.*
 
 # Reflect (ignore new files, whitelist existing)
