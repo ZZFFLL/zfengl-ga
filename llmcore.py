@@ -348,6 +348,9 @@ def _to_responses_input(messages):
     result = []
     for msg in messages:
         role = str(msg.get("role", "user")).lower()
+        if role == "tool":
+            result.append({"type": "function_call_output", "call_id": msg.get("tool_call_id", ""), "output": msg.get("content", "")})
+            continue
         if role not in ["user", "assistant", "system", "developer"]: role = "user"
         if role == "system": role = "developer"  # Responses API uses 'developer' instead of 'system'
         content = msg.get("content", "")
@@ -367,6 +370,9 @@ def _to_responses_input(messages):
                     if url and role != "assistant": parts.append({"type": "input_image", "image_url": url})
         if len(parts) == 0: parts = [{"type": text_type, "text": str(content)}]
         result.append({"role": role, "content": parts})
+        for tc in (msg.get("tool_calls") or []):
+            f = tc.get("function", {})
+            result.append({"type": "function_call", "call_id": tc.get("id", ""), "name": f.get("name", ""), "arguments": f.get("arguments", "")})
     return result
 
 
@@ -469,7 +475,7 @@ class ClaudeSession(BaseSession):
         if self.system: payload["system"] = [{"type": "text", "text": self.system, "cache_control": {"type": "persistent"}}]
         try:
             with requests.post(auto_make_url(self.api_base, "messages"), headers=headers, json=payload, stream=True, timeout=(self.connect_timeout, self.read_timeout)) as r:
-                if r.status_code != 200: raise Exception(f"HTTP {r.status_code} {r.text[:500]}")
+                if r.status_code != 200: raise Exception(f"HTTP {r.status_code} {r.content.decode('utf-8', errors='replace')[:500]}")
                 return (yield from _parse_claude_sse(r.iter_lines())) or []
         except Exception as e:
             yield (err := f"Error: {e}")
@@ -519,7 +525,7 @@ class NativeClaudeSession(BaseSession):
         messages[-1]["content"][-1] = dict(messages[-1]["content"][-1], cache_control={"type": "ephemeral"})
         try:
             resp = requests.post(auto_make_url(self.api_base, "messages"), headers=headers, json=payload, stream=True, timeout=(self.connect_timeout, self.read_timeout))
-            if resp.status_code != 200: raise Exception(f"HTTP {resp.status_code} {resp.text[:500]}")
+            if resp.status_code != 200: raise Exception(f"HTTP {resp.status_code} {resp.content.decode('utf-8', errors='replace')[:500]}")
             return (yield from _parse_claude_sse(resp.iter_lines())) or []
         except Exception as e:
             yield (err := f"Error: {e}")

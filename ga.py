@@ -429,7 +429,7 @@ class GenericAgentHandler(BaseHandler):
         yield f"[Info] Updated key_info and related_sop.\n"
         next_prompt = self._get_anchor_prompt(skip=args.get('_index', 0) > 0)
         #next_prompt += '\n[SYSTEM TIPS] 此函数一般在任务开始或中间时调用，如果任务已成功完成应该是start_long_term_update用于结算长期记忆。\n'
-        return StepOutcome({"status": "success"}, next_prompt=next_prompt)
+        return StepOutcome({"result": "working key_info updated"}, next_prompt=next_prompt)
 
     def do_no_tool(self, args, response):
         '''这是一个特殊工具，由引擎自主调用，不要包含在TOOLS_SCHEMA里。
