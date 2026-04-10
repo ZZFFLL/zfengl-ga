@@ -413,7 +413,7 @@ class GenericAgentHandler(BaseHandler):
             result = tips + result 
         if ' ... [TRUNCATED]' in result: result += '\n\n（某些行被截断，如需完整内容可改用 code_run 读取）'
         result = smart_format(result, max_str_len=20000, omit_str='\n\n[omitted long content]\n\n')
-        next_prompt = self._get_anchor_prompt()
+        next_prompt = self._get_anchor_prompt(skip=args.get('_index', 0) > 0)
         log_memory_access(path)
         if 'memory' in path or 'sop' in path: 
             next_prompt += "\n[SYSTEM TIPS] 正在读取记忆或SOP文件，若决定按sop执行请提取sop中的关键点（特别是靠后的）update working memory."
@@ -493,8 +493,9 @@ class GenericAgentHandler(BaseHandler):
         prompt += f"\nCurrent turn: {self.current_turn}\n"
         if self.working.get('key_info'): prompt += f"\n<key_info>{self.working.get('key_info')}</key_info>"
         if self.working.get('related_sop'): prompt += f"\n有不清晰的地方请再次读取{self.working.get('related_sop')}"
-        try: print(prompt)
-        except: pass
+        if getattr(self.parent, 'verbose', False):
+            try: print(prompt)
+            except: pass
         return prompt
 
     def next_prompt_patcher(self, next_prompt, outcome, turn):
