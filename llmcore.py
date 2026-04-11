@@ -563,14 +563,7 @@ class NativeClaudeSession(BaseSession):
         text_parts = [b["text"] for b in content_blocks if b.get("type") == "text"]
         content = "\n".join(text_parts).strip()
         tool_calls = [MockToolCall(b["name"], b.get("input", {}), id=b.get("id", "")) for b in content_blocks if b.get("type") == "tool_use"]
-        if len(tool_calls) == 0 and content.endswith('}]'):
-            _pat = next((p for p in ['[{"type":"tool_use"', '[{"type": "tool_use"'] if p in content), None)
-            if _pat:
-                try:
-                    idx = content.index(_pat); raw = json.loads(content[idx:])
-                    tool_calls = [MockToolCall(b["name"], b.get("input", {}), id=b.get("id", "")) for b in raw if b.get("type") == "tool_use"]
-                    content = content[:idx].strip()
-                except: pass
+        if not tool_calls: tool_calls, content = _parse_text_tool_calls(content)
         think_pattern = r"<think(?:ing)?>(.*?)</think(?:ing)?>"; thinking = ''
         think_match = re.search(think_pattern, content, re.DOTALL)
         if think_match:
@@ -747,6 +740,28 @@ class ToolClient:
         content = remaining_text.strip()
         return MockResponse(thinking, content, tool_calls, text)
 
+def _parse_text_tool_calls(content):
+    """Fallback: extract tool calls from text when model doesn't use native tool_use blocks."""
+    tcs = []
+    # try JSON array: [{"type":"tool_use", "name":..., "input":...}]
+    _jp = next((p for p in ['[{"type":"tool_use"', '[{"type": "tool_use"'] if p in content), None)
+    if _jp and content.endswith('}]'):
+        try:
+            idx = content.index(_jp); raw = json.loads(content[idx:])
+            tcs = [MockToolCall(b["name"], b.get("input", {}), id=b.get("id", "")) for b in raw if b.get("type") == "tool_use"]
+            return tcs, content[:idx].strip()
+        except: pass
+    # try XML tags: <tool_call>{"name":..., "arguments":...}</tool_call>
+    _xp = r"<(?:tool_use|tool_call)>((?:(?!<(?:tool_use|tool_call)>).){15,}?)</(?:tool_use|tool_call)>"
+    for s in re.findall(_xp, content, re.DOTALL):
+        try:
+            d = tryparse(s.strip()); name = d.get('name')
+            args = d.get('arguments') or d.get('args') or d.get('input') or {}
+            if name: tcs.append(MockToolCall(name, args))
+        except: pass
+    if tcs: content = re.sub(_xp, "", content, flags=re.DOTALL).strip()
+    return tcs, content
+
 def _write_llm_log(label, content):
     log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'temp/model_responses')
     os.makedirs(log_dir, exist_ok=True)
@@ -778,7 +793,7 @@ class MixinSession:
         assert len(groups) == 1, f"MixinSession: sessions must be in same group (Native or non-Native), got {[type(s).__name__ for s in self._sessions]}"
         self.name = '|'.join(s.name for s in self._sessions)
         self._orig_raw_asks = [s.raw_ask for s in self._sessions]
-        import copy; self._sessions[0] = copy.copy(self._sessions[0])
+        #import copy; self._sessions[0] = copy.copy(self._sessions[0])
         self._sessions[0].raw_ask = self._raw_ask
         self.default_model = getattr(self._sessions[0], 'default_model', None)
         self._cur_idx, self._switched_at = 0, 0.0
