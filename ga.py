@@ -264,7 +264,8 @@ class GenericAgentHandler(BaseHandler):
     
     def tool_after_callback(self, tool_name, args, response, ret):
         if args.get('_index', 0) > 0: return 
-        rsumm = re.search(r"<summary>(.*?)</summary>", response.content, re.DOTALL)
+        _c = re.sub(r'```.*?```|<thinking>.*?</thinking>', '', response.content, flags=re.DOTALL)
+        rsumm = re.search(r"<summary>(.*?)</summary>", _c, re.DOTALL)
         if rsumm: summary = rsumm.group(1).strip()[:200]
         else:
             clean_args = {k: v for k, v in args.items() if not k.startswith('_')}

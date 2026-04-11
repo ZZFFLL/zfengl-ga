@@ -492,6 +492,23 @@ class LLMSession(BaseSession):
                                   read_timeout=self.read_timeout, proxies=self.proxies))
     def make_messages(self, raw_list): return _msgs_claude2oai(raw_list)
 
+def _fix_messages(messages):
+    """修复 messages 符合 Claude API：交替、tool_use/tool_result 配对"""
+    if not messages: return messages
+    _wrap = lambda c: c if isinstance(c, list) else [{"type": "text", "text": str(c)}]
+    fixed = []
+    for m in messages:
+        if fixed and m['role'] == fixed[-1]['role']:
+            fixed[-1] = {**fixed[-1], 'content': _wrap(fixed[-1]['content']) + _wrap(m['content'])}; continue
+        if fixed and fixed[-1]['role'] == 'assistant' and m['role'] == 'user':
+            uses = [b.get('id') for b in fixed[-1].get('content', []) if isinstance(b, dict) and b.get('type') == 'tool_use' and b.get('id')]
+            has = {b.get('tool_use_id') for b in _wrap(m['content']) if isinstance(b, dict) and b.get('type') == 'tool_result'}
+            miss = [uid for uid in uses if uid not in has]
+            if miss: m = {**m, 'content': [{"type": "tool_result", "tool_use_id": uid, "content": "(error)"} for uid in miss] + _wrap(m['content'])}
+        fixed.append(m)
+    while fixed and fixed[0]['role'] != 'user': fixed.pop(0)
+    return fixed
+
 class NativeClaudeSession(BaseSession):
     def __init__(self, cfg):
         super().__init__(cfg)
@@ -502,7 +519,8 @@ class NativeClaudeSession(BaseSession):
         self._device_id = uuid.uuid4().hex + uuid.uuid4().hex[:32]
         self.tools = None
         self.claude_tools_format = True
-    def raw_ask(self, messages, tools=None, system=None, model=None, temperature=0.5, max_tokens=6144):
+    def raw_ask(self, messages, model=None, temperature=0.5, max_tokens=6144):
+        messages = _fix_messages(messages)
         model = model or self.default_model
         headers = {"Content-Type": "application/json", "anthropic-version": "2023-06-01",
             "anthropic-beta": "prompt-caching-2024-07-31", "x-app": "cli", "user-agent": "claude-cli/2.1.80 (external, cli)"}
@@ -510,14 +528,13 @@ class NativeClaudeSession(BaseSession):
         else: headers["x-api-key"] = self.api_key
         payload = {"model": model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens, "stream": True}
         payload["metadata"] = {"user_id": json.dumps({"device_id": self._device_id, "account_uuid": self._account_uuid, "session_id": self._session_id}, separators=(',', ':'))}
-        if tools:
-            if self.claude_tools_format: tools = openai_tools_to_claude(tools)
-            tools = [dict(t) for t in tools]; tools[-1]["cache_control"] = {"type": "ephemeral"}
+        if self.tools:
+            tools = [dict(t) for t in self.tools]; tools[-1]["cache_control"] = {"type": "ephemeral"}
             payload["tools"] = tools
         payload['system'] = [{"type": "text", "text": "You are Claude Code, Anthropic's official CLI for Claude.", "cache_control": {"type": "ephemeral"}}]
-        if system:
-            if self.fake_cc_system_prompt: messages[0]["content"].insert(0, {"type": "text", "text": system})
-            else: payload["system"] = [{"type": "text", "text": system}]
+        if self.system:
+            if self.fake_cc_system_prompt: messages[0]["content"].insert(0, {"type": "text", "text": self.system})
+            else: payload["system"] = [{"type": "text", "text": self.system}]
         messages[-1] = {**messages[-1], "content": list(messages[-1]["content"])}
         messages[-1]["content"][-1] = dict(messages[-1]["content"][-1], cache_control={"type": "ephemeral"})
         try:
@@ -536,7 +553,7 @@ class NativeClaudeSession(BaseSession):
             messages = [{"role": m["role"], "content": list(m["content"])} for m in self.history]
 
         content_blocks = None
-        gen = self.raw_ask(messages, self.tools, self.system, model)
+        gen = self.raw_ask(messages, model=model)
         try:
             while True: yield next(gen)
         except StopIteration as e: content_blocks = e.value or []
@@ -564,12 +581,12 @@ class NativeOAISession(NativeClaudeSession):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.claude_tools_format = False  
-    def raw_ask(self, messages, tools=None, system=None, model=None, temperature=0.5, max_tokens=6144, **kw):
+    def raw_ask(self, messages, model=None, temperature=0.5, max_tokens=6144, **kw):
         """OpenAI streaming. yields text chunks, generator return = list[content_block]"""
         model = model or self.default_model
-        msgs = ([{"role": "system", "content": system}] if system else []) + _msgs_claude2oai(messages)
+        msgs = ([{"role": "system", "content": self.system}] if self.system else []) + _msgs_claude2oai(messages)
         return (yield from _openai_stream(self.api_base, self.api_key, msgs, model, self.api_mode,
-                                          temperature=temperature, max_tokens=max_tokens, tools=tools,
+                                          temperature=temperature, max_tokens=max_tokens, tools=self.tools,
                                           reasoning_effort=self.reasoning_effort,
                                           max_retries=self.max_retries, connect_timeout=self.connect_timeout,
                                           read_timeout=self.read_timeout, proxies=self.proxies))

@@ -86,7 +86,7 @@ def agent_runner_loop(client, system_prompt, user_input, handler, tools_schema, 
             if not outcome.next_prompt: 
                 should_exit = {'result': 'CURRENT_TASK_DONE', 'data': outcome.data}; break
             if outcome.next_prompt.startswith('未知工具'): client.last_tools = ''
-            if outcome.data is not None: 
+            if outcome.data is not None and tool_name != 'no_tool': 
                 datastr = json.dumps(outcome.data, ensure_ascii=False, default=json_default) if type(outcome.data) in [dict, list] else str(outcome.data) 
                 tool_results.append({'tool_use_id': tid, 'content': datastr})
             next_prompts.add(outcome.next_prompt)
