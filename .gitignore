@@ -43,6 +43,11 @@ memory/*
 !memory/autonomous_operation_sop/**
 !memory/scheduled_task_sop.md
 
+# L4 session archiver (only the script, not archives)
+!memory/L4_raw_sessions/
+memory/L4_raw_sessions/*
+!memory/L4_raw_sessions/compress_session.py
+
 # ljqCtrl related tools
 !memory/ljqCtrl.py
 !memory/ljqCtrl_sop.md

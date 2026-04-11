@@ -121,7 +121,7 @@ class SiderLLMSession:
 def _parse_claude_sse(resp_lines):
     """Parse Anthropic SSE stream. Yields text chunks, returns list[content_block]."""
     content_blocks = []; current_block = None; tool_json_buf = ""
-    stop_reason = None; got_message_stop = False
+    stop_reason = None; got_message_stop = False; warn = None
     for line in resp_lines:
         if not line: continue
         line = line.decode('utf-8') if isinstance(line, bytes) else line
@@ -167,15 +167,13 @@ def _parse_claude_sse(resp_lines):
         elif evt_type == "error":
             err = evt.get("error", {})
             emsg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
-            print(f"[SSE ERROR] {emsg}")
-            yield f"\n\n[SSE Error: {emsg}]"
-            break
-    if not got_message_stop and not stop_reason:
-        print("[WARN] SSE stream ended without message_stop - possible network interruption")
-        yield "\n\n[!!! 流异常中断，未收到完整响应 !!!]"
-    elif stop_reason == "max_tokens":
-        print(f"[WARN] Response truncated: max_tokens")
-        yield "\n\n[!!! Response truncated: max_tokens !!!]"
+            warn = f"\n\n[SSE Error: {emsg}]"; break
+    if not warn:
+        if not got_message_stop and not stop_reason: warn = "\n\n[!!! 流异常中断，未收到完整响应 !!!]"
+        elif stop_reason == "max_tokens": warn = "\n\n[!!! Response truncated: max_tokens !!!]"
+    if warn:
+        print(f"[WARN] {warn.strip()}")
+        content_blocks.append({"type": "text", "text": warn}); yield warn
     return content_blocks
 
 def _parse_openai_sse(resp_lines, api_mode="chat_completions"):
@@ -432,7 +430,7 @@ class BaseSession:
         self.name = cfg.get('name', self.default_model)
         proxy = cfg.get('proxy')
         self.proxies = {"http": proxy, "https": proxy} if proxy else None
-        self.max_retries = max(0, int(cfg.get('max_retries', 2)))
+        self.max_retries = max(0, int(cfg.get('max_retries', 1)))
         self.connect_timeout = max(1, int(cfg.get('timeout', 5)))
         self.read_timeout = max(5, int(cfg.get('read_timeout', 30)))
         effort = cfg.get('reasoning_effort')
