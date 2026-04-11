@@ -52,9 +52,9 @@ memory/L4_raw_sessions/*
 !memory/ljqCtrl.py
 !memory/ljqCtrl_sop.md
 
-# mem_scanner related tools
-!memory/mem_scanner.py
-!memory/mem_scanner_sop.md
+# procmem_scanner related tools
+!memory/procmem_scanner.py
+!memory/procmem_scanner_sop.md
 
 # TMWebDriver SOP
 !memory/tmwebdriver_sop.md

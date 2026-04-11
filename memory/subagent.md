@@ -9,7 +9,7 @@
 - 流程：启动 → 轮询 output.txt（`[ROUND END]`=该轮完成）→ 写 reply.txt 继续 → 不写则10min退出
 - 干预文件：`_stop`(当轮结束退出) | `_keyinfo`(写入即注入下轮prompt的key_info) | `_intervene`(写入内容作为下轮追加指令)
 - output1/2/3.txt：reply后各轮输出（递增编号），同样append+`[ROUND END]`
-- input.txt：目标+约束，可指定SOP名。禁写具体步骤（除非已读SOP确认）。大量数据给路径禁塞入
+- input.txt：目标+约束，可指定SOP名。**禁写具体步骤**。大量数据给路径禁塞入
 - ⚠ `--input`走命令行，长文本/含引号会超时。超过一句话时：先写input.txt，启动时不带`--input`
 - --bg启动瞬间返回，可同一code_run内sleep后poll；非--bg方式禁止合并启动+轮询
 
