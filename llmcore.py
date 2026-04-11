@@ -109,8 +109,8 @@ class SiderLLMSession:
         from sider_ai_api import Session   # 不使用sider的话没必要安装这个包
         self._core = Session(cookie=cfg['apikey'], proxies=proxies)   
         self.default_model = cfg.get('model', 'gemini-3.0-flash')
-    def ask(self, prompt, model=None, stream=False):
-        if model is None: model = self.default_model
+    def ask(self, prompt, stream=False):
+        model = self.default_model
         if len(prompt) > 28000: 
             print(f"[Warn] Prompt too long ({len(prompt)} chars), truncating.")
             prompt = prompt[-28000:]
@@ -441,7 +441,7 @@ class BaseSession:
         if effort and not self.reasoning_effort: print(f"[WARN] Invalid reasoning_effort {effort!r}, ignored.")
         mode = str(cfg.get('api_mode', 'chat_completions')).strip().lower().replace('-', '_')
         self.api_mode = 'responses' if mode in ('responses', 'response') else 'chat_completions'
-    def ask(self, prompt, model=None, stream=False):
+    def ask(self, prompt, stream=False):
         def _ask_gen():
             content = ''
             with self.lock:
@@ -449,7 +449,7 @@ class BaseSession:
                 trim_messages_history(self.history, self.context_win)
                 messages = self.make_messages(self.history)
             content_blocks = None
-            gen = self.raw_ask(messages, model)
+            gen = self.raw_ask(messages)
             try:
                 while True: chunk = next(gen); content += chunk; yield chunk
             except StopIteration as e: content_blocks = e.value or []
@@ -462,8 +462,8 @@ class BaseSession:
         return _ask_gen() if stream else ''.join(list(_ask_gen()))
 
 class ClaudeSession(BaseSession):
-    def raw_ask(self, messages, model=None, temperature=0.5, max_tokens=6144):
-        model = model or self.default_model
+    def raw_ask(self, messages, temperature=0.5, max_tokens=6144):
+        model = self.default_model
         ml = model.lower()
         if 'kimi' in ml or 'moonshot' in ml: temperature = 1.0  # kimi/moonshot only accepts temp 1.0
         elif 'minimax' in ml: temperature = max(0.01, min(temperature, 1.0))  # MiniMax requires temp in (0, 1]
@@ -484,9 +484,8 @@ class ClaudeSession(BaseSession):
         return msgs
 
 class LLMSession(BaseSession):
-    def raw_ask(self, messages, model=None, temperature=0.5):
-        if model is None: model = self.default_model
-        return (yield from _openai_stream(self.api_base, self.api_key, messages, model, self.api_mode,
+    def raw_ask(self, messages, temperature=0.5):
+        return (yield from _openai_stream(self.api_base, self.api_key, messages, self.default_model, self.api_mode,
                                   temperature=temperature, reasoning_effort=self.reasoning_effort,
                                   max_retries=self.max_retries, connect_timeout=self.connect_timeout,
                                   read_timeout=self.read_timeout, proxies=self.proxies))
@@ -499,7 +498,7 @@ def _fix_messages(messages):
     fixed = []
     for m in messages:
         if fixed and m['role'] == fixed[-1]['role']:
-            fixed[-1] = {**fixed[-1], 'content': _wrap(fixed[-1]['content']) + _wrap(m['content'])}; continue
+            fixed[-1] = {**fixed[-1], 'content': _wrap(fixed[-1]['content']) + [{"type": "text", "text": "\n"}] + _wrap(m['content'])}; continue
         if fixed and fixed[-1]['role'] == 'assistant' and m['role'] == 'user':
             uses = [b.get('id') for b in fixed[-1].get('content', []) if isinstance(b, dict) and b.get('type') == 'tool_use' and b.get('id')]
             has = {b.get('tool_use_id') for b in _wrap(m['content']) if isinstance(b, dict) and b.get('type') == 'tool_result'}
@@ -519,13 +518,17 @@ class NativeClaudeSession(BaseSession):
         self._device_id = uuid.uuid4().hex + uuid.uuid4().hex[:32]
         self.tools = None
         self.claude_tools_format = True
-    def raw_ask(self, messages, model=None, temperature=0.5, max_tokens=6144):
+    def raw_ask(self, messages, temperature=0.5, max_tokens=6144):
         messages = _fix_messages(messages)
-        model = model or self.default_model
+        model = self.default_model
+        beta_parts = ["claude-code-20250219", "interleaved-thinking-2025-05-14", "redact-thinking-2026-02-12", "prompt-caching-scope-2026-01-05"]
+        if "[1m]" in model.lower():
+            beta_parts.insert(1, "context-1m-2025-08-07"); model = model.replace("[1m]", "").replace("[1M]", "")
         headers = {"Content-Type": "application/json", "anthropic-version": "2023-06-01",
-            "anthropic-beta": "prompt-caching-2024-07-31", "x-app": "cli", "user-agent": "claude-cli/2.1.80 (external, cli)"}
-        if self.api_key.startswith("cr_"): headers["authorization"] = f"Bearer {self.api_key}"
-        else: headers["x-api-key"] = self.api_key
+            "anthropic-beta": ",".join(beta_parts), "anthropic-dangerous-direct-browser-access": "true",
+            "user-agent": "claude-cli/2.1.90 (external, cli)", "x-app": "cli"}
+        if self.api_key.startswith("sk-ant-"): headers["x-api-key"] = self.api_key
+        else: headers["authorization"] = f"Bearer {self.api_key}"
         payload = {"model": model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens, "stream": True}
         payload["metadata"] = {"user_id": json.dumps({"device_id": self._device_id, "account_uuid": self._account_uuid, "session_id": self._session_id}, separators=(',', ':'))}
         if self.tools:
@@ -538,14 +541,14 @@ class NativeClaudeSession(BaseSession):
         messages[-1] = {**messages[-1], "content": list(messages[-1]["content"])}
         messages[-1]["content"][-1] = dict(messages[-1]["content"][-1], cache_control={"type": "ephemeral"})
         try:
-            resp = requests.post(auto_make_url(self.api_base, "messages"), headers=headers, json=payload, stream=True, timeout=(self.connect_timeout, self.read_timeout))
+            resp = requests.post(auto_make_url(self.api_base, "messages")+'?beta=true', headers=headers, json=payload, stream=True, timeout=(self.connect_timeout, self.read_timeout))
             if resp.status_code != 200: raise Exception(f"HTTP {resp.status_code} {resp.content.decode('utf-8', errors='replace')[:500]}")
             return (yield from _parse_claude_sse(resp.iter_lines())) or []
         except Exception as e:
             yield (err := f"Error: {e}")
             return [{"type": "text", "text": err}]
 
-    def ask(self, msg, model=None):
+    def ask(self, msg):
         assert type(msg) is dict
         with self.lock:
             self.history.append(msg)
@@ -553,7 +556,7 @@ class NativeClaudeSession(BaseSession):
             messages = [{"role": m["role"], "content": list(m["content"])} for m in self.history]
 
         content_blocks = None
-        gen = self.raw_ask(messages, model=model)
+        gen = self.raw_ask(messages)
         try:
             while True: yield next(gen)
         except StopIteration as e: content_blocks = e.value or []
@@ -581,11 +584,10 @@ class NativeOAISession(NativeClaudeSession):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.claude_tools_format = False  
-    def raw_ask(self, messages, model=None, temperature=0.5, max_tokens=6144, **kw):
+    def raw_ask(self, messages, temperature=0.5, max_tokens=6144, **kw):
         """OpenAI streaming. yields text chunks, generator return = list[content_block]"""
-        model = model or self.default_model
         msgs = ([{"role": "system", "content": self.system}] if self.system else []) + _msgs_claude2oai(messages)
-        return (yield from _openai_stream(self.api_base, self.api_key, msgs, model, self.api_mode,
+        return (yield from _openai_stream(self.api_base, self.api_key, msgs, self.default_model, self.api_mode,
                                           temperature=temperature, max_tokens=max_tokens, tools=self.tools,
                                           reasoning_effort=self.reasoning_effort,
                                           max_retries=self.max_retries, connect_timeout=self.connect_timeout,
@@ -778,6 +780,7 @@ class MixinSession:
         assert len(groups) == 1, f"MixinSession: sessions must be in same group (Native or non-Native), got {[type(s).__name__ for s in self._sessions]}"
         self.name = '|'.join(s.name for s in self._sessions)
         self._orig_raw_asks = [s.raw_ask for s in self._sessions]
+        import copy; self._sessions[0] = copy.copy(self._sessions[0])
         self._sessions[0].raw_ask = self._raw_ask
         self.default_model = getattr(self._sessions[0], 'default_model', None)
         self._cur_idx, self._switched_at = 0, 0.0
@@ -815,7 +818,7 @@ class MixinSession:
             nxt = (base + attempt + 1) % n
             if nxt == base:  # full round failed, delay before next
                 rnd = (attempt + 1) // n
-                delay = min(30, self._base_delay * (2 ** rnd))
+                delay = min(30, self._base_delay * (1.5 ** rnd))
                 print(f'[MixinSession] {last_chunk[:80]}, round {rnd} exhausted, retry in {delay:.1f}s')
                 time.sleep(delay)
             else: print(f'[MixinSession] {last_chunk[:80]}, retry {attempt+1}/{self._retries} (s{idx}→s{nxt})')
