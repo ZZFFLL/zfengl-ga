@@ -532,6 +532,7 @@ class NativeClaudeSession(BaseSession):
         if self.tools:
             tools = [dict(t) for t in self.tools]; tools[-1]["cache_control"] = {"type": "ephemeral"}
             payload["tools"] = tools
+        else: print("[ERROR] No tools provided for this session.")
         payload['system'] = [{"type": "text", "text": "You are Claude Code, Anthropic's official CLI for Claude.", "cache_control": {"type": "ephemeral"}}]
         if self.system:
             if self.fake_cc_system_prompt: messages[0]["content"].insert(0, {"type": "text", "text": self.system})
@@ -792,8 +793,8 @@ class MixinSession:
         groups = {is_native(s) for s in self._sessions}
         assert len(groups) == 1, f"MixinSession: sessions must be in same group (Native or non-Native), got {[type(s).__name__ for s in self._sessions]}"
         self.name = '|'.join(s.name for s in self._sessions)
+        import copy; self._sessions[0] = copy.copy(self._sessions[0])
         self._orig_raw_asks = [s.raw_ask for s in self._sessions]
-        #import copy; self._sessions[0] = copy.copy(self._sessions[0])
         self._sessions[0].raw_ask = self._raw_ask
         self.default_model = getattr(self._sessions[0], 'default_model', None)
         self._cur_idx, self._switched_at = 0, 0.0
