@@ -7,7 +7,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from llmcore import SiderLLMSession, LLMSession, ToolClient, ClaudeSession, MixinSession, NativeToolClient, NativeClaudeSession, build_multimodal_content, NativeOAISession
 from agent_loop import agent_runner_loop
-from ga import GenericAgentHandler, smart_format, get_global_memory, format_error
+from ga import GenericAgentHandler, smart_format, get_global_memory, format_error, consume_file
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 def load_tool_schema(suffix=''):
@@ -63,7 +63,8 @@ class GeneraticAgent:
                 except Exception as e: print(f'[WARN] Failed to init MixinSession with cfg {s["mixin_cfg"]}: {e}')
         self.llmclients = llm_sessions
         self.lock = threading.Lock()
-        self.history = []               
+        self.task_dir = None
+        self.history = []
         self.task_queue = queue.Queue() 
         self.is_running = False; self.stop_sig = False
         self.llm_no = 0;  self.inc_out = False
@@ -125,6 +126,7 @@ class GeneraticAgent:
             try:
                 full_resp = ""; last_pos = 0
                 for chunk in gen:
+                    if consume_file(self.task_dir, '_stop'): self.abort() 
                     if self.stop_sig: break
                     full_resp += chunk
                     if len(full_resp) - last_pos > 50 or 'LLM Running' in chunk:
@@ -175,8 +177,8 @@ if __name__ == '__main__':
     threading.Thread(target=agent.run, daemon=True).start()
 
     if args.task:
-        d = os.path.join(script_dir, f'temp/{args.task}'); nround = ''
-        rp = os.path.join(d, 'reply.txt'); infile = os.path.join(d, 'input.txt')
+        agent.task_dir = d = os.path.join(script_dir, f'temp/{args.task}'); nround = ''
+        infile = os.path.join(d, 'input.txt')
         if args.input:
             os.makedirs(d, exist_ok=True)
             import glob; [os.remove(f) for f in glob.glob(os.path.join(d, 'output*.txt'))]
@@ -188,11 +190,10 @@ if __name__ == '__main__':
                 if 'next' in item and random.random() < 0.95:  # 概率写一次中间结果
                     with open(f'{d}/output{nround}.txt', 'w', encoding='utf-8') as f: f.write(item.get('next', ''))
             with open(f'{d}/output{nround}.txt', 'w', encoding='utf-8') as f: f.write(item['done'] + '\n\n[ROUND END]\n')
+            consume_file(d, '_stop')  # 已经成功停下来了，避免打断下次reply
             for _ in range(300):  # 等reply.txt，10分钟超时
                 time.sleep(2)
-                if os.path.exists(rp):
-                    with open(rp, encoding='utf-8') as f: raw = f.read()
-                    os.remove(rp); break
+                if (raw := consume_file(d, 'reply.txt')): break
             else: break
             nround = nround + 1 if isinstance(nround, int) else 1
     elif args.reflect:

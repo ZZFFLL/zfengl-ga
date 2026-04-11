@@ -249,6 +249,12 @@ def smart_format(data, max_str_len=100, omit_str=' ... '):
     if len(data) < max_str_len + len(omit_str)*2: return data
     return f"{data[:max_str_len//2]}{omit_str}{data[-max_str_len//2:]}"
 
+def consume_file(dr, file):
+    if dr and os.path.exists(os.path.join(dr, file)): 
+        with open(os.path.join(dr, file), encoding='utf-8', errors='replace') as f: content = f.read()
+        os.remove(os.path.join(dr, file))
+        return content
+
 class GenericAgentHandler(BaseHandler):
     '''Generic Agent 工具库，包含多种工具的实现。工具函数自动加上了 do_ 前缀。实际工具名没有前缀。'''
     def __init__(self, parent, last_history=None, cwd='./temp'):
@@ -505,6 +511,10 @@ class GenericAgentHandler(BaseHandler):
         elif turn % 7 == 0:
             next_prompt += f"\n\n[DANGER] 已连续执行第 {turn} 轮。禁止无效重试。若无有效进展，必须切换策略：1. 探测物理边界 2. 请求用户协助。如有需要，可调用 update_working_checkpoint 保存关键上下文。"
         elif turn % 10 == 0: next_prompt += get_global_memory()
+        injkeyinfo = consume_file(self.parent.task_dir, '_keyinfo')
+        injprompt = consume_file(self.parent.task_dir, '_intervene')
+        if injkeyinfo: self.working['key_info'] = self.working.get('key_info', '') + f"\n[MASTER] {injkeyinfo}"
+        if injprompt: next_prompt += f"\n\n[MASTER] {injprompt}\n"
         return next_prompt
 
 def get_global_memory():
