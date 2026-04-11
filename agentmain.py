@@ -188,13 +188,13 @@ if __name__ == '__main__':
                 if 'next' in item and random.random() < 0.95:  # 概率写一次中间结果
                     with open(f'{d}/output{nround}.txt', 'w', encoding='utf-8') as f: f.write(item.get('next', ''))
             with open(f'{d}/output{nround}.txt', 'w', encoding='utf-8') as f: f.write(item['done'] + '\n\n[ROUND END]\n')
-            for _ in range(300):  # 等reply.txt，5分钟超时
+            for _ in range(300):  # 等reply.txt，10分钟超时
                 time.sleep(2)
                 if os.path.exists(rp):
                     with open(rp, encoding='utf-8') as f: raw = f.read()
                     os.remove(rp); break
             else: break
-            nround = int(nround) + 1 if nround.isdigit() else 1
+            nround = nround + 1 if isinstance(nround, int) else 1
     elif args.reflect:
         import importlib.util
         spec = importlib.util.spec_from_file_location('reflect_script', args.reflect)

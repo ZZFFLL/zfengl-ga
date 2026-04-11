@@ -139,6 +139,7 @@ if prompt := st.chat_input("请输入指令"):
         turns = []; cache = []; response = ''
         for response in agent_backend_stream(prompt):
             render_segments(fold_turns(response), placeholders=turns, rendered_cache=cache, suffix='<span style="animation: blink 1s step-start infinite; color: #0066cc;">▌</span><style>@keyframes blink { 50% { opacity: 0; } }</style>')
+            st.empty()  # force Streamlit to check StopException on every iteration (incl. heartbeat)
         render_segments(fold_turns(response), placeholders=turns, rendered_cache=cache, force_text=True)
     st.session_state.messages.append({"role": "assistant", "content": response})
     st.session_state.last_reply_time = int(time.time())

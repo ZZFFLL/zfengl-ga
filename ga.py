@@ -251,7 +251,7 @@ def smart_format(data, max_str_len=100, omit_str=' ... '):
 
 class GenericAgentHandler(BaseHandler):
     '''Generic Agent 工具库，包含多种工具的实现。工具函数自动加上了 do_ 前缀。实际工具名没有前缀。'''
-    def __init__(self, parent, last_history=None, cwd='./'):
+    def __init__(self, parent, last_history=None, cwd='./temp'):
         self.parent = parent
         self.working = {}
         self.cwd = cwd;  self.current_turn = 0
