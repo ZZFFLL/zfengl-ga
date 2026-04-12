@@ -89,21 +89,15 @@ def fold_turns(text):
             segments.append({'type': 'fold', 'title': title, 'content': content})
         else: segments.append({'type': 'text', 'content': marker + content})
     return segments
-def render_segments(segments, placeholders=None, rendered_cache=None, suffix='', force_text=False):
-    def _render_seg(target, seg, suf=''):
+def render_segments(segments, suffix=''):
+    # 整块重画：调用方用 slot.container() 包裹，保证 DOM 路径稳定、跨 rerun 对齐（消除"灰色重影"）。
+    # heartbeat 空转时 segments 不变 → Streamlit 后端 diff 无变化 → 前端零闪烁；
+    # 但 container/markdown 本身是 API 调用，StopException 仍会被抛出（abort 照常起作用）。
+    for seg in segments:
         if seg['type'] == 'fold':
-            with target.expander(seg['title'], expanded=False): st.markdown(seg['content'])
-        else: target.markdown(seg['content'] + suf, unsafe_allow_html=not not suf)
-    if placeholders is not None:  
-        while len(placeholders) < len(segments):
-            placeholders.append(st.empty()); rendered_cache.append(None)
-        for i, seg in enumerate(segments):
-            if rendered_cache[i] != (seg, suffix):
-                if not force_text or seg['type'] == 'text':
-                    with placeholders[i].container(): _render_seg(st, seg, suffix)
-                    rendered_cache[i] = (seg, suffix)
-    else: 
-        for seg in segments: _render_seg(st, seg)
+            with st.expander(seg['title'], expanded=False): st.markdown(seg['content'])
+        else:
+            st.markdown(seg['content'] + suffix, unsafe_allow_html=not not suffix)
 
 def agent_backend_stream(prompt):
     display_queue = agent.put_task(prompt, source="user")
@@ -123,8 +117,11 @@ def agent_backend_stream(prompt):
 if "messages" not in st.session_state: st.session_state.messages = []
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
-        if msg["role"] == "assistant": render_segments(fold_turns(msg["content"]))
-        else: st.markdown(msg["content"])
+        # 用 slot=st.empty() + with slot.container(): ... 的外壳，DOM 路径和流式渲染完全一致，跨 rerun 对齐
+        slot = st.empty()
+        with slot.container():
+            if msg["role"] == "assistant": render_segments(fold_turns(msg["content"]))
+            else: st.markdown(msg["content"])
 
 # IME composition fix (macOS only) - prevents Enter from submitting during CJK input
 if os.name != 'nt':
@@ -136,11 +133,13 @@ if prompt := st.chat_input("请输入指令"):
     with st.chat_message("user"): st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        turns = []; cache = []; response = ''
+        slot = st.empty(); response = ''
+        CURSOR = '<span style="animation: blink 1s step-start infinite; color: #0066cc;">▌</span><style>@keyframes blink { 50% { opacity: 0; } }</style>'
         for response in agent_backend_stream(prompt):
-            render_segments(fold_turns(response), placeholders=turns, rendered_cache=cache, suffix='<span style="animation: blink 1s step-start infinite; color: #0066cc;">▌</span><style>@keyframes blink { 50% { opacity: 0; } }</style>')
-            st.empty()  # force Streamlit to check StopException on every iteration (incl. heartbeat)
-        render_segments(fold_turns(response), placeholders=turns, rendered_cache=cache, force_text=True)
+            # 每轮整块重画（含 heartbeat 空转）：segments 不变时 Streamlit diff 零变更 → 不闪烁；
+            # 而 slot.container() 调用本身保证 Streamlit 能抛 StopException（abort 生效）
+            with slot.container(): render_segments(fold_turns(response), suffix=CURSOR)
+        with slot.container(): render_segments(fold_turns(response))  # 收尾去光标
     st.session_state.messages.append({"role": "assistant", "content": response})
     st.session_state.last_reply_time = int(time.time())
 
