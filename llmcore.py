@@ -521,7 +521,6 @@ class NativeClaudeSession(BaseSession):
         self._account_uuid = str(uuid.uuid4())
         self._device_id = uuid.uuid4().hex + uuid.uuid4().hex[:32]
         self.tools = None
-        self.claude_tools_format = True
     def raw_ask(self, messages, temperature=0.5, max_tokens=6144):
         messages = _fix_messages(messages)
         model = self.default_model
@@ -537,6 +536,7 @@ class NativeClaudeSession(BaseSession):
         payload = {"model": model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens, "stream": True}
         payload["metadata"] = {"user_id": json.dumps({"device_id": self._device_id, "account_uuid": self._account_uuid, "session_id": self._session_id}, separators=(',', ':'))}
         if self.tools:
+            self.tools = openai_tools_to_claude(self.tools)
             tools = [dict(t) for t in self.tools]; tools[-1]["cache_control"] = {"type": "ephemeral"}
             payload["tools"] = tools
         else: print("[ERROR] No tools provided for this session.")
@@ -581,7 +581,6 @@ class NativeClaudeSession(BaseSession):
 class NativeOAISession(NativeClaudeSession):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.claude_tools_format = False  
     def raw_ask(self, messages, temperature=0.5, max_tokens=6144, **kw):
         """OpenAI streaming. yields text chunks, generator return = list[content_block]"""
         msgs = ([{"role": "system", "content": self.system}] if self.system else []) + _msgs_claude2oai(messages)
