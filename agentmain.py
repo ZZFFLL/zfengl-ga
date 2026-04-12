@@ -158,6 +158,7 @@ if __name__ == '__main__':
     parser.add_argument('--reflect', metavar='SCRIPT', help='反射模式：加载监控脚本，check()触发时发任务')
     parser.add_argument('--input', help='任务内容')
     parser.add_argument('--llm_no', type=int, default=0, help='LLM编号')
+    parser.add_argument('--verbose', action='store_true', help='输出包含工具执行结果(监察模式用)')
     parser.add_argument('--bg', action='store_true', help='后台自举: spawn自身去掉--bg, print PID, exit')
     args = parser.parse_args()
 
@@ -173,7 +174,7 @@ if __name__ == '__main__':
 
     agent = GeneraticAgent()
     agent.next_llm(args.llm_no)
-    agent.verbose = False
+    agent.verbose = args.verbose
     threading.Thread(target=agent.run, daemon=True).start()
 
     if args.task:

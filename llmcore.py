@@ -10,9 +10,14 @@ def _load_mykeys():
     if not os.path.exists(p): raise Exception('[ERROR] mykey.py or mykey.json not found, please create one from mykey_template.')
     with open(p, encoding='utf-8') as f: return json.load(f)
 
-mykeys = _load_mykeys()
-proxy = mykeys.get("proxy", 'http://127.0.0.1:2082')
-proxies = {"http": proxy, "https": proxy} if proxy else None
+def __getattr__(name):
+    if name in ('mykeys', 'proxies'):
+        mk = _load_mykeys()
+        proxy = mk.get("proxy", 'http://127.0.0.1:2082')
+        px = {"http": proxy, "https": proxy} if proxy else None
+        globals().update(mykeys=mk, proxies=px)
+        return globals()[name]
+    raise AttributeError(f"module 'llmcore' has no attribute {name}")
 
 def compress_history_tags(messages, keep_recent=10, max_len=800, force=False):
     """Compress <thinking>/<tool_use>/<tool_result> tags in older messages to save tokens."""
@@ -61,8 +66,7 @@ def _sanitize_leading_user_msg(msg):
             if isinstance(c, list):  # content 本身也可能是 list[{type:text,text:...}]
                 texts.extend(b.get('text', '') for b in c if isinstance(b, dict))
             else: texts.append(str(c))
-        elif block.get('type') == 'text':
-            texts.append(block.get('text', ''))
+        elif block.get('type') == 'text': texts.append(block.get('text', ''))
     msg['content'] = [{"type": "text", "text": '\n'.join(t for t in texts if t)}]
     return msg
 
@@ -83,7 +87,8 @@ def trim_messages_history(history, context_win):
 def auto_make_url(base, path):
     b, p = base.rstrip('/'), path.strip('/')
     if b.endswith('$'): return b[:-1].rstrip('/')
-    return b if b.endswith(p) else f"{b}/{p}" if re.search(r'/v\d+$', b) else f"{b}/v1/{p}"
+    if b.endswith(p): return b
+    return f"{b}/{p}" if re.search(r'/v\d+(/|$)', b) else f"{b}/v1/{p}"
 
 def build_multimodal_content(prompt_text, image_paths):
     parts = []
@@ -439,6 +444,7 @@ class BaseSession:
         if effort and not self.reasoning_effort: print(f"[WARN] Invalid reasoning_effort {effort!r}, ignored.")
         mode = str(cfg.get('api_mode', 'chat_completions')).strip().lower().replace('-', '_')
         self.api_mode = 'responses' if mode in ('responses', 'response') else 'chat_completions'
+        self.temperature = cfg.get('temperature')
     def ask(self, prompt, stream=False):
         def _ask_gen():
             content = ''
@@ -519,6 +525,7 @@ class NativeClaudeSession(BaseSession):
     def raw_ask(self, messages, temperature=0.5, max_tokens=6144):
         messages = _fix_messages(messages)
         model = self.default_model
+        if self.temperature is not None: temperature = self.temperature
         beta_parts = ["claude-code-20250219", "interleaved-thinking-2025-05-14", "redact-thinking-2026-02-12", "prompt-caching-scope-2026-01-05"]
         if "[1m]" in model.lower():
             beta_parts.insert(1, "context-1m-2025-08-07"); model = model.replace("[1m]", "").replace("[1M]", "")
@@ -553,7 +560,6 @@ class NativeClaudeSession(BaseSession):
             self.history.append(msg)
             trim_messages_history(self.history, self.context_win)
             messages = [{"role": m["role"], "content": list(m["content"])} for m in self.history]
-
         content_blocks = None
         gen = self.raw_ask(messages)
         try:
@@ -580,8 +586,8 @@ class NativeOAISession(NativeClaudeSession):
         """OpenAI streaming. yields text chunks, generator return = list[content_block]"""
         msgs = ([{"role": "system", "content": self.system}] if self.system else []) + _msgs_claude2oai(messages)
         return (yield from _openai_stream(self.api_base, self.api_key, msgs, self.default_model, self.api_mode,
-                                          temperature=temperature, max_tokens=max_tokens, tools=self.tools,
-                                          reasoning_effort=self.reasoning_effort,
+                                          temperature=temperature, max_tokens=max_tokens, 
+                                          tools=self.tools, reasoning_effort=self.reasoning_effort,
                                           max_retries=self.max_retries, connect_timeout=self.connect_timeout,
                                           read_timeout=self.read_timeout, proxies=self.proxies))
 
@@ -591,10 +597,8 @@ def openai_tools_to_claude(tools):
     for t in tools:
         if 'input_schema' in t: result.append(t); continue  # 已是claude格式
         fn = t.get('function', t)
-        result.append({
-            'name': fn['name'], 'description': fn.get('description', ''),
-            'input_schema': fn.get('parameters', {'type': 'object', 'properties': {}})
-        })
+        result.append({'name': fn['name'], 'description': fn.get('description', ''),
+            'input_schema': fn.get('parameters', {'type': 'object', 'properties': {}})})
     return result
 
 

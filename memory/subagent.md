@@ -10,6 +10,7 @@
 - 通信：output.txt(append,`[ROUND END]`=轮完成) → 写reply.txt继续 → 不写10min退出。reply后输出为output1/2/3.txt(同格式)
 - 干预文件：`_stop`(当轮结束退出) | `_keyinfo`(注入working memory) | `_intervene`(追加指令)
 - **主agent空闲时应读output观察进度，必要时用干预文件纠偏，禁止无脑长时间sleep轮询**
+- 监察模式启动时加`--verbose`，output将包含工具执行结果，主agent可直接审查原始数据而非仅信任摘要
 
 ## 场景1：测试模式 - 行为验证
 **用途**：观察agent真实行为，修正RULES/L2/L3/SOP
