@@ -536,8 +536,8 @@ class NativeClaudeSession(BaseSession):
         payload = {"model": model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens, "stream": True}
         payload["metadata"] = {"user_id": json.dumps({"device_id": self._device_id, "account_uuid": self._account_uuid, "session_id": self._session_id}, separators=(',', ':'))}
         if self.tools:
-            self.tools = openai_tools_to_claude(self.tools)
-            tools = [dict(t) for t in self.tools]; tools[-1]["cache_control"] = {"type": "ephemeral"}
+            claude_tools = openai_tools_to_claude(self.tools)
+            tools = [dict(t) for t in claude_tools]; tools[-1]["cache_control"] = {"type": "ephemeral"}
             payload["tools"] = tools
         else: print("[ERROR] No tools provided for this session.")
         payload['system'] = [{"type": "text", "text": "You are Claude Code, Anthropic's official CLI for Claude.", "cache_control": {"type": "ephemeral"}}]
