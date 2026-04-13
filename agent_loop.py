@@ -14,7 +14,7 @@ def try_call_generator(func, *args, **kwargs):
 class BaseHandler:
     def tool_before_callback(self, tool_name, args, response): pass
     def tool_after_callback(self, tool_name, args, response, ret): pass
-    def next_prompt_patcher(self, next_prompt, outcome, turn): return next_prompt
+    def turn_end_callback(self, response, tool_calls, tool_results, turn, next_prompt, exit_reason): return next_prompt
     def dispatch(self, tool_name, args, response, index=0):
         method_name = f"do_{tool_name}"
         if hasattr(self, method_name):
@@ -65,7 +65,7 @@ def agent_runner_loop(client, system_prompt, user_input, handler, tools_schema, 
         else: tool_calls = [{'tool_name': tc.function.name, 'args': json.loads(tc.function.arguments), 'id': tc.id}
                           for tc in response.tool_calls]
        
-        tool_results = []; next_prompts = set(); should_exit = None
+        tool_results = []; next_prompts = set(); exit_reason = None
         for ii, tc in enumerate(tool_calls):
             tool_name, args, tid = tc['tool_name'], tc['args'], tc.get('id', '')
             if tool_name == 'no_tool': pass
@@ -82,20 +82,22 @@ def agent_runner_loop(client, system_prompt, user_input, handler, tools_schema, 
                 if verbose: yield '`````\n'
             except StopIteration as e: outcome = e.value
             
-            if outcome.should_exit: return {'result': 'EXITED', 'data': outcome.data}    # should_exit is only used for immediate exit
+            if outcome.should_exit: 
+                exit_reason = {'result': 'EXITED', 'data': outcome.data}; break
             if not outcome.next_prompt: 
-                should_exit = {'result': 'CURRENT_TASK_DONE', 'data': outcome.data}; break
+                exit_reason = {'result': 'CURRENT_TASK_DONE', 'data': outcome.data}; break
             if outcome.next_prompt.startswith('未知工具'): client.last_tools = ''
             if outcome.data is not None and tool_name != 'no_tool': 
                 datastr = json.dumps(outcome.data, ensure_ascii=False, default=json_default) if type(outcome.data) in [dict, list] else str(outcome.data) 
                 tool_results.append({'tool_use_id': tid, 'content': datastr})
             next_prompts.add(outcome.next_prompt)
-        if len(next_prompts) == 0:
-            if len(handler._done_hooks) == 0: return should_exit
+        if len(next_prompts) == 0 or exit_reason:
+            if len(handler._done_hooks) == 0: break
             next_prompts.add(handler._done_hooks.pop(0))
-        next_prompt = handler.next_prompt_patcher("\n".join(next_prompts), None, turn)
+        next_prompt = handler.turn_end_callback(response, tool_calls, tool_results, turn, '\n'.join(next_prompts), exit_reason)
         messages = [{"role": "user", "content": next_prompt, "tool_results": tool_results}]   # just new message, history is kept in *Session
-    return {'result': 'MAX_TURNS_EXCEEDED'}
+    if exit_reason: handler.turn_end_callback(response, tool_calls, tool_results, turn, '', exit_reason)
+    return exit_reason or {'result': 'MAX_TURNS_EXCEEDED'}
 
 def _clean_content(text):
     if not text: return ''

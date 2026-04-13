@@ -1,4 +1,4 @@
-import os, sys
+import os, sys, subprocess
 if sys.stdout is None: sys.stdout = open(os.devnull, "w")
 if sys.stderr is None: sys.stderr = open(os.devnull, "w")
 try: sys.stdout.reconfigure(errors='replace')
@@ -47,6 +47,24 @@ def render_sidebar():
     if st.button("重新注入System Prompt"):
         agent.llmclient.last_tools = ''
         st.toast("下次将重新注入System Prompt")
+    if st.button("🐱 桌面宠物"):
+        kwargs = {'creationflags': 0x08} if sys.platform == 'win32' else {}
+        subprocess.Popen([sys.executable, os.path.join(os.path.dirname(__file__), 'desktop_pet.pyw')], **kwargs)
+        if not hasattr(agent, '_turn_end_hooks'): agent._turn_end_hooks = {}
+        def _pet_hook(ctx):
+            parts = [f"🔄 Turn {ctx.get('turn','?')}"]
+            if ctx.get('summary'): parts.append(ctx['summary'])
+            if ctx.get('exit_reason'): parts.append('✅ 任务已完成')
+            msg = '\n'.join(parts)
+            def send():
+                try:
+                    from urllib.request import urlopen
+                    from urllib.parse import quote
+                    urlopen(f'http://127.0.0.1:51983/?msg={quote(msg)}', timeout=2)
+                except: pass
+            threading.Thread(target=send, daemon=True).start()
+        agent._turn_end_hooks['pet'] = _pet_hook
+        st.toast("桌面宠物已启动")
     
     st.divider()
     if st.button("开始空闲自主行动"):

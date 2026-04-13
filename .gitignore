@@ -73,6 +73,9 @@ memory/L4_raw_sessions/*
 # ADB UI tool
 !memory/adb_ui.py
 
+# Keychain
+!memory/keychain.py
+
 # Visual Studio
 .vs/
 restore_commit.txt

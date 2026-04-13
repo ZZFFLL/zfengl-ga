@@ -266,20 +266,7 @@ class GenericAgentHandler(BaseHandler):
 
     def _get_abs_path(self, path):
         if not path: return ""
-        return os.path.abspath(os.path.join(self.cwd, path))
-    
-    def tool_after_callback(self, tool_name, args, response, ret):
-        if args.get('_index', 0) > 0: return 
-        _c = re.sub(r'```.*?```|<thinking>.*?</thinking>', '', response.content, flags=re.DOTALL)
-        rsumm = re.search(r"<summary>(.*?)</summary>", _c, re.DOTALL)
-        if rsumm: summary = rsumm.group(1).strip()[:200]
-        else:
-            clean_args = {k: v for k, v in args.items() if not k.startswith('_')}
-            summary = f"调用工具{tool_name}, args: {clean_args}"
-            if tool_name == 'no_tool': summary = "直接回答了用户问题"
-            if type(ret.next_prompt) is str:
-                ret.next_prompt += "\nPROTOCOL_VIOLATION: 上一轮遗漏了<summary>。 已根据物理动作自动补全。请务必在下次回复中记得<summary>协议。" 
-        self.history_info.append('[Agent] ' + smart_format(summary, max_str_len=100))
+        return os.path.abspath(os.path.join(self.cwd, path))   
 
     def _extract_code_block(self, response, code_type):
         matches = re.findall(rf"```{code_type}\n(.*?)\n```", response.content, re.DOTALL)
@@ -505,7 +492,18 @@ class GenericAgentHandler(BaseHandler):
             except: pass
         return prompt
 
-    def next_prompt_patcher(self, next_prompt, outcome, turn):
+    def turn_end_callback(self, response, tool_calls, tool_results, turn, next_prompt, exit_reason):
+        _c = re.sub(r'```.*?```|<thinking>.*?</thinking>', '', response.content, flags=re.DOTALL)
+        rsumm = re.search(r"<summary>(.*?)</summary>", _c, re.DOTALL)
+        if rsumm: summary = rsumm.group(1).strip()
+        else:
+            tc = tool_calls[0]; tool_name, args = tc['tool_name'], tc['args']   # at least one because no_tool
+            clean_args = {k: v for k, v in args.items() if not k.startswith('_')}
+            summary = f"调用工具{tool_name}, args: {clean_args}"
+            if tool_name == 'no_tool': summary = "直接回答了用户问题"
+            next_prompt += "\n[DANGER] 上一轮遗漏了<summary>，已根据物理动作自动补全。在下次回复中记得<summary>协议。" 
+        summary = smart_format(summary, max_str_len=100)
+        self.history_info.append(f'[Agent] {summary}')
         if turn % 35 == 0 and 'plan' not in str(self.working.get('related_sop')):
             next_prompt += f"\n\n[DANGER] 已连续执行第 {turn} 轮。你必须总结情况进行ask_user，不允许继续重试。"
         elif turn % 7 == 0:
@@ -515,6 +513,7 @@ class GenericAgentHandler(BaseHandler):
         injprompt = consume_file(self.parent.task_dir, '_intervene')
         if injkeyinfo: self.working['key_info'] = self.working.get('key_info', '') + f"\n[MASTER] {injkeyinfo}"
         if injprompt: next_prompt += f"\n\n[MASTER] {injprompt}\n"
+        for hook in getattr(self.parent, '_turn_end_hooks', {}).values(): hook(locals())  # current readonly
         return next_prompt
 
 def get_global_memory():
