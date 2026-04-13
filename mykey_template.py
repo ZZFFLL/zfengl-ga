@@ -1,4 +1,3 @@
-
 # ══════════════════════════════════════════════════════════════════════════════
 # apibase 填写规则（自动拼接端点路径）：
 #   填到端口        'http://host:2001'                → 自动补 /v1/chat/completions
@@ -10,6 +9,29 @@
 # key命名含 'mixin' 触发 MixinSession：多key/endpoint自动fallback + 指数退避重试
 # 约束：引用的session须同为Native或非Native
 # mixin_config = {'llm_nos': ['modela', 'xxxx'], 'max_retries': 5, 'base_delay': 1.5}  # name匹配，含自身
+
+# ── Claude Native API ───────────────────────────────────────────────────────────
+# key命名同时含 'native' 和 'claude' 触发 NativeClaudeSession
+# 原生工具调用格式，缓解弱模型指令遵循问题
+native_claude_config123 = {
+    'apikey': 'sk-ant-...',          # Anthropic原生apikey
+    'apibase': 'https://api.anthropic.com',
+    'model': 'claude-opus-4-6',
+    'name': 'claude1'
+    # 'context_win': 24000,
+    # 'fake_cc_system_prompt': True   # 是否尝试绕过cc MAX检测
+}
+
+# ── OpenAI-compatible Native API ─────────────────────────────────────────────
+# key命名同时含 'native' 和 'oai' 触发 NativeOAISession
+# 原生工具调用格式，缓解弱模型指令遵循问题
+native_oai_config456 = {
+    'apikey': 'sk-...',
+    'apibase': 'http://your-proxy:2001',
+    'model': 'gpt-5.4',
+    'name': 'oai1'
+    # 'context_win': 24000,
+}
 
 # ── OpenAI-compatible (chat/completions or responses API) ──────────────────────
 # key命名含 'oai' 触发 LLMSession
@@ -44,27 +66,6 @@ claude_config = {
     # 'context_win': 12000,
 }
 
-# ── Claude Native API ───────────────────────────────────────────────────────────
-# key命名同时含 'native' 和 'claude' 触发 NativeClaudeSession
-# 原生工具调用格式，缓解弱模型指令遵循问题，但更耗token
-native_claude_config = {
-    'apikey': 'sk-ant-...',          # Anthropic原生apikey
-    'apibase': 'https://api.anthropic.com',
-    'model': 'claude-opus-4-6',
-    # 'context_win': 24000,
-    # 'no_system_prompt': True   # 是否不使用系统提示而是使用用户消息，为了绕过cc MAX检测
-}
-
-# ── OpenAI-compatible Native API ─────────────────────────────────────────────
-# key命名同时含 'native' 和 'oai' 触发 NativeOAISession
-# 原生工具调用格式，缓解弱模型指令遵循问题，但更耗token
-native_oai_config = {
-    'apikey': 'sk-...',
-    'apibase': 'http://your-proxy:2001',
-    'model': 'gpt-4o',
-    # 'context_win': 24000,
-}
-
 # ── Sider ───────────────────────────────────────────────────────────────────────
 # key命名含 'sider' 触发 SiderLLMSession（需安装 sider_ai_api 包）
 #sider_cookie = 'token=Bearer%20eyJhbGciOiJIUz...'
@@ -78,7 +79,6 @@ native_oai_config = {
 #     'model': 'MiniMax-M2.7',                    # MiniMax-M2.7-highspeed / MiniMax-M2.5 等
 #     'context_win': 50000,                       # M2.7 支持 204K context
 # }
-
 
 # If you need them
 # tg_bot_token = '84102K2gYZ...'
