@@ -5,7 +5,7 @@ if sys.stderr is None: sys.stderr = open(os.devnull, "w")
 elif hasattr(sys.stderr, 'reconfigure'): sys.stderr.reconfigure(errors='replace')
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from llmcore import SiderLLMSession, LLMSession, ToolClient, ClaudeSession, MixinSession, NativeToolClient, NativeClaudeSession, build_multimodal_content, NativeOAISession
+from llmcore import SiderLLMSession, LLMSession, ToolClient, ClaudeSession, MixinSession, NativeToolClient, NativeClaudeSession, NativeOAISession
 from agent_loop import agent_runner_loop
 from ga import GenericAgentHandler, smart_format, get_global_memory, format_error, consume_file
 
@@ -115,10 +115,6 @@ class GeneraticAgent:
             if source == 'feishu' and len(self.history) > 1:   # 如果有历史记录且来自飞书，注入到首轮 user_input 中（支持/restore恢复上下文）
                 user_input = handler._get_anchor_prompt() + f"\n\n### 用户当前消息\n{raw_query}"
             initial_user_content = None
-            if images and isinstance(self.llmclient.backend, LLMSession):
-                initial_user_content = build_multimodal_content(user_input, images)
-            elif images:
-                print(f"[INFO] backend {type(self.llmclient.backend).__name__} does not support direct multimodal input, fallback to text attachment hints.")
             # although new handler, the **full** history is in llmclient, so it is full history!
             gen = agent_runner_loop(self.llmclient, sys_prompt, user_input, 
                                 handler, TOOLS_SCHEMA, max_turns=40, verbose=self.verbose,
