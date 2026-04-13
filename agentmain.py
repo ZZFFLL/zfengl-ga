@@ -97,8 +97,18 @@ class GeneraticAgent:
     def run(self):
         while True:
             task = self.task_queue.get()
-            self.is_running = True
             raw_query, source, images, display_queue = task["query"], task["source"], task.get("images") or [], task["output"]
+            if raw_query.startswith('/'):
+                if _sm := re.match(r'/session\.(\w+)=(.*)', raw_query.strip()):
+                    k, v = _sm.group(1), _sm.group(2)
+                    try: v = int(v)
+                    except ValueError:
+                        try: v = float(v)
+                        except ValueError: pass
+                    setattr(self.llmclient.backend, k, v)
+                    display_queue.put({'done': f"✅ session.{k} = {v!r}"})
+                self.task_queue.task_done(); continue
+            self.is_running = True
             rquery = smart_format(raw_query.replace('\n', ' '), max_str_len=200)
             self.history.append(f"[USER]: {rquery}")
             
@@ -149,7 +159,6 @@ if __name__ == '__main__':
     import argparse
     from datetime import datetime
     parser = argparse.ArgumentParser()
-    parser.add_argument('--scheduled', action='store_true', help='计划任务轮询模式')
     parser.add_argument('--task', metavar='IODIR', help='一次性任务模式(文件IO)')
     parser.add_argument('--reflect', metavar='SCRIPT', help='反射模式：加载监控脚本，check()触发时发任务')
     parser.add_argument('--input', help='任务内容')
@@ -224,7 +233,6 @@ if __name__ == '__main__':
                 try: on_done(result)
                 except Exception as e: print(f'[Reflect] on_done error: {e}')
             if getattr(mod, 'ONCE', False): print('[Reflect] ONCE=True, exiting.'); break
-    elif args.scheduled: print('moved to reflect mode')
     else:
         agent.inc_out = True
         while True:
