@@ -774,4 +774,4 @@ if __name__ == '__main__':
         pet = MacPet()
         pet.run()
     else:
-        pet = WinPet()
+        pet = WinPet('vita')
