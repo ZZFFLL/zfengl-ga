@@ -208,6 +208,77 @@ def build_bubble_image(message, max_width=220):
     }
 
 # ============================================================================
+# Shared Base Class
+# ============================================================================
+class PetBase:
+    """Shared logic for Mac and Windows pet implementations."""
+
+    def _schedule_main(self, fn):
+        """Schedule fn on the GUI main thread. Subclasses must override."""
+        raise NotImplementedError
+
+    def set_state_safe(self, state):
+        """Thread-safe wrapper for set_state."""
+        self._schedule_main(lambda: self.set_state(state))
+
+    def show_toast_safe(self, message):
+        """Thread-safe wrapper for show_toast."""
+        self._schedule_main(lambda m=message: self.show_toast(m))
+
+    def _start_server(self):
+        """Start HTTP control server."""
+        pet = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                parsed = urlparse(self.path)
+                params = parse_qs(parsed.query)
+
+                if 'state' in params:
+                    state = params['state'][0]
+                    pet.set_state_safe(state)
+                    self.send_response(200)
+                    self.end_headers()
+                    self.wfile.write(b'ok')
+                elif 'msg' in params:
+                    msg = params['msg'][0]
+                    pet.show_toast_safe(msg)
+                    self.send_response(200)
+                    self.end_headers()
+                    self.wfile.write(b'ok')
+                else:
+                    self.send_response(400)
+                    self.end_headers()
+                    self.wfile.write(b'?state=idle/walk/run/sprint or ?msg=hello')
+
+            def do_POST(self):
+                body = self.rfile.read(int(self.headers.get('Content-Length', 0))).decode()
+                if body:
+                    pet.show_toast_safe(body)
+                    self.send_response(200)
+                    self.end_headers()
+                    self.wfile.write(b'ok')
+                else:
+                    self.send_response(400)
+                    self.end_headers()
+                    self.wfile.write(b'empty body')
+
+            def log_message(self, *a):
+                pass
+
+        try:
+            HTTPServer.allow_reuse_address = True
+            srv = HTTPServer(('127.0.0.1', PORT), Handler)
+            threading.Thread(target=srv.serve_forever, daemon=True).start()
+            print(f'✓ Server: http://127.0.0.1:{PORT}/?state=walk')
+        except OSError as e:
+            if e.errno == 48:
+                print(f'⚠ Port {PORT} already in use')
+            else:
+                raise
+
+
+# ============================================================================
 # macOS Implementation - Pure Cocoa with True Transparency
 # ============================================================================
 if sys.platform == 'darwin':
@@ -221,7 +292,7 @@ if sys.platform == 'darwin':
     from PyObjCTools import AppHelper
     import objc
 
-    class MacPet:
+    class MacPet(PetBase):
         def __init__(self, skin_name=None):
             self.app = NSApplication.sharedApplication()
             self.app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
@@ -427,9 +498,8 @@ if sys.platform == 'darwin':
                 )
                 print(f"→ State: {state}")
 
-        def set_state_safe(self, state):
-            """Thread-safe wrapper for set_state"""
-            AppHelper.callAfter(lambda: self.set_state(state))
+        def _schedule_main(self, fn):
+            AppHelper.callAfter(fn)
 
         def show_toast(self, message):
             """Show toast message above pet"""
@@ -497,25 +567,6 @@ if sys.platform == 'darwin':
             )
             print(f"Toast: {message}")
 
-        def show_toast_safe(self, message):
-            """Thread-safe wrapper for show_toast"""
-            from Foundation import NSRunLoop
-            from PyObjCTools import AppHelper
-
-            # Write to log file for debugging
-            with open('/tmp/pet_toast_debug.log', 'a') as f:
-                f.write(f"[DEBUG] show_toast_safe called with: {message}\n")
-                f.flush()
-
-            # Schedule on main thread
-            def show_on_main():
-                with open('/tmp/pet_toast_debug.log', 'a') as f:
-                    f.write(f"[DEBUG] show_on_main executing\n")
-                    f.flush()
-                self.show_toast(message)
-
-            AppHelper.callAfter(show_on_main)
-
         def hideToast_(self, timer):
             """Hide toast message"""
             if self.toast_window:
@@ -524,59 +575,6 @@ if sys.platform == 'darwin':
             self.toast_label = None
             self.toast_image = None
             self.toast_timer = None
-
-        def _start_server(self):
-            """Start HTTP control server"""
-            pet = self
-
-            class Handler(BaseHTTPRequestHandler):
-                def do_GET(self):
-                    parsed = urlparse(self.path)
-                    params = parse_qs(parsed.query)
-
-                    if 'state' in params:
-                        state = params['state'][0]
-                        pet.set_state_safe(state)
-                        self.send_response(200)
-                        self.end_headers()
-                        self.wfile.write(b'ok')
-                    elif 'msg' in params:
-                        msg = params['msg'][0]
-                        pet.show_toast_safe(msg)
-                        self.send_response(200)
-                        self.end_headers()
-                        self.wfile.write(b'ok')
-                    else:
-                        self.send_response(400)
-                        self.end_headers()
-                        self.wfile.write(b'?state=idle/walk/run/sprint or ?msg=hello')
-
-                def do_POST(self):
-                    body = self.rfile.read(int(self.headers.get('Content-Length', 0))).decode()
-                    if body:
-                        pet.show_toast_safe(body)
-                        self.send_response(200)
-                        self.end_headers()
-                        self.wfile.write(b'ok')
-                    else:
-                        self.send_response(400)
-                        self.end_headers()
-                        self.wfile.write(b'empty body')
-
-                def log_message(self, *a):
-                    pass
-
-            try:
-                HTTPServer.allow_reuse_address = True
-                srv = HTTPServer(('127.0.0.1', PORT), Handler)
-                t = threading.Thread(target=srv.serve_forever, daemon=True)
-                t.start()
-                print(f'✓ Server: http://127.0.0.1:{PORT}/?state=walk')
-            except OSError as e:
-                if e.errno == 48:
-                    print(f'⚠ Port {PORT} already in use')
-                else:
-                    raise
 
         def run(self):
             """Run the application"""
@@ -589,7 +587,7 @@ else:
     import tkinter as tk
     from PIL import ImageTk
 
-    class WinPet:
+    class WinPet(PetBase):
         def __init__(self, skin_name=None):
             self.root = tk.Tk()
             self.root.wm_attributes('-topmost', True)
@@ -753,64 +751,25 @@ else:
                 except:
                     pass
 
-        def _start_server(self):
-            """Start HTTP control server"""
-            pet = self
-
-            class Handler(BaseHTTPRequestHandler):
-                def do_GET(self):
-                    parsed = urlparse(self.path)
-                    params = parse_qs(parsed.query)
-
-                    if 'state' in params:
-                        state = params['state'][0]
-                        pet.root.after(0, pet.set_state, state)
-                        self.send_response(200)
-                        self.end_headers()
-                        self.wfile.write(b'ok')
-                    elif 'msg' in params:
-                        msg = params['msg'][0]
-                        pet.root.after(0, pet.show_toast, msg)
-                        self.send_response(200)
-                        self.end_headers()
-                        self.wfile.write(b'ok')
-                    else:
-                        self.send_response(400)
-                        self.end_headers()
-                        self.wfile.write(b'?state=idle/walk/run/sprint or ?msg=hello')
-
-                def do_POST(self):
-                    body = self.rfile.read(int(self.headers.get('Content-Length', 0))).decode()
-                    if body:
-                        pet.root.after(0, pet.show_toast, body)
-                        self.send_response(200)
-                        self.end_headers()
-                        self.wfile.write(b'ok')
-                    else:
-                        self.send_response(400)
-                        self.end_headers()
-                        self.wfile.write(b'empty body')
-
-                def log_message(self, *a):
-                    pass
-
-            try:
-                HTTPServer.allow_reuse_address = True
-                srv = HTTPServer(('127.0.0.1', PORT), Handler)
-                t = threading.Thread(target=srv.serve_forever, daemon=True)
-                t.start()
-                print(f'✓ Server: http://127.0.0.1:{PORT}/?state=walk')
-            except OSError as e:
-                if e.errno == 48:
-                    print(f'⚠ Port {PORT} already in use')
-                else:
-                    raise
+        def _schedule_main(self, fn):
+            self.root.after(0, fn)
 
         def run(self):
             """Run the application (already in mainloop)"""
             pass
 
 if __name__ == '__main__':
+    # Singleton: if port already in use, another instance is running
+    import socket
+    _s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        _s.connect(('127.0.0.1', PORT))
+        _s.close()
+        print(f'⚠ Pet already running on port {PORT}, exiting.')
+        sys.exit(0)
+    except ConnectionRefusedError:
+        pass
+
     if sys.platform == 'darwin':
         pet = MacPet()
         pet.run()
