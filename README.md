@@ -176,12 +176,13 @@ If this project helped you, please consider leaving a **Star!** 🙏
 You're also welcome to join our **GenericAgent Community Group** for discussion, feedback, and co-building 👏
 
 <div align="center">
-  <p><strong>WeChat Group 1</strong></p>
-  <img src="assets/images/wechat_group.jpg" alt="WeChat Group 1 QR Code" width="280"/>
-  <p><strong>WeChat Group 2</strong></p>
-  <img src="assets/images/wechat_group2.JPG" alt="WeChat Group 2 QR Code" width="280"/>
-  <p><strong>Feishu Group</strong></p>
-  <img src="assets/images/feishu_group.jpg" alt="Feishu Group QR Code" width="280"/>
+  <table>
+    <tr>
+      <td align="center"><strong>WeChat Group 1</strong><br><img src="assets/images/wechat_group.jpg" alt="WeChat Group 1 QR Code" width="250"/></td>
+      <td align="center"><strong>WeChat Group 2</strong><br><img src="assets/images/wechat_group2.JPG" alt="WeChat Group 2 QR Code" width="250"/></td>
+      <td align="center"><strong>Feishu Group</strong><br><img src="assets/images/feishu_group.jpg" alt="Feishu Group QR Code" width="250"/></td>
+    </tr>
+  </table>
 </div>
 
 ## 🚩 Friendly Links
@@ -432,12 +433,13 @@ GenericAgent 通过**分层记忆 × 最小工具集 × 自主执行循环**完�
 
 同时也欢迎加入我们的**GenericAgent体验交流群**，一起交流、反馈和共建 👏
 <div align="center">
-  <p><strong>微信群 1</strong></p>
-  <img src="assets/images/wechat_group.jpg" alt="微信群 1 二维码" width="280"/>
-  <p><strong>微信群 2</strong></p>
-  <img src="assets/images/wechat_group2.JPG" alt="微信群 2 二维码" width="280"/>
-  <p><strong>飞书群</strong></p>
-  <img src="assets/images/feishu_group.jpg" alt="飞书群二维码" width="280"/>
+  <table>
+    <tr>
+      <td align="center"><strong>微信群 1</strong><br><img src="assets/images/wechat_group.jpg" alt="微信群 1 二维码" width="250"/></td>
+      <td align="center"><strong>微信群 2</strong><br><img src="assets/images/wechat_group2.JPG" alt="微信群 2 二维码" width="250"/></td>
+      <td align="center"><strong>飞书群</strong><br><img src="assets/images/feishu_group.jpg" alt="飞书群二维码" width="250"/></td>
+    </tr>
+  </table>
 </div>
 
 ## 🚩 友情链接
