@@ -522,7 +522,7 @@ def get_global_memory():
         script_dir = os.path.dirname(os.path.abspath(__file__))
         with open(os.path.join(script_dir, 'memory/global_mem_insight.txt'), 'r', encoding='utf-8', errors='replace') as f: insight = f.read()
         with open(os.path.join(script_dir, 'assets/insight_fixed_structure.txt'), 'r', encoding='utf-8') as f: structure = f.read()
-        prompt += f'cwd = {os.path.abspath("./temp")} （用./引用）\n'
+        prompt += f'cwd = {os.path.join(script_dir, "temp")} （用./引用）\n'
         prompt += f"\n[Memory] (../memory)\n"
         prompt += structure + '\n../memory/global_mem_insight.txt:\n'
         prompt += insight + "\n"
