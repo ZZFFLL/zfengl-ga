@@ -247,11 +247,12 @@ native_claude_config_crs_gemini = {
     'apikey': 'cr_<your-crs-gemini-key>',    # cr_ 前缀 → Bearer
     'apibase': 'https://<your-crs-gemini-host>/antigravity/api',  # 特殊的 antigravity 路径
     'model': 'claude-opus-4-6-thinking',     # 或 'claude-opus-4-6[1m]' 或 'claude-opus-4-6'，实测三种等价
-    'fake_cc_system_prompt': True,           # bool 必填 True
+    # 'fake_cc_system_prompt': True,
     # 'thinking_type': 'adaptive',           # CRS Gemini 不强制 thinking，可留空
     'max_tokens': 32768,                     # int
     'max_retries': 3,                        # int
     'read_timeout': 180,                     # int 秒；SSE 偶尔被上游截断
+    'steam': False                           # CRS Antigravity 通道不支持 SSE 流式
 }
 
 
