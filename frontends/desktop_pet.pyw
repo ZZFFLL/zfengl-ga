@@ -3,7 +3,7 @@ import tkinter as tk, threading, random, os, sys
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
-PORT = 51983
+PORT = 41983
 GIF = os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), 'pet.gif')
 
 class Pet:

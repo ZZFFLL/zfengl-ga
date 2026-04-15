@@ -50,7 +50,7 @@ def render_sidebar():
         subprocess.Popen([sys.executable, pet_script], **kwargs)
         def _pet_req(q):
             def _do():
-                try: urlopen(f'http://127.0.0.1:51983/?{q}', timeout=2)
+                try: urlopen(f'http://127.0.0.1:41983/?{q}', timeout=2)
                 except Exception: pass
             threading.Thread(target=_do, daemon=True).start()
         agent._pet_req = _pet_req
