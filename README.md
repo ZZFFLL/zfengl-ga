@@ -60,7 +60,7 @@ After a few weeks, your agent instance will have a skill tree no one else in the
 - **2026-03-10:** [Released million-scale Skill Library](https://mp.weixin.qq.com/s/q2gQ7YvWoiAcwxzaiwpuiQ?scene=1&click_id=7)
 - **2026-03-08:** [Released "Dintal Claw" — a GenericAgent-powered government affairs bot](https://mp.weixin.qq.com/s/eiEhwo-j6S-WpLxgBnNxBg)
 - **2026-03-01:** [GenericAgent featured by Jiqizhixin (机器之心)](https://mp.weixin.qq.com/s/uVWpTTF5I1yzAENV_qm7yg)
-- **2026-01-11:** GenericAgent V1.0 public release
+- **2026-01-16:** GenericAgent V1.0 public release
 
 ---
 
@@ -251,7 +251,7 @@ MIT License — see [LICENSE](LICENSE)
 - **2026-03-10:** [发布百万级 Skill 库](https://mp.weixin.qq.com/s/q2gQ7YvWoiAcwxzaiwpuiQ?scene=1&click_id=7)
 - **2026-03-08:** [发布以 GenericAgent 为核心的"政务龙虾" Dintal Claw](https://mp.weixin.qq.com/s/eiEhwo-j6S-WpLxgBnNxBg)
 - **2026-03-01:** [GenericAgent 被机器之心报道](https://mp.weixin.qq.com/s/uVWpTTF5I1yzAENV_qm7yg)
-- **2026-01-11:** GenericAgent V1.0 公开版本发布
+- **2026-01-16:** GenericAgent V1.0 公开版本发布
 
 ---
 

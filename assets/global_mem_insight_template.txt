@@ -1,24 +1,22 @@
 # [Global Memory Insight]
-浏览器自动化: web_scan/web_execute_js直接调用 | 特殊:tmwebdriver_sop(文件上传/图搜/PDF blob/元素物理坐标/Cookie提取含HttpOnly/跨域iframe操控/CDP/跨tab/后台tab操作)
-键鼠模拟: ljqCtrl_sop+.py(仅win，禁pyautogui/先activate窗口)
-定时任务: scheduled_task_sop(报告→sche_tasks/done/) | 与自主任务完全独立
-自主探索任务: autonomous_operation_sop(报告→temp/autonomous_reports/history.txt，不在memory下) | 与定时任务完全独立
-手机操控: adb_ui.py
+浏览器特殊操作: tmwebdriver_sop(文件上传/图搜/PDF blob/物理坐标/HttpOnly Cookie/autofill突破/跨域iframe/CDP/跨tab)
+键鼠: ljqCtrl_sop(禁pyautogui/先activate) 截图/视觉: ocr/vision_sop | 禁全屏截图，优先窗口
+定时:scheduled_task_sop | 自主:autonomous_operation_sop | watchdog/反射:agentmain --reflect
+手机:adb_ui.py
 
 需要时read L2 或 ls ../memory/ 查L3
 L0(META-SOP): memory_management_sop
 L2: 现空
-L3: web_setup_sop | autonomous_operation_sop | scheduled_task_sop | ljqCtrl_sop+.py | tmwebdriver_sop | subagent_sop | plan_sop | procmem_scanner.py | adb_ui.py
-L4: ../memory/L4_raw_sessions/
+L3: memory_cleanup_sop(记忆整理) | skill_search | ui_detect.py | ocr_utils.py | subagent | web_setup_sop | plan_sop 
+| procmem_scanner | keychain | ljqCtrl_sop+.py | tmwebdriver_sop | autonomous_operation_sop | scheduled_task_sop | vision_sop | adb_ui.py
+L4: L4_raw_sessions/
 
 [RULES]
-1. 搜索先行: 信息尽量用google（必须web）, 项目内os.listdir, 禁猜路径
-2. 交叉验证: 禁信搜索摘要, 数值必进详情页核实
-3. 编码安全: 改前必读源码; import memory用sys.path.append
-4. 闭环: 物理模拟后必确认; 3次失败请求干预; 
-5. 进程: 禁无条件杀python(会杀自己), 精确PID, 禁os.kill判活
-6. 窗口: GUI状态优先枚举窗口, 比OCR快
-7. 物理红线: cwd用./; cwd指定后代码内禁用../向上切换，改用绝对路径
-8. web JS: 一次写对，输入用原生setter+事件链，点击前检查disabled，注意引号转义; scan空再scan或innerText
-9. SOP: 执行前读取缓存硬参数,禁凭印象,有utils必用; 复杂长程先读plan_sop
-10. 用户提及或复杂长程需规划任务要读plan_sop进入规划模式
+1. 搜索先行: 搜文件名严禁不用es(禁PS递归/禁dir遍历), 搜索一定优先使用web工具的google(严禁duckduckgo等), 优先看cwd，禁猜路径
+2. 交叉验证: 禁信摘要, 数值进详情页核实
+3. 编码安全: 禁PS cat/type用file_read; 改前必读; memory模块直接import(已在PATH,禁加虚假前缀)
+4. 闭环: 物理模拟后确认; 3次失败请求干预; Git完整闭环
+5. 进程: 禁无条件杀python(杀自己), 精确PID, 禁os.kill判活
+6. 窗口: GUI状态优先win32gui枚举标题
+7. web JS: 输入用原生setter+事件链, 点击前检disabled, 注意引号转义; scan空/不全先稍等再scan, 禁首扫定论
+8. SOP: 读SOP禁凭印象,有utils必用 | 复杂长程/用户提及规划→读plan_sop

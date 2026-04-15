@@ -1,7 +1,7 @@
 import sys, os, re, json, time, threading, importlib
 from datetime import datetime
 from pathlib import Path
-import tempfile, traceback, subprocess, itertools, collections
+import tempfile, traceback, subprocess, itertools, collections, difflib
 if sys.stdout is None: sys.stdout = open(os.devnull, "w")
 if sys.stderr is None: sys.stderr = open(os.devnull, "w")
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -221,6 +221,13 @@ def file_patch(path: str, old_content: str, new_content: str):
     except Exception as e:
         return {"status": "error", "msg": str(e)}
 
+_read_dirs = set()
+def _scan_files(base, depth=2):
+    try:
+        for e in os.scandir(base):
+            if e.is_file(): yield (e.name, e.path)
+            elif depth > 0 and e.is_dir(follow_symlinks=False): yield from _scan_files(e.path, depth - 1)
+    except (PermissionError, OSError): pass
 def file_read(path, start=1, keyword=None, count=200, show_linenos=True):
     try:
         with open(path, 'r', encoding='utf-8', errors='replace') as f:
@@ -243,7 +250,19 @@ def file_read(path, start=1, keyword=None, count=200, show_linenos=True):
             res = [(i, l if len(l) <= L_MAX else l[:L_MAX] + TAG) for i, l in res]
             result = "\n".join(f"{i}|{l}" if show_linenos else l for i, l in res)
             if show_linenos: result = total_tag + result
+            _read_dirs.add(os.path.dirname(os.path.abspath(path)))
             return result
+    except FileNotFoundError:
+        msg = f"Error: File not found: {path}"
+        try:
+            tgt = os.path.basename(path); scan = os.path.dirname(os.path.dirname(os.path.abspath(path)))
+            roots = [scan] + [d for d in _read_dirs if not d.startswith(scan)]
+            cands = list(itertools.islice((c for base in roots for c in _scan_files(base)), 2000))
+            top = sorted([(difflib.SequenceMatcher(None, tgt.lower(), c[0].lower()).ratio(), c) for c in cands[:2000]], key=lambda x: -x[0])[:5]
+            top = [(s, c) for s, c in top if s > 0.3]
+            if top: msg += "\n\nDid you mean:\n" + "\n".join(f"  {c[1]}  ({s:.0%})" for s, c in top)
+        except Exception: pass
+        return msg
     except Exception as e: return f"Error: {str(e)}"
 
 def smart_format(data, max_str_len=100, omit_str=' ... '):
@@ -404,9 +423,7 @@ class GenericAgentHandler(BaseHandler):
         show_linenos = args.get("show_linenos", True)
         result = file_read(path, start=start, keyword=keyword,
                            count=count, show_linenos=show_linenos)
-        if show_linenos:
-            tips = '由于设置了show_linenos，以下返回信息为：(行号|)内容 。\n'
-            result = tips + result 
+        if show_linenos and not result.startswith("Error:"): result = '由于设置了show_linenos，以下返回信息为：(行号|)内容 。\n' + result 
         if ' ... [TRUNCATED]' in result: result += '\n\n（某些行被截断，如需完整内容可改用 code_run 读取）'
         result = smart_format(result, max_str_len=20000, omit_str='\n\n[omitted long content]\n\n')
         next_prompt = self._get_anchor_prompt(skip=args.get('_index', 0) > 0)
