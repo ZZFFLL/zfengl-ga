@@ -178,7 +178,7 @@ You're also welcome to join our **GenericAgent Community Group** for discussion,
 <div align="center">
   <table>
     <tr>
-      <td align="center"><strong>WeChat Group 4</strong><br><img src="assets/images/wechat_group.jpg" alt="WeChat Group 4 QR Code" width="250"/></td>
+      <td align="center"><strong>WeChat Group 4</strong><br><img src="assets/images/wechat_group4.jpg" alt="WeChat Group 4 QR Code" width="250"/></td>
       <td align="center"><strong>WeChat Group 3</strong><br><img src="assets/images/wechat_group2.JPG" alt="WeChat Group 3 QR Code" width="250"/></td>
       <td align="center"><strong>Feishu Group</strong><br><img src="assets/images/feishu_group.jpg" alt="Feishu Group QR Code" width="250"/></td>
     </tr>
