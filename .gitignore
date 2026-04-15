@@ -81,6 +81,9 @@ memory/L4_raw_sessions/*
 !memory/vision_sop.md
 !memory/ui_detect.py
 
+# Memory management
+!memory/memory_cleanup_sop.md
+
 # Visual Studio
 .vs/
 restore_commit.txt
