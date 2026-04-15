@@ -105,9 +105,10 @@ class GeneraticAgent:
                     except ValueError:
                         try: v = float(v)
                         except ValueError: pass
+                    if k == 'history': v = json.loads(open(v, encoding='utf-8').read()) if os.path.exists(v) else []
                     setattr(self.llmclient.backend, k, v)
                     display_queue.put({'done': f"✅ session.{k} = {v!r}"})
-                self.task_queue.task_done(); continue
+                    self.task_queue.task_done(); continue
             self.is_running = True
             rquery = smart_format(raw_query.replace('\n', ' '), max_str_len=200)
             self.history.append(f"[USER]: {rquery}")

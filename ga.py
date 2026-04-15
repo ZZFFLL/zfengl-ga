@@ -40,12 +40,14 @@ def code_run(code, code_type="python", timeout=60, cwd=None, code_cwd=None, stop
     full_stdout = []
 
     def stream_reader(proc, logs):
-        for line_bytes in iter(proc.stdout.readline, b''):
-            try: line = line_bytes.decode('utf-8')
-            except UnicodeDecodeError: line = line_bytes.decode('gbk', errors='ignore')
-            logs.append(line)
-            try: print(line, end="") 
-            except: pass
+        try:
+            for line_bytes in iter(proc.stdout.readline, b''):
+                try: line = line_bytes.decode('utf-8')
+                except UnicodeDecodeError: line = line_bytes.decode('gbk', errors='ignore')
+                logs.append(line)
+                try: print(line, end="") 
+                except: pass
+        except: pass
 
     try:
         process = subprocess.Popen(
@@ -437,29 +439,28 @@ class GenericAgentHandler(BaseHandler):
             return StepOutcome({}, next_prompt="[System] Incomplete response. Regenerate and tooluse.")
         if 'max_tokens !!!]' in content[-100:]:
             return StepOutcome({}, next_prompt="[System] max_tokens limit reached. Use multi small steps to do it.")
-        # 2. 检测“包含较大代码块但未调用工具”的情况
-        # 这里通过三引号代码块 + 最少字符数的方式粗略判断“大段代码”
-        code_block_pattern = r"```[a-zA-Z0-9_]*\n[\s\S]{300,}?```"
-        m = re.search(code_block_pattern, content)
-        if m:
-            # 仅当 content 由 <thinking> / <summary> 和该代码块构成时才触发二次确认
-            residual = content
-            residual = residual.replace(m.group(0), "")
-            # 去掉<thinking>和<summary>块（大小写不敏感）
-            residual = re.sub(r"<thinking>[\s\S]*?</thinking>", "", residual, flags=re.IGNORECASE)
-            residual = re.sub(r"<summary>[\s\S]*?</summary>", "", residual, flags=re.IGNORECASE)
-            # 如果去除上述结构后的非空白字符很少，说明没有额外自然语言说明
-            clean_residual = re.sub(r"\s+", "", residual)
-            if len(clean_residual) <= 20:
-                yield "[Info] Detected large code block without tool call and no extra natural language. Requesting clarification.\n"
-                next_prompt = (
-                    "[System] 检测到你在上一轮回复中主要内容是较大代码块（仅配有<thinking>/<summary>），且本轮未调用任何工具。\n"
-                    "如果这些代码需要执行、写入文件或进一步分析，请重新组织回复并显式调用相应工具"
-                    "（例如：code_run、file_write、file_patch 等）；\n"
-                    "如果只是向用户展示或讲解代码片段，请在回复中补充自然语言说明，"
-                    "并明确是否还需要额外的实际操作。"
-                )
-                return StepOutcome({}, next_prompt=next_prompt)
+        # 2. 检测"包含较大代码块但未调用工具"的情况
+        # 关键特征：恰好1个大代码块 + 代码块直接结尾（后面只有空白）
+        code_block_pattern = r"```[a-zA-Z0-9_]*\n[\s\S]{50,}?```"
+        blocks = re.findall(code_block_pattern, content)
+        if len(blocks) == 1:
+            m = re.search(code_block_pattern, content)
+            after_block = content[m.end():]
+            if not after_block.strip():
+                residual = content.replace(m.group(0), "")
+                residual = re.sub(r"<thinking>[\s\S]*?</thinking>", "", residual, flags=re.IGNORECASE)
+                residual = re.sub(r"<summary>[\s\S]*?</summary>", "", residual, flags=re.IGNORECASE)
+                clean_residual = re.sub(r"\s+", "", residual)
+                if len(clean_residual) <= 30:
+                    yield "[Info] Detected large code block without tool call and no extra natural language. Requesting clarification.\n"
+                    next_prompt = (
+                        "[System] 检测到你在上一轮回复中主要内容是较大代码块，且本轮未调用任何工具。\n"
+                        "如果这些代码需要执行、写入文件或进一步分析，请重新组织回复并显式调用相应工具"
+                        "（例如：code_run、file_write、file_patch 等）；\n"
+                        "如果只是向用户展示或讲解代码片段，请在回复中补充自然语言说明，"
+                        "并明确是否还需要额外的实际操作。"
+                    )
+                    return StepOutcome({}, next_prompt=next_prompt)
         # 3. 正常情况：直接将回复返回给用户并结束循环
         yield "[Info] Final response to user.\n"
         return StepOutcome(response, next_prompt=None)
