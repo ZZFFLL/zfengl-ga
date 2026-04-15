@@ -1,13 +1,8 @@
 """Desktop Pet with Skin System — Cross-platform with True Transparency"""
-import os
-import re
-import sys
-import json
-import threading
+import os, re, sys, json, threading, io
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 from PIL import Image, ImageDraw, ImageFont, ImageOps
-import io
 
 PORT = 51983
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -784,7 +779,7 @@ if __name__ == '__main__':
         pass
 
     if sys.platform == 'darwin':
-        pet = MacPet()
+        pet = MacPet('vita')
         pet.run()
     else:
         pet = WinPet('vita')
