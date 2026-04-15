@@ -277,6 +277,8 @@ python launch.pyw
 
 完整引导流程见 [GETTING_STARTED.md](GETTING_STARTED.md)。
 
+📖 新手使用指南（图文版）：[飞书文档](https://my.feishu.cn/wiki/CGrDw0T76iNFuskmwxdcWrpinPb)
+
 ---
 
 ## 🤖 Bot 接口（可选）
