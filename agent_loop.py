@@ -70,7 +70,7 @@ def agent_runner_loop(client, system_prompt, user_input, handler, tools_schema, 
             tool_name, args, tid = tc['tool_name'], tc['args'], tc.get('id', '')
             if tool_name == 'no_tool': pass
             else: 
-                if verbose: yield f"🛠️ 正在调用工具: `{tool_name}`  📥参数:\n````text\n{get_pretty_json(args)}\n````\n"
+                if verbose: yield f"🛠️ Tool: `{tool_name}`  📥 args:\n````text\n{get_pretty_json(args)}\n````\n"
                 else: yield f"🛠️ {tool_name}({_compact_tool_args(tool_name, args)})\n\n\n"
             handler.current_turn = turn
             gen = handler.dispatch(tool_name, args, response, index=ii)
@@ -104,8 +104,8 @@ def _clean_content(text):
     def _shrink_code(m):
         lines = m.group(0).split('\n')
         lang = lines[0].replace('```','').strip()
-        body = [l for l in lines[1:-1] if l.strip()]  # 去掉```行和空行
-        if len(body) <= 6: return m.group(0)  # 短代码保留
+        body = [l for l in lines[1:-1] if l.strip()]
+        if len(body) <= 6: return m.group(0)
         preview = '\n'.join(body[:5])
         return f'```{lang}\n{preview}\n  ... ({len(body)} lines)\n```'
     text = re.sub(r'```[\s\S]*?```', _shrink_code, text)
@@ -115,7 +115,7 @@ def _clean_content(text):
 
 def _compact_tool_args(name, args):
     a = {k: v for k, v in args.items() if k != '_index'}
-    for k in ('path',): # 只缩短路径
+    for k in ('path',): 
         if k in a: a[k] = os.path.basename(a[k])
     if name == 'update_working_checkpoint': s = a.get('key_info', ''); return (s[:60]+'...') if len(s)>60 else s
     s = json.dumps(a, ensure_ascii=False); return (s[:120]+'...') if len(s)>120 else s

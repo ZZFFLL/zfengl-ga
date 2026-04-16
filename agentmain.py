@@ -1,4 +1,5 @@
-import os, sys, threading, queue, time, json, re, random
+import os, sys, threading, queue, time, json, re, random, locale
+os.environ.setdefault('GA_LANG', 'zh' if any(k in (locale.getlocale()[0] or '').lower() for k in ('zh', 'chinese')) else 'en')
 if sys.stdout is None: sys.stdout = open(os.devnull, "w")
 elif hasattr(sys.stdout, 'reconfigure'): sys.stdout.reconfigure(errors='replace')
 if sys.stderr is None: sys.stderr = open(os.devnull, "w")
@@ -32,7 +33,8 @@ if not os.path.exists(cdp_cfg):
     except Exception as e: print(f'[WARN] CDP config init failed: {e} — advanced web features (tmwebdriver) will be unavailable.')
 
 def get_system_prompt():
-    with open(os.path.join(script_dir, 'assets/sys_prompt.txt'), 'r', encoding='utf-8') as f: prompt = f.read()
+    suffix = '_en' if os.environ.get('GA_LANG', '') == 'en' else ''
+    with open(os.path.join(script_dir, f'assets/sys_prompt{suffix}.txt'), 'r', encoding='utf-8') as f: prompt = f.read()
     prompt += f"\nToday: {time.strftime('%Y-%m-%d %a')}\n"
     prompt += get_global_memory()
     return prompt

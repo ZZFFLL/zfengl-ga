@@ -663,24 +663,31 @@ class ToolClient:
                     total += 1000
             return total
         return len(str(content))
-
+    
     def _prepare_tool_instruction(self, tools):
         tool_instruction = ""
         if not tools: return tool_instruction
         tools_json = json.dumps(tools, ensure_ascii=False, separators=(',', ':'))
-        tool_instruction = f"""
+        _en = os.environ.get('GA_LANG') == 'en'
+        if _en:
+            tool_instruction = f"""
+### Interaction Protocol (must follow strictly, always in effect)
+Follow these steps to think and act:
+1. **Think**: Analyze the current situation and strategy inside `<thinking>` tags.
+2. **Summarize**: Output a minimal one-line (<30 words) physical snapshot in `<summary>`: new info from last tool result + current tool call intent. This goes into long-term working memory. Must contain real information, no filler.
+3. **Act**: If you need to call tools, output one or more **<tool_use> blocks** after your reply, then stop.
+"""
+        else:
+            tool_instruction = f"""
 ### 交互协议 (必须严格遵守，持续有效)
 请按照以下步骤思考并行动：
 1. **思考**: 在 `<thinking>` 标签中先进行思考，分析现状和策略。
 2. **总结**: 在 `<summary>` 中输出*极为简短*的高度概括的单行（<30字）物理快照，包括上次工具调用结果产生的新信息+本次工具调用意图。此内容将进入长期工作记忆，记录关键信息，严禁输出无实际信息增量的描述。
 3. **行动**: 如需调用工具，请在回复正文之后输出一个（或多个）**<tool_use>块**，然后结束。
-格式: ```<tool_use>{{"name": "工具名", "arguments": {{参数}}}}</tool_use>```
-
-### 可用工具库（已挂载，持续有效）
-{tools_json}
 """
+        tool_instruction += f'\nFormat: ```<tool_use>{{"name": "tool_name", "arguments": {{...}}}}</tool_use>```\n\n### Tools (mounted, always in effect):\n{tools_json}\n'
         if self.auto_save_tokens and self.last_tools == tools_json:
-            tool_instruction = "\n### 工具库状态：持续有效（code_run/file_read等），**可正常调用**。调用协议沿用。\n"
+            tool_instruction = "\n### Tools: still active, **ready to call**. Protocol unchanged.\n" if _en else "\n### 工具库状态：持续有效（code_run/file_read等），**可正常调用**。调用协议沿用。\n"
         else: self.total_cd_tokens = 0
         self.last_tools = tools_json
         return tool_instruction
@@ -851,21 +858,31 @@ class MixinSession:
                 time.sleep(delay)
             else: print(f'[MixinSession] {last_chunk[:80]}, retry {attempt+1}/{self._retries} (s{idx}→s{nxt})')
 
-class NativeToolClient:
-    THINKING_PROMPT = """
+THINKING_PROMPT_ZH = """
 ### 行动规范（持续有效）
 每次回复请遵循：
 1. 在 <thinking></thinking> 标签中先分析现状和策略
 2. 在 <summary></summary> 中输出极简单行（<30字）物理快照：上次结果新信息+本次意图。此内容进入长期工作记忆。
 3. 然后才能输出工具调用
 """.strip()
+THINKING_PROMPT_EN = """
+### Action Protocol (always in effect)
+For every reply, follow these steps:
+1. Analyze the current situation and strategy inside <thinking></thinking>
+2. Output a minimal one-line (<30 words) physical snapshot in <summary></summary>: new info from last result + current intent. This goes into long-term working memory.
+3. Then output tool calls
+""".strip()
+
+class NativeToolClient:
+    @staticmethod
+    def _thinking_prompt(): return THINKING_PROMPT_EN if os.environ.get('GA_LANG') == 'en' else THINKING_PROMPT_ZH
     def __init__(self, backend):
         self.backend = backend
-        self.backend.system = self.THINKING_PROMPT
+        self.backend.system = self._thinking_prompt()
         self.name = self.backend.name
         self._pending_tool_ids = []
     def set_system(self, extra_system):
-        combined = f"{extra_system}\n\n{self.THINKING_PROMPT}" if extra_system else self.THINKING_PROMPT
+        combined = f"{extra_system}\n\n{self._thinking_prompt()}" if extra_system else self._thinking_prompt()
         if combined != self.backend.system: print(f"[Debug] Updated system prompt, length {len(combined)} chars.")
         self.backend.system = combined
     def chat(self, messages, tools=None):

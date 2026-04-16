@@ -171,7 +171,7 @@ _js_ime_fix = ("" if os.name == 'nt' else
     "f();new MutationObserver(f).observe(d.body,{childList:1,subtree:1})}()")
 _embed_html(f'<script>{_js_scroll_fix};{_js_ime_fix}</script>', height=0)
 
-if prompt := st.chat_input("请输入指令"):
+if prompt := st.chat_input("any task?"):
     st.session_state.messages.append({"role": "user", "content": prompt})
     if hasattr(agent, '_pet_req') and not prompt.startswith('/'): agent._pet_req('state=walk')
     with st.chat_message("user"): st.markdown(prompt)
