@@ -36,12 +36,15 @@ def _parse_cooldown(repeat):
     if repeat == 'weekly': return timedelta(days=6)
     if repeat == 'monthly': return timedelta(days=27)
     if repeat.startswith('every_'):
-        parts = repeat.split('_')
-        n = int(parts[1].rstrip('hdm'))
-        u = parts[1][-1]
-        if u == 'h': return timedelta(hours=n)
-        if u == 'm': return timedelta(minutes=n)
-        if u == 'd': return timedelta(days=n)
+        try:
+            parts = repeat.split('_')
+            n = int(parts[1].rstrip('hdm'))
+            u = parts[1][-1]
+            if u == 'h': return timedelta(hours=n)
+            if u == 'm': return timedelta(minutes=n)
+            if u == 'd': return timedelta(days=n)
+        except (ValueError, IndexError):
+            pass  # fall through to warning below
     _logger.warning(f'Unknown repeat type: {repeat}, fallback to 20h cooldown')
     return timedelta(hours=20)
 
@@ -78,7 +81,8 @@ def check():
         if not f.endswith('.json'): continue
         tid = f[:-5]
         try:
-            task = json.loads(open(os.path.join(TASKS, f), encoding='utf-8').read())
+            with open(os.path.join(TASKS, f), encoding='utf-8') as fp:
+                task = json.loads(fp.read())
         except Exception as e:
             _logger.error(f'JSON parse error for {f}: {e}')
             continue
