@@ -243,7 +243,7 @@ def file_read(path, start=1, keyword=None, count=200, show_linenos=True):
                 else: return f"Keyword '{keyword}' not found after line {start}. Falling back to content from line {start}:\n\n" \
                                + file_read(path, start, None, count, show_linenos)
             else: res = list(itertools.islice(stream, count))
-            realcnt = len(res); L_MAX = min(max(100, 256000//realcnt), 8000); TAG = " ... [TRUNCATED]"
+            realcnt = len(res); L_MAX = min(max(100, 256000//max(realcnt,1)), 8000); TAG = " ... [TRUNCATED]"
             remaining = sum(1 for _ in itertools.islice(stream, 5000))
             total_lines = (res[0][0] - 1 if res else start - 1) + realcnt + remaining
             total_tag = "[FILE] Total " + (f"{total_lines}+" if remaining >= 5000 else str(total_lines)) + ' lines\n'

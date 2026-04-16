@@ -91,20 +91,6 @@ def auto_make_url(base, path):
     if b.endswith(p): return b
     return f"{b}/{p}" if re.search(r'/v\d+(/|$)', b) else f"{b}/v1/{p}"
 
-class SiderLLMSession:
-    def __init__(self, cfg):
-        from sider_ai_api import Session   # 不使用sider的话没必要安装这个包
-        self._core = Session(cookie=cfg['apikey'], proxies=proxies)   
-        self.model = cfg.get('model', 'gemini-3.0-flash')
-    def ask(self, prompt, stream=False):
-        model = self.model
-        if len(prompt) > 28000: 
-            print(f"[Warn] Prompt too long ({len(prompt)} chars), truncating.")
-            prompt = prompt[-28000:]
-        full_text = self._core.chat(prompt, model, stream=False)
-        if stream: return iter([full_text])   # gen有奇怪的空回复或死循环行为，sider足够快
-        return full_text   
-
 def _parse_claude_sse(resp_lines):
     """Parse Anthropic SSE stream. Yields text chunks, returns list[content_block]."""
     content_blocks = []; current_block = None; tool_json_buf = ""
