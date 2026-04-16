@@ -146,7 +146,11 @@ for msg in st.session_state.messages:
 
 # Scroll-height ghost fix: during streaming, expander open/close mid-animation can leave
 # phantom height → scrollbar long but can't scroll to bottom. Periodically detect & reflow.
-import streamlit.components.v1 as components
+try:
+    from streamlit import iframe as _st_iframe  # 1.56+
+    _embed_html = lambda html, **kw: _st_iframe(html, **{k: max(v, 1) if isinstance(v, int) else v for k, v in kw.items()})
+except (ImportError, AttributeError):
+    from streamlit.components.v1 import html as _embed_html  # ≤1.55
 _js_scroll_fix = ("!function(){var p=window.parent;if(p.__sfx)return;p.__sfx=1;"
     "var d=p.document;setInterval(function(){"
     "var m=d.querySelector('section.main');if(!m)return;"
@@ -165,7 +169,7 @@ _js_ime_fix = ("" if os.name == 'nt' else
     "e.key==='Enter'&&!e.shiftKey&&(e.isComposing||c||e.keyCode===229)&&"
     "(e.stopImmediatePropagation(),e.preventDefault())},!0))})}"
     "f();new MutationObserver(f).observe(d.body,{childList:1,subtree:1})}()")
-components.html(f'<script>{_js_scroll_fix};{_js_ime_fix}</script>', height=0)
+_embed_html(f'<script>{_js_scroll_fix};{_js_ime_fix}</script>', height=0)
 
 if prompt := st.chat_input("请输入指令"):
     st.session_state.messages.append({"role": "user", "content": prompt})
