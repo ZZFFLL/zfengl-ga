@@ -17,13 +17,14 @@ def load_tool_schema(suffix=''):
     TOOLS_SCHEMA = json.loads(TS if os.name == 'nt' else TS.replace('powershell', 'bash'))
 load_tool_schema()
 
+lang_suffix = '_en' if os.environ.get('GA_LANG', '') == 'en' else ''
 mem_dir = os.path.join(script_dir, 'memory')
 if not os.path.exists(mem_dir): os.makedirs(mem_dir)
 mem_txt = os.path.join(mem_dir, 'global_mem.txt')
 if not os.path.exists(mem_txt): open(mem_txt, 'w', encoding='utf-8').write('# [Global Memory - L2]\n')
 mem_insight = os.path.join(mem_dir, 'global_mem_insight.txt')
 if not os.path.exists(mem_insight):
-    t = os.path.join(script_dir, 'assets/global_mem_insight_template.txt')
+    t = os.path.join(script_dir, f'assets/global_mem_insight_template{lang_suffix}.txt')
     open(mem_insight, 'w', encoding='utf-8').write(open(t, encoding='utf-8').read() if os.path.exists(t) else '')
 cdp_cfg = os.path.join(script_dir, 'assets/tmwd_cdp_bridge/config.js')
 if not os.path.exists(cdp_cfg):
@@ -33,8 +34,7 @@ if not os.path.exists(cdp_cfg):
     except Exception as e: print(f'[WARN] CDP config init failed: {e} — advanced web features (tmwebdriver) will be unavailable.')
 
 def get_system_prompt():
-    suffix = '_en' if os.environ.get('GA_LANG', '') == 'en' else ''
-    with open(os.path.join(script_dir, f'assets/sys_prompt{suffix}.txt'), 'r', encoding='utf-8') as f: prompt = f.read()
+    with open(os.path.join(script_dir, f'assets/sys_prompt{lang_suffix}.txt'), 'r', encoding='utf-8') as f: prompt = f.read()
     prompt += f"\nToday: {time.strftime('%Y-%m-%d %a')}\n"
     prompt += get_global_memory()
     return prompt
@@ -111,6 +111,8 @@ class GeneraticAgent:
                     setattr(self.llmclient.backend, k, v)
                     display_queue.put({'done': f"✅ session.{k} = {v!r}"})
                     self.task_queue.task_done(); continue
+                if raw_query.strip() == '/resume':
+                    raw_query = '简单看看model_responses中的最近几次对话结尾部分(除了本次)，分别简单总结一下让我选择，然后你简单阅读了解情况后作为我们接下来聊天的基础'
             self.is_running = True
             rquery = smart_format(raw_query.replace('\n', ' '), max_str_len=200)
             self.history.append(f"[USER]: {rquery}")

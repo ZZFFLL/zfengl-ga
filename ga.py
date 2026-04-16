@@ -12,8 +12,7 @@ def code_run(code, code_type="python", timeout=60, cwd=None, code_cwd=None, stop
     """代码执行器
     python: 运行复杂的 .py 脚本（文件模式）
     powershell/bash: 运行单行指令（命令模式）
-    优先使用python，仅在必要系统操作时使用powershell。
-    """
+    优先使用python，仅在必要系统操作时使用powershell"""
     preview = (code[:60].replace('\n', ' ') + '...') if len(code) > 60 else code.strip()
     yield f"[Action] Running {code_type} in {os.path.basename(cwd)}: {preview}\n"
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -90,9 +89,8 @@ def code_run(code, code_type="python", timeout=60, cwd=None, code_cwd=None, stop
         if code_type == "python" and tmp_path and os.path.exists(tmp_path): os.remove(tmp_path)
 
 
-def ask_user(question: str, candidates: list = None):
-    """question: 向用户提出的问题。candidates: 可选的候选项列表。需要保证should_exit为True
-    """
+def ask_user(question, candidates=None):
+    """question: 向用户提出的问题。candidates: 可选的候选项列表"""
     return {"status": "INTERRUPT", "intent": "HUMAN_INTERVENTION",
         "data": {"question": question, "candidates": candidates or []}}
 
@@ -165,21 +163,7 @@ def log_memory_access(path):
     with open(stats_file, 'w', encoding='utf-8') as f: json.dump(stats, f, indent=2, ensure_ascii=False)
 
 def web_execute_js(script, switch_tab_id=None, no_monitor=False):
-    """
-    执行 JS 脚本来控制浏览器，并捕获结果和页面变化。
-    script: 要执行的 JavaScript 代码字符串。
-    return {
-        "status": "failed" if error_msg else "success",
-        "js_return": result,
-        "error": error_msg,
-        "transients": transients, 
-        "environment": {
-            "newTabs": [],
-            "reloaded": reloaded
-        },
-        "diff": diff_summary,
-    }
-    """
+    """执行 JS 脚本来控制浏览器，并捕获结果和页面变化"""
     global driver
     try:
         if driver is None: first_init_driver()
@@ -187,13 +171,12 @@ def web_execute_js(script, switch_tab_id=None, no_monitor=False):
         if switch_tab_id: driver.default_session_id = switch_tab_id
         result = simphtml.execute_js_rich(script, driver, no_monitor=no_monitor)
         return result
-    except Exception as e:
-        return {"status": "error", "msg": format_error(e)}
+    except Exception as e: return {"status": "error", "msg": format_error(e)}
 
 def expand_file_refs(text, base_dir=None):
     """展开文本中的 {{file:路径:起始行:结束行}} 引用为实际文件内容。
     可与普通文本混排。展开失败抛 ValueError。
-    base_dir: 相对路径的基准目录，默认为进程 cwd。"""
+    base_dir: 相对路径的基准目录，默认为进程 cwd"""
     pattern = r'\{\{file:(.+?):(\d+):(\d+)\}\}'
     def replacer(match):
         path, start, end = match.group(1), int(match.group(2)), int(match.group(3))
@@ -205,8 +188,7 @@ def expand_file_refs(text, base_dir=None):
     return re.sub(pattern, replacer, text)
     
 def file_patch(path: str, old_content: str, new_content: str):
-    """在文件中寻找唯一的 old_content 块并替换为 new_content。
-    """
+    """在文件中寻找唯一的 old_content 块并替换为 new_content"""
     path = str(Path(path).resolve())
     try:
         if not os.path.exists(path): return {"status": "error", "msg": "文件不存在"}
@@ -218,8 +200,7 @@ def file_patch(path: str, old_content: str, new_content: str):
         updated_text = full_text.replace(old_content, new_content)
         with open(path, 'w', encoding='utf-8') as f: f.write(updated_text)
         return {"status": "success", "msg": "文件局部修改成功"}
-    except Exception as e:
-        return {"status": "error", "msg": str(e)}
+    except Exception as e: return {"status": "error", "msg": str(e)}
 
 _read_dirs = set()
 def _scan_files(base, depth=2):
