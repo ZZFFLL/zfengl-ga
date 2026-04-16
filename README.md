@@ -179,9 +179,9 @@ You're also welcome to join our **GenericAgent Community Group** for discussion,
 <div align="center">
   <table>
     <tr>
-      <td align="center"><strong>WeChat Group 4</strong><br><img src="assets/images/wechat_group4.jpg" alt="WeChat Group 4 QR Code" width="250"/></td>
-      <td align="center"><strong>WeChat Group 3</strong><br><img src="assets/images/wechat_group2.JPG" alt="WeChat Group 3 QR Code" width="250"/></td>
-      <td align="center"><strong>Feishu Group</strong><br><img src="assets/images/feishu_group.jpg" alt="Feishu Group QR Code" width="250"/></td>
+      <td align="center"><strong>WeChat Group 5</strong><br><img src="assets/images/wechat_group5.jpg" alt="WeChat Group 5 QR Code" width="250"/></td>
+      <td align="center"><strong>WeChat Group 6</strong><br><img src="assets/images/wechat_group6.jpg" alt="WeChat Group 6 QR Code" width="250"/></td>
+      <td align="center"><strong>WeChat Group 7</strong><br><img src="assets/images/wechat_group7.jpg" alt="WeChat Group 7 QR Code" width="250"/></td>
     </tr>
   </table>
 </div>
@@ -439,9 +439,9 @@ GenericAgent 通过**分层记忆 × 最小工具集 × 自主执行循环**完�
 <div align="center">
   <table>
     <tr>
-      <td align="center"><strong>微信群 1</strong><br><img src="assets/images/wechat_group.jpg" alt="微信群 1 二维码" width="250"/></td>
-      <td align="center"><strong>微信群 2</strong><br><img src="assets/images/wechat_group2.JPG" alt="微信群 2 二维码" width="250"/></td>
-      <td align="center"><strong>飞书群</strong><br><img src="assets/images/feishu_group.jpg" alt="飞书群二维码" width="250"/></td>
+      <td align="center"><strong>微信群 5</strong><br><img src="assets/images/wechat_group5.jpg" alt="微信群 5 二维码" width="250"/></td>
+      <td align="center"><strong>微信群 6</strong><br><img src="assets/images/wechat_group6.jpg" alt="微信群 6 二维码" width="250"/></td>
+      <td align="center"><strong>微信群 7</strong><br><img src="assets/images/wechat_group7.jpg" alt="微信群 7 二维码" width="250"/></td>
     </tr>
   </table>
 </div>
