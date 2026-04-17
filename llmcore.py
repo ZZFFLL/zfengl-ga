@@ -282,7 +282,7 @@ def _openai_stream(api_base, api_key, messages, model, api_mode='chat_completion
                 else: resp_tools.append(t)
             payload["tools"] = resp_tools
         else: payload["tools"] = tools
-    RETRYABLE = {408, 409, 425, 429, 500, 502, 503, 504}
+    RETRYABLE = {408, 409, 425, 429, 500, 502, 503, 504, 529}
     def _delay(resp, attempt):
         try: ra = float((resp.headers or {}).get("retry-after"))
         except: ra = None
