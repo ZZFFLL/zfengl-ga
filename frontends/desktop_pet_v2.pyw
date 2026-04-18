@@ -137,8 +137,8 @@ def _wrap_text_for_width(draw, text, font, max_width):
 def build_bubble_image(message, max_width=220):
     """Build a PIL image for the toast bubble using the user asset when available."""
     message = (message or '').strip()
-    bubble_path = next((p for p in [os.path.join(PROJECT_DIR, '聊天气泡.png'),
-                                     os.path.join(PROJECT_DIR, 'bubble.png')]
+    bubble_path = next((p for p in [os.path.join(SCRIPT_DIR, 'chat_bubble.png'),
+                                     os.path.join(SCRIPT_DIR, 'bubble.png')]
                         if os.path.exists(p)), None)
 
     if bubble_path:
