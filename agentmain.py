@@ -77,13 +77,13 @@ class GeneraticAgent:
         self.llmclient = self.llmclients[self.llm_no]
         self.llmclient.backend.history = lastc.backend.history
         self.llmclient.last_tools = ''
-        name = self.get_llm_name()
+        name = self.get_llm_name().lower()
         if 'glm' in name or 'minimax' in name or 'kimi' in name: load_tool_schema('_cn')
         else: load_tool_schema()
-    def list_llms(self): return [(i, f"{type(b.backend).__name__}/{b.backend.name}", i == self.llm_no) for i, b in enumerate(self.llmclients)]
-    def get_llm_name(self):
-        b = self.llmclient
-        return f"{type(b.backend).__name__}/{b.backend.name}"
+    def list_llms(self): return [(i, self.get_llm_name(b), i == self.llm_no) for i, b in enumerate(self.llmclients)]
+    def get_llm_name(self, b=None):
+        b = self.llmclient if b is None else b
+        return f"{type(b.backend).__name__}/{b.backend.name}" if not isinstance(b, dict) else "BADCONFIG_MIXIN"
 
     def abort(self):
         if not self.is_running: return
