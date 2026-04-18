@@ -422,8 +422,10 @@ class BaseSession:
         proxy = cfg.get('proxy')
         self.proxies = {"http": proxy, "https": proxy} if proxy else None
         self.max_retries = max(0, int(cfg.get('max_retries', 1)))
-        self.connect_timeout = max(1, int(cfg.get('timeout', 5)))
-        self.read_timeout = max(5, int(cfg.get('read_timeout', 30)))
+        self.stream = cfg.get('stream', True)
+        default_ct, default_rt = (5, 30) if self.stream else (10, 240)
+        self.connect_timeout = max(1, int(cfg.get('timeout', default_ct)))
+        self.read_timeout = max(5, int(cfg.get('read_timeout', default_rt)))
         def _enum(key, valid):
             v = cfg.get(key); v = None if v is None else str(v).strip().lower()
             return v if not v or v in valid else print(f"[WARN] Invalid {key} {v!r}, ignored.")
@@ -434,7 +436,6 @@ class BaseSession:
         self.api_mode = 'responses' if mode in ('responses', 'response') else 'chat_completions'
         self.temperature = cfg.get('temperature', 1)
         self.max_tokens = cfg.get('max_tokens', 8192)
-        self.stream = cfg.get('stream', True)
     def _apply_claude_thinking(self, payload):
         if self.thinking_type:
             thinking = {"type": self.thinking_type}
