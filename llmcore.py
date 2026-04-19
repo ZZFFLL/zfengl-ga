@@ -530,7 +530,7 @@ class NativeClaudeSession(BaseSession):
             beta_parts.insert(1, "context-1m-2025-08-07"); model = model.replace("[1m]", "").replace("[1M]", "")
         headers = {"Content-Type": "application/json", "anthropic-version": "2023-06-01",
             "anthropic-beta": ",".join(beta_parts), "anthropic-dangerous-direct-browser-access": "true",
-            "user-agent": "claude-cli/2.1.90 (external, cli)", "x-app": "cli"}
+            "user-agent": "claude-cli/2.1.114 (external, cli)", "x-app": "cli"}
         if self.api_key.startswith("sk-ant-"): headers["x-api-key"] = self.api_key
         else: headers["authorization"] = f"Bearer {self.api_key}"
         payload = {"model": model, "messages": messages, "max_tokens": self.max_tokens, "stream": self.stream}
