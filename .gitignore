@@ -1,4 +1,6 @@
-temp/
+temp/*
+!temp/model_responses/
+!temp/model_responses/**
 tmp/
 
 __pycache__/
@@ -35,6 +37,12 @@ tasks/
 
 memory/*
 !memory/memory_management_sop.md
+
+# 允许当前分支纳管以下 memory 文件
+!memory/feishu_send_file_sop.md
+!memory/file_access_stats.json
+!memory/global_mem.txt
+!memory/global_mem_insight.txt
 
 # Allow tracking of specific SOPs
 !memory/web_setup_sop.md
