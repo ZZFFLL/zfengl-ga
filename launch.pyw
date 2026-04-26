@@ -22,6 +22,12 @@ def start_streamlit(port):
     proc = subprocess.Popen(cmd)
     atexit.register(proc.kill)
 
+def start_webui(port):
+    global proc
+    cmd = [sys.executable, os.path.join(frontends_dir, "webui_server.py"), "--port", str(port), "--host", "127.0.0.1"]
+    proc = subprocess.Popen(cmd)
+    atexit.register(proc.kill)
+
 def inject(text):
     window.evaluate_js(f"""
         const textarea = document.querySelector('textarea[data-testid="stChatInputTextArea"]');
@@ -73,10 +79,13 @@ if __name__ == '__main__':
     parser.add_argument('--dingtalk', '--dt', dest='dingtalk', action='store_true', help='启动 DingTalk Bot');
     parser.add_argument('--sched', action='store_true', help='启动计划任务调度器')
     parser.add_argument('--llm_no', type=int, default=0, help='LLM编号')
+    parser.add_argument('--webui', action='store_true', help='启动新版 WebUI（默认仍为 Streamlit）')
     args = parser.parse_args()
     port = str(find_free_port()) if args.port == '0' else args.port
     print(f'[Launch] Using port {port}')
-    threading.Thread(target=start_streamlit, args=(port,), daemon=True).start()
+    frontend_target = start_webui if args.webui else start_streamlit
+    threading.Thread(target=frontend_target, args=(port,), daemon=True).start()
+    print(f"[Launch] {'WebUI' if args.webui else 'Streamlit'} frontend started")
 
     if args.tg:
         tgproc = subprocess.Popen([sys.executable, os.path.join(frontends_dir, "tgapp.py")], creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)

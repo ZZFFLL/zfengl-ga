@@ -4,11 +4,13 @@ tmp/
 __pycache__/
 *.py[cod]
 *$py.class
+*.tsbuildinfo
 .venv/
 venv/
 env/
 build/
 dist/
+frontends/webui/node_modules/
 *.egg-info/
 
 .streamlit/
