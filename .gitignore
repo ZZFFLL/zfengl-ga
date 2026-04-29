@@ -87,6 +87,10 @@ memory/L4_raw_sessions/*
 # Memory management
 !memory/memory_cleanup_sop.md
 
+# Explicitly keep local secret-bearing memory files untracked
+memory/tavily_key.txt
+memory/vision_api.py
+
 # Visual Studio
 .vs/
 restore_commit.txt
