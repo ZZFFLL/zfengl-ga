@@ -1,6 +1,5 @@
 import { FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Bot,
   ChevronDown,
   Circle,
   MessageSquareText,
@@ -14,6 +13,8 @@ import {
   Settings2,
   Square,
 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   abortTask,
   continueConversation,
@@ -22,7 +23,6 @@ import {
   resetConversation,
   setAutonomous,
   startChat,
-  startPet,
   streamTask,
   switchLlm,
 } from "./api";
@@ -30,6 +30,43 @@ import type { ChatMessage, ExecutionTurn, RuntimeState } from "./types";
 
 const nowLabel = () => new Date().toLocaleString();
 const id = () => Math.random().toString(36).slice(2);
+const STREAM_STEP_INTERVAL_MS = 55;
+const STREAM_DONE_CATCHUP_INTERVAL_MS = 36;
+
+type GraphemeSegment = { segment: string };
+type GraphemeSegmenter = { segment(input: string): Iterable<GraphemeSegment> };
+type GraphemeSegmenterConstructor = new (
+  locales?: string | string[],
+  options?: { granularity: "grapheme" },
+) => GraphemeSegmenter;
+
+const graphemeSegmenter = (() => {
+  const Segmenter = (Intl as typeof Intl & { Segmenter?: GraphemeSegmenterConstructor }).Segmenter;
+  return Segmenter ? new Segmenter(undefined, { granularity: "grapheme" }) : null;
+})();
+
+function splitGraphemes(text: string) {
+  if (!text) return [];
+  if (graphemeSegmenter) {
+    return Array.from(graphemeSegmenter.segment(text), (item) => item.segment);
+  }
+  return Array.from(text);
+}
+
+function streamStepInterval(remainingChars: number, done: boolean) {
+  return done && remainingChars > 900 ? STREAM_DONE_CATCHUP_INTERVAL_MS : STREAM_STEP_INTERVAL_MS;
+}
+
+function nextSmoothContent(displayed: string, target: string) {
+  const remaining = splitGraphemes(target.slice(displayed.length));
+  if (remaining.length === 0) return target;
+  const step = 1;
+  return displayed + remaining.slice(0, step).join("");
+}
+
+function prefersReducedMotion() {
+  return Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
+}
 
 function statusTone(state: RuntimeState | null) {
   if (!state?.configured) return "bg-app-warning/10 text-app-warning";
@@ -55,7 +92,6 @@ function ControlPanel({
   onReinject,
   onNew,
   onAutonomous,
-  onPet,
 }: {
   state: RuntimeState | null;
   onRefresh: () => void;
@@ -64,10 +100,9 @@ function ControlPanel({
   onReinject: () => void;
   onNew: () => void;
   onAutonomous: (enabled: boolean) => void;
-  onPet: () => void;
 }) {
   return (
-    <aside className="flex h-full flex-col gap-4 border-r border-app-line bg-app-panel p-4">
+    <aside className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto border-r border-app-line bg-app-panel p-4">
       <div>
         <p className="text-xs font-semibold uppercase tracking-wide text-app-muted">Agent</p>
         <h1 className="mt-1 text-xl font-semibold text-app-text">GenericAgent</h1>
@@ -126,10 +161,6 @@ function ControlPanel({
           )}
           {state?.autonomous_enabled ? "禁止自主行动" : "允许自主行动"}
         </button>
-        <button className="control-button" type="button" onClick={onPet} disabled={!state?.configured}>
-          <Bot className="h-4 w-4" aria-hidden="true" />
-          启动桌面宠物
-        </button>
       </section>
 
       <button className="control-button mt-auto" type="button" onClick={onRefresh}>
@@ -140,17 +171,75 @@ function ControlPanel({
   );
 }
 
-function ExecutionLog({ turns }: { turns: ExecutionTurn[] }) {
+function MarkdownContent({
+  content,
+  streaming = false,
+}: {
+  content: string;
+  streaming?: boolean;
+}) {
   return (
-    <aside className="flex h-full flex-col border-l border-app-line bg-app-panel">
-      <div className="border-b border-app-line p-4">
-        <p className="text-xs font-semibold uppercase tracking-wide text-app-muted">Execution</p>
-        <h2 className="mt-1 text-lg font-semibold text-app-text">运行日志</h2>
+    <div className="markdown-content text-sm leading-6">
+      <div>
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
       </div>
-      <div className="operation-scroll flex-1 overflow-auto p-3">
+      {streaming && <span className="streaming-cursor" aria-hidden="true" />}
+    </div>
+  );
+}
+
+function ExecutionLog({
+  turns,
+  collapsed = false,
+  onToggle,
+}: {
+  turns: ExecutionTurn[];
+  collapsed?: boolean;
+  onToggle?: () => void;
+}) {
+  if (collapsed) {
+    return (
+      <aside className="flex h-full min-h-0 flex-col items-center gap-3 border-l border-app-line bg-app-panel p-2">
+        <button
+          type="button"
+          className="icon-button"
+          aria-label="展开当前执行摘要"
+          title="展开当前执行摘要"
+          onClick={onToggle}
+        >
+          <PanelRight className="h-5 w-5" aria-hidden="true" />
+        </button>
+        <span className="rounded-md bg-app-primarySoft px-2 py-1 text-xs font-medium text-app-primary">
+          {turns.length}
+        </span>
+        <span className="side-label text-xs font-semibold text-app-muted">当前执行摘要</span>
+      </aside>
+    );
+  }
+
+  return (
+    <aside className="flex h-full min-h-0 flex-col border-l border-app-line bg-app-panel">
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-app-line p-4">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-app-muted">Execution</p>
+          <h2 className="mt-1 text-lg font-semibold text-app-text">当前执行摘要</h2>
+        </div>
+        {onToggle && (
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="收起当前执行摘要"
+            title="收起当前执行摘要"
+            onClick={onToggle}
+          >
+            <PanelRight className="h-5 w-5" aria-hidden="true" />
+          </button>
+        )}
+      </div>
+      <div className="operation-scroll min-h-0 flex-1 overflow-auto p-3">
         {turns.length === 0 ? (
           <div className="rounded-md border border-dashed border-app-line p-4 text-sm leading-6 text-app-muted">
-            当前还没有可折叠的运行过程。出现 LLM Running 标记后会自动归档到这里。
+            当前还没有可展示的执行摘要。最新任务出现 summary 后会显示在这里。
           </div>
         ) : (
           <div className="space-y-2">
@@ -164,9 +253,13 @@ function ExecutionLog({ turns }: { turns: ExecutionTurn[] }) {
                   <ChevronDown className="h-4 w-4" aria-hidden="true" />
                   Turn {turn.turn}: {turn.title}
                 </summary>
-                <pre className="message-content border-t border-app-line p-3 text-xs leading-5 text-app-muted">
-                  {turn.content}
-                </pre>
+                <div className="border-t border-app-line p-3 text-app-muted">
+                  {turn.content ? (
+                    <MarkdownContent content={turn.content} />
+                  ) : (
+                    <p className="text-sm leading-6 text-app-muted">此轮没有 summary。</p>
+                  )}
+                </div>
               </details>
             ))}
           </div>
@@ -176,10 +269,16 @@ function ExecutionLog({ turns }: { turns: ExecutionTurn[] }) {
   );
 }
 
-function ChatMessageView({ message }: { message: ChatMessage }) {
+function ChatMessageView({
+  message,
+  streaming = false,
+}: {
+  message: ChatMessage;
+  streaming?: boolean;
+}) {
   const isUser = message.role === "user";
   return (
-    <article className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+    <article className={`flex ${isUser ? "justify-end" : "justify-start"} ${streaming ? "smooth-message" : ""}`}>
       <div
         className={`max-w-[86%] rounded-lg border px-4 py-3 shadow-sm ${
           isUser
@@ -190,7 +289,11 @@ function ChatMessageView({ message }: { message: ChatMessage }) {
         <div className={`mb-2 text-xs ${isUser ? "text-white/75" : "text-app-muted"}`}>
           {isUser ? "User" : message.role === "system" ? "System" : "Agent"} · {message.time}
         </div>
-        <div className="message-content text-sm leading-6">{message.content}</div>
+        {isUser ? (
+          <div className="message-content text-sm leading-6">{message.content}</div>
+        ) : (
+          <MarkdownContent content={message.content} streaming={streaming} />
+        )}
       </div>
     </article>
   );
@@ -204,7 +307,15 @@ export default function App() {
   const [error, setError] = useState("");
   const [controlsOpen, setControlsOpen] = useState(false);
   const [logsOpen, setLogsOpen] = useState(false);
+  const [logsCollapsed, setLogsCollapsed] = useState(false);
+  const [streamAnimating, setStreamAnimating] = useState(false);
+  const chatScrollRef = useRef<HTMLElement | null>(null);
   const streamRef = useRef<EventSource | null>(null);
+  const streamTargetRef = useRef("");
+  const streamDisplayedRef = useRef("");
+  const streamDoneRef = useRef(false);
+  const streamAnimationFrameRef = useRef<number | null>(null);
+  const streamLastStepAtRef = useRef(0);
 
   const running = Boolean(state?.running);
   const lastReplyTime = state?.last_reply_time || 0;
@@ -219,8 +330,15 @@ export default function App() {
 
   useEffect(() => {
     refreshState();
-    return () => streamRef.current?.close();
+    return () => {
+      streamRef.current?.close();
+      cancelStreamingFrame();
+    };
   }, []);
+
+  useEffect(() => {
+    scrollChatToBottom(streamAnimating ? "auto" : "smooth");
+  }, [messages, streamAnimating]);
 
   const pushSystem = (content: string) => {
     setMessages((items) => [...items, { id: id(), role: "system", content, time: nowLabel() }]);
@@ -230,7 +348,23 @@ export default function App() {
     setMessages((items) => [...items, { id: id(), role: "assistant", content, time: nowLabel() }]);
   };
 
-  const updateStreamingAssistant = (content: string) => {
+  function scrollChatToBottom(behavior: ScrollBehavior = "auto") {
+    const target = chatScrollRef.current;
+    if (!target) return;
+    window.requestAnimationFrame(() => {
+      target.scrollTo({ top: target.scrollHeight, behavior });
+    });
+  }
+
+  function cancelStreamingFrame() {
+    if (streamAnimationFrameRef.current !== null) {
+      window.cancelAnimationFrame(streamAnimationFrameRef.current);
+      streamAnimationFrameRef.current = null;
+    }
+  }
+
+  function updateStreamingAssistant(content: string) {
+    streamDisplayedRef.current = content;
     setMessages((items) => {
       const copy = [...items];
       const last = copy[copy.length - 1];
@@ -241,7 +375,65 @@ export default function App() {
       }
       return copy;
     });
-  };
+  }
+
+  function stepStreamingAssistant(timestamp: number) {
+    streamAnimationFrameRef.current = null;
+    const target = streamTargetRef.current;
+    const displayed = streamDisplayedRef.current;
+    if (displayed === target) {
+      setStreamAnimating(!streamDoneRef.current);
+      return;
+    }
+    if (!target.startsWith(displayed)) {
+      updateStreamingAssistant(target);
+      setStreamAnimating(false);
+      return;
+    }
+    const interval = streamStepInterval(target.length - displayed.length, streamDoneRef.current);
+    if (streamLastStepAtRef.current === 0) streamLastStepAtRef.current = timestamp - interval;
+    if (timestamp - streamLastStepAtRef.current < interval) {
+      streamAnimationFrameRef.current = window.requestAnimationFrame(stepStreamingAssistant);
+      return;
+    }
+    streamLastStepAtRef.current = timestamp;
+    const nextContent = nextSmoothContent(displayed, target);
+    updateStreamingAssistant(nextContent);
+    scrollChatToBottom("auto");
+    if (nextContent.length < target.length) {
+      streamAnimationFrameRef.current = window.requestAnimationFrame(stepStreamingAssistant);
+    } else {
+      setStreamAnimating(!streamDoneRef.current);
+    }
+  }
+
+  function queueStreamingAssistant(content: string, done = false) {
+    streamTargetRef.current = content;
+    streamDoneRef.current = streamDoneRef.current || done;
+    if (prefersReducedMotion()) {
+      cancelStreamingFrame();
+      updateStreamingAssistant(content);
+      setStreamAnimating(false);
+      return;
+    }
+    if (streamDisplayedRef.current === content) {
+      setStreamAnimating(!streamDoneRef.current);
+      return;
+    }
+    setStreamAnimating(true);
+    if (streamAnimationFrameRef.current === null) {
+      streamAnimationFrameRef.current = window.requestAnimationFrame(stepStreamingAssistant);
+    }
+  }
+
+  function resetStreamingAssistant() {
+    cancelStreamingFrame();
+    streamTargetRef.current = "";
+    streamDisplayedRef.current = "";
+    streamDoneRef.current = false;
+    streamLastStepAtRef.current = 0;
+    setStreamAnimating(false);
+  }
 
   const handleSubmit = async (event?: FormEvent) => {
     event?.preventDefault();
@@ -249,11 +441,14 @@ export default function App() {
     if (!prompt || running) return;
     setDraft("");
     setError("");
+    resetStreamingAssistant();
     setMessages((items) => [...items, { id: id(), role: "user", content: prompt, time: nowLabel() }]);
+    scrollChatToBottom("smooth");
 
     try {
       if (prompt === "/new") {
         const result = await resetConversation();
+        resetStreamingAssistant();
         setMessages([{ id: id(), role: "system", content: result.message, time: nowLabel() }]);
         setTurns([]);
         await refreshState();
@@ -261,6 +456,7 @@ export default function App() {
       }
       if (prompt.startsWith("/continue")) {
         const result = await continueConversation(prompt);
+        resetStreamingAssistant();
         if (result.history.length) {
           setMessages(
             result.history.map((msg) => ({
@@ -281,10 +477,11 @@ export default function App() {
       await refreshState();
       streamRef.current = streamTask(task_id, {
         onEvent: (payload) => {
-          if (payload.content !== undefined) updateStreamingAssistant(payload.content);
+          if (payload.content !== undefined) queueStreamingAssistant(payload.content, payload.event === "done");
           if (payload.execution_log) setTurns(payload.execution_log);
         },
         onError: (err) => {
+          resetStreamingAssistant();
           setError(err.message);
           refreshState();
         },
@@ -305,13 +502,17 @@ export default function App() {
 
   const shellClass = useMemo(
     () =>
-      "grid h-screen min-h-screen bg-app-bg text-app-text lg:grid-cols-[260px_minmax(0,1fr)_360px] md:grid-cols-[240px_minmax(0,1fr)]",
-    [],
+      `grid h-screen h-dvh min-h-0 overflow-hidden bg-app-bg text-app-text md:grid-cols-[240px_minmax(0,1fr)] ${
+        logsCollapsed
+          ? "lg:grid-cols-[260px_minmax(0,1fr)_56px]"
+          : "lg:grid-cols-[260px_minmax(0,1fr)_360px]"
+      }`,
+    [logsCollapsed],
   );
 
   if (state && !state.configured) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-app-bg p-6">
+      <main className="flex h-screen h-dvh items-center justify-center overflow-hidden bg-app-bg p-6">
         <section className="max-w-xl rounded-lg border border-app-line bg-white p-6 shadow-panel">
           <StatusBadge state={state} />
           <h1 className="mt-4 text-2xl font-semibold text-app-text">LLM 尚未配置</h1>
@@ -326,7 +527,7 @@ export default function App() {
 
   return (
     <div className={shellClass}>
-      <div className="hidden md:block">
+      <div className="hidden min-h-0 md:block">
         <ControlPanel
           state={state}
           onRefresh={refreshState}
@@ -349,15 +550,11 @@ export default function App() {
             const result = await setAutonomous(enabled);
             setState((prev) => (prev ? { ...prev, autonomous_enabled: result.autonomous_enabled } : prev));
           }}
-          onPet={async () => {
-            const result = await startPet();
-            pushSystem(result.started ? "Desktop pet started." : "Desktop pet request sent.");
-          }}
         />
       </div>
 
-      <main className="flex min-w-0 flex-col">
-        <header className="flex min-h-16 items-center justify-between border-b border-app-line bg-white px-4">
+      <main className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+        <header className="flex min-h-16 shrink-0 items-center justify-between border-b border-app-line bg-white px-4">
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -378,7 +575,7 @@ export default function App() {
             <button
               type="button"
               className="icon-button lg:hidden"
-              aria-label="打开运行日志"
+              aria-label="打开当前执行摘要"
               onClick={() => setLogsOpen(true)}
             >
               <PanelRight className="h-5 w-5" />
@@ -387,12 +584,12 @@ export default function App() {
         </header>
 
         {error && (
-          <div className="border-b border-app-line bg-app-danger/10 px-4 py-2 text-sm text-app-danger">
+          <div className="shrink-0 border-b border-app-line bg-app-danger/10 px-4 py-2 text-sm text-app-danger">
             {error}
           </div>
         )}
 
-        <section className="operation-scroll flex-1 space-y-4 overflow-auto p-4">
+        <section ref={chatScrollRef} className="operation-scroll min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
           {messages.length === 0 ? (
             <div className="mx-auto mt-12 max-w-2xl rounded-lg border border-dashed border-app-line bg-white p-6 text-center text-app-muted">
               <h2 className="text-lg font-semibold text-app-text">开始一个任务</h2>
@@ -401,11 +598,19 @@ export default function App() {
               </p>
             </div>
           ) : (
-            messages.map((message) => <ChatMessageView key={message.id} message={message} />)
+            messages.map((message) => (
+              <ChatMessageView
+                key={message.id}
+                message={message}
+                streaming={
+                  streamAnimating && message.role === "assistant" && message === messages[messages.length - 1]
+                }
+              />
+            ))
           )}
         </section>
 
-        <form className="border-t border-app-line bg-white p-4" onSubmit={handleSubmit}>
+        <form className="shrink-0 border-t border-app-line bg-white p-4" onSubmit={handleSubmit}>
           <div className="flex items-end gap-3 rounded-lg border border-app-line bg-app-bg p-2">
             <textarea
               className="min-h-12 flex-1 resize-none bg-transparent px-2 py-2 text-sm leading-6 text-app-text placeholder:text-app-muted"
@@ -428,8 +633,12 @@ export default function App() {
         </form>
       </main>
 
-      <div className="hidden lg:block">
-        <ExecutionLog turns={turns} />
+      <div className="hidden min-h-0 lg:block">
+        <ExecutionLog
+          turns={turns}
+          collapsed={logsCollapsed}
+          onToggle={() => setLogsCollapsed((value) => !value)}
+        />
       </div>
 
       {controlsOpen && (
@@ -456,10 +665,6 @@ export default function App() {
               onAutonomous={async (enabled) => {
                 const result = await setAutonomous(enabled);
                 setState((prev) => (prev ? { ...prev, autonomous_enabled: result.autonomous_enabled } : prev));
-              }}
-              onPet={async () => {
-                const result = await startPet();
-                pushSystem(result.started ? "Desktop pet started." : "Desktop pet request sent.");
               }}
             />
           </div>

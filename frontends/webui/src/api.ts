@@ -94,7 +94,3 @@ export async function setAutonomous(enabled: boolean): Promise<{ autonomous_enab
     }),
   );
 }
-
-export async function startPet(): Promise<{ ok: boolean; started: boolean }> {
-  return readJson(await fetch("/api/pet", { method: "POST" }));
-}

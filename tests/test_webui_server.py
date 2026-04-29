@@ -1,7 +1,12 @@
 import queue
 import unittest
 
-from frontends.webui_server import WebUITaskManager, build_state, parse_execution_log
+from frontends.webui_server import (
+    WebUITaskManager,
+    build_state,
+    parse_execution_log,
+    strip_summary_blocks,
+)
 
 
 class FakeBackend:
@@ -25,7 +30,6 @@ class FakeAgent:
         self.handler = object()
         self.is_running = False
         self.aborted = False
-        self.pet_requests = []
         self.tasks = []
 
     def list_llms(self):
@@ -53,7 +57,7 @@ class FakeAgent:
 
 
 class WebUILogParserTests(unittest.TestCase):
-    def test_parse_execution_log_uses_summary_first_line_as_title(self):
+    def test_parse_execution_log_returns_summary_only(self):
         text = (
             "Opening answer\n\n"
             "**LLM Running (Turn 1) ...**\n"
@@ -68,10 +72,27 @@ class WebUILogParserTests(unittest.TestCase):
         self.assertEqual(len(turns), 2)
         self.assertEqual(turns[0]["turn"], 1)
         self.assertEqual(turns[0]["title"], "Inspect files")
-        self.assertIn("Tool output", turns[0]["content"])
+        self.assertEqual(turns[0]["content"], "Inspect files\nThen decide")
         self.assertEqual(turns[1]["turn"], 2)
         self.assertEqual(turns[1]["title"], "LLM Running (Turn 2)")
-        self.assertIn("No summary here", turns[1]["content"])
+        self.assertEqual(turns[1]["content"], "")
+
+    def test_strip_summary_blocks_keeps_non_summary_content(self):
+        text = (
+            "Before\n"
+            "<summary>\nHidden planning\n</summary>\n"
+            "After\n"
+            "<summary>Second hidden</summary>\n"
+            "Done"
+        )
+
+        cleaned = strip_summary_blocks(text)
+
+        self.assertIn("Before", cleaned)
+        self.assertIn("After", cleaned)
+        self.assertIn("Done", cleaned)
+        self.assertNotIn("Hidden planning", cleaned)
+        self.assertNotIn("<summary>", cleaned)
 
 
 class WebUITaskManagerTests(unittest.TestCase):
@@ -86,15 +107,38 @@ class WebUITaskManagerTests(unittest.TestCase):
         self.assertEqual(manager.tasks[task_id].status, "running")
 
         output = agent.tasks[0][3]
-        output.put({"next": "partial", "source": "user"})
-        output.put({"done": "final", "source": "user"})
+        output.put(
+            {
+                "next": (
+                    "**LLM Running (Turn 1) ...**\n"
+                    "<summary>\nPlan the response\n</summary>\n"
+                    "partial"
+                ),
+                "source": "user",
+            }
+        )
+        output.put(
+            {
+                "done": (
+                    "**LLM Running (Turn 1) ...**\n"
+                    "<summary>\nPlan the response\n</summary>\n"
+                    "final"
+                ),
+                "source": "user",
+            }
+        )
 
         events = list(manager.drain_task(task_id, timeout=0.01))
 
         self.assertEqual(events[0]["event"], "next")
-        self.assertEqual(events[0]["content"], "partial")
+        self.assertNotIn("<summary>", events[0]["content"])
+        self.assertNotIn("Plan the response", events[0]["content"])
+        self.assertIn("partial", events[0]["content"])
+        self.assertEqual(events[0]["execution_log"][0]["content"], "Plan the response")
         self.assertEqual(events[1]["event"], "done")
-        self.assertEqual(events[1]["content"], "final")
+        self.assertNotIn("<summary>", events[1]["content"])
+        self.assertNotIn("Plan the response", events[1]["content"])
+        self.assertIn("final", events[1]["content"])
         self.assertEqual(manager.tasks[task_id].status, "done")
         self.assertGreater(manager.last_reply_time, 0)
 
@@ -116,7 +160,6 @@ class WebUITaskManagerTests(unittest.TestCase):
     def test_controls_delegate_to_agent(self):
         agent = FakeAgent()
         manager = WebUITaskManager(agent)
-        agent._pet_req = agent.pet_requests.append
 
         manager.switch_llm(1)
         self.assertEqual(agent.llm_no, 1)
@@ -129,9 +172,6 @@ class WebUITaskManagerTests(unittest.TestCase):
 
         manager.set_autonomous(True)
         self.assertTrue(manager.autonomous_enabled)
-
-        manager.send_pet_request("state=walk")
-        self.assertEqual(agent.pet_requests, ["state=walk"])
 
     def test_reset_conversation_clears_visible_state(self):
         agent = FakeAgent()

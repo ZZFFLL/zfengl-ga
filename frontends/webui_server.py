@@ -4,7 +4,6 @@ import mimetypes
 import os
 import queue
 import re
-import subprocess
 import sys
 import threading
 import time
@@ -13,7 +12,7 @@ from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -23,8 +22,15 @@ _TURN_RE = re.compile(r"\**LLM Running \(Turn (\d+)\) \.\.\.\**")
 _SUMMARY_RE = re.compile(r"<summary>\s*(.*?)\s*</summary>", re.DOTALL)
 
 
+def strip_summary_blocks(text):
+    """Remove execution summary blocks from text shown in the chat transcript."""
+    cleaned = _SUMMARY_RE.sub("", text or "")
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
+
+
 def parse_execution_log(text):
-    """Split assistant output into collapsible LLM turn entries."""
+    """Split assistant output into summary-only LLM turn entries."""
     parts = list(_TURN_RE.finditer(text or ""))
     turns = []
     for idx, match in enumerate(parts):
@@ -34,14 +40,13 @@ def parse_execution_log(text):
         content = (text or "")[start:end].strip()
         summary_match = _SUMMARY_RE.search(content)
         title = f"LLM Running (Turn {turn})"
+        summary = ""
         if summary_match:
-            first_line = next(
-                (line.strip() for line in summary_match.group(1).splitlines() if line.strip()),
-                "",
-            )
+            summary = summary_match.group(1).strip()
+            first_line = next((line.strip() for line in summary.splitlines() if line.strip()), "")
             if first_line:
                 title = first_line[:80]
-        turns.append({"turn": turn, "title": title, "content": content})
+        turns.append({"turn": turn, "title": title, "content": summary})
     return turns
 
 
@@ -126,7 +131,7 @@ class WebUITaskManager:
                 task.current_response = item["next"]
                 yield {
                     "event": "next",
-                    "content": task.current_response,
+                    "content": strip_summary_blocks(task.current_response),
                     "execution_log": parse_execution_log(task.current_response),
                 }
             if "done" in item:
@@ -136,7 +141,7 @@ class WebUITaskManager:
                 self.last_reply_time = int(task.completed_at)
                 yield {
                     "event": "done",
-                    "content": task.current_response,
+                    "content": strip_summary_blocks(task.current_response),
                     "execution_log": parse_execution_log(task.current_response),
                 }
 
@@ -187,42 +192,22 @@ class WebUITaskManager:
                 target = sessions[idx][0]
         message = handle_frontend_command(self.agent, command)
         history = extract_ui_messages(target) if target and message.startswith("✅") else None
+        if history:
+            history = [
+                {
+                    **item,
+                    "content": strip_summary_blocks(item.get("content", "")),
+                }
+                if item.get("role") != "user"
+                else item
+                for item in history
+            ]
         self.last_reply_time = int(time.time())
-        return {"message": message, "history": history or []}
+        return {"message": strip_summary_blocks(message), "history": history or []}
 
     def set_autonomous(self, enabled):
         self.autonomous_enabled = bool(enabled)
         return {"autonomous_enabled": self.autonomous_enabled}
-
-    def send_pet_request(self, query):
-        pet_req = getattr(self.agent, "_pet_req", None)
-        if callable(pet_req):
-            pet_req(query)
-            return {"ok": True, "started": False}
-        return {"ok": False, "started": False}
-
-    def start_pet(self):
-        if self.agent is None:
-            raise RuntimeError("agent_not_configured")
-        kwargs = {"creationflags": 0x08} if sys.platform == "win32" else {}
-        pet_script = Path(__file__).resolve().parent / "desktop_pet_v2.pyw"
-        if not pet_script.exists():
-            pet_script = Path(__file__).resolve().parent / "desktop_pet.pyw"
-        subprocess.Popen([sys.executable, str(pet_script)], **kwargs)
-
-        def _pet_req(query):
-            from urllib.request import urlopen
-
-            def _do():
-                try:
-                    urlopen(f"http://127.0.0.1:41983/?{query}", timeout=2)
-                except Exception:
-                    pass
-
-            threading.Thread(target=_do, daemon=True).start()
-
-        self.agent._pet_req = _pet_req
-        return {"ok": True, "started": True}
 
 
 class WebUIRuntime:
@@ -340,10 +325,6 @@ class WebUIRequestHandler(BaseHTTPRequestHandler):
                 return
             if path == "/api/autonomous":
                 self._send_json(self.runtime.manager.set_autonomous(body.get("enabled", False)))
-                return
-            if path == "/api/pet":
-                result = self.runtime.manager.start_pet()
-                self._send_json(result)
                 return
         except Exception as exc:
             self._send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, "server_error", str(exc))
