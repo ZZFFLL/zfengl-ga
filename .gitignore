@@ -1,18 +1,14 @@
-temp/*
-!temp/model_responses/
-!temp/model_responses/**
+temp/
 tmp/
 
 __pycache__/
 *.py[cod]
 *$py.class
-*.tsbuildinfo
 .venv/
 venv/
 env/
 build/
 dist/
-frontends/webui/node_modules/
 *.egg-info/
 
 .streamlit/
@@ -40,12 +36,6 @@ tasks/
 memory/*
 !memory/memory_management_sop.md
 
-# 允许当前分支纳管以下 memory 文件
-!memory/feishu_send_file_sop.md
-!memory/file_access_stats.json
-!memory/global_mem.txt
-!memory/global_mem_insight.txt
-
 # Allow tracking of specific SOPs
 !memory/web_setup_sop.md
 !memory/autonomous_operation_sop.md
@@ -72,16 +62,12 @@ memory/L4_raw_sessions/*
 # Subagent SOP
 !memory/subagent_sop.md
 
-# Supervisor SOP
-!memory/supervisor_sop.md
-
 # Plan SOP
 !memory/plan_sop.md
 
 # Skill Search SOP
 !memory/skill_search/
 !memory/skill_search/**
-
 
 # ADB UI tool
 !memory/adb_ui.py
@@ -93,14 +79,9 @@ memory/L4_raw_sessions/*
 !memory/ocr_utils.py
 !memory/vision_sop.md
 !memory/ui_detect.py
-!memory/vision_api.template.py
 
 # Memory management
 !memory/memory_cleanup_sop.md
-
-# Explicitly keep local secret-bearing memory files untracked
-memory/tavily_key.txt
-memory/vision_api.py
 
 # Visual Studio
 .vs/
