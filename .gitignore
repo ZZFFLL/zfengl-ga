@@ -6,11 +6,13 @@ tmp/
 __pycache__/
 *.py[cod]
 *$py.class
+*.tsbuildinfo
 .venv/
 venv/
 env/
 build/
 dist/
+frontends/webui/node_modules/
 *.egg-info/
 
 .streamlit/
@@ -70,6 +72,9 @@ memory/L4_raw_sessions/*
 # Subagent SOP
 !memory/subagent_sop.md
 
+# Supervisor SOP
+!memory/supervisor_sop.md
+
 # Plan SOP
 !memory/plan_sop.md
 
@@ -92,6 +97,10 @@ memory/L4_raw_sessions/*
 
 # Memory management
 !memory/memory_cleanup_sop.md
+
+# Explicitly keep local secret-bearing memory files untracked
+memory/tavily_key.txt
+memory/vision_api.py
 
 # Visual Studio
 .vs/
