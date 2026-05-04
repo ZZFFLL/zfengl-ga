@@ -36,12 +36,14 @@ export type ConversationMessage = {
   role: "user" | "assistant" | "system";
   content: string;
   source: string;
+  execution_log: ExecutionTurn[];
   created_at: string;
 };
 
 export type ConversationDetail = {
   summary: ConversationSummary;
   messages: ConversationMessage[];
+  execution_log: ExecutionTurn[];
 };
 
 export type RuntimeState = {

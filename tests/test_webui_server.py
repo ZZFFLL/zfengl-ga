@@ -282,6 +282,27 @@ class WebUITaskManagerTests(unittest.TestCase):
 
         self.assertEqual(state["execution_log"][0]["title"], "Inspect files")
 
+    def test_conversation_detail_messages_include_execution_log(self):
+        conversation = self.store.create_conversation(initial_user_text="stateful")
+        execution_log = [
+            {"turn": 1, "title": "Inspect files", "content": "Inspect files"},
+            {"turn": 2, "title": "Draft reply", "content": "Draft reply"},
+        ]
+        self.store.add_message(conversation["id"], "user", "hello", "ui")
+        self.store.add_message(
+            conversation["id"],
+            "assistant",
+            "final",
+            "ga",
+            execution_log=execution_log,
+        )
+
+        detail = self.manager.get_conversation(conversation["id"])
+
+        self.assertEqual(detail["messages"][0]["execution_log"], [])
+        self.assertEqual(detail["messages"][1]["execution_log"], execution_log)
+        self.assertEqual(detail["execution_log"], execution_log)
+
     def test_controls_delegate_to_agent(self):
         self.manager.switch_llm(1)
         self.assertEqual(self.agent.llm_no, 1)
@@ -306,6 +327,50 @@ class WebUITaskManagerTests(unittest.TestCase):
         self.assertEqual(self.agent.llmclients[0].last_tools, "")
         self.assertTrue(result["conversation"]["id"])
         self.assertEqual(self.manager.active_conversation_id, result["conversation"]["id"])
+
+    def test_continue_conversation_returns_clean_compatible_payload(self):
+        import frontends.webui_server as webui_server
+
+        original_extract = webui_server.WebUITaskManager.continue_conversation.__globals__["extract_ui_messages"] if "extract_ui_messages" in webui_server.WebUITaskManager.continue_conversation.__globals__ else None
+        original_handle = webui_server.WebUITaskManager.continue_conversation.__globals__["handle_frontend_command"] if "handle_frontend_command" in webui_server.WebUITaskManager.continue_conversation.__globals__ else None
+        original_list = webui_server.WebUITaskManager.continue_conversation.__globals__["list_sessions"] if "list_sessions" in webui_server.WebUITaskManager.continue_conversation.__globals__ else None
+
+        def fake_extract_ui_messages(_target):
+            return [
+                {"role": "user", "content": "hello"},
+                {
+                    "role": "assistant",
+                    "content": (
+                        "**LLM Running (Turn 1) ...**\n"
+                        "<summary>\nHidden planning\n</summary>\n"
+                        "final answer\n"
+                        "[Info] Final response to user.\n"
+                    ),
+                },
+            ]
+
+        def fake_handle_frontend_command(_agent, _command):
+            return (
+                "✅ restored\n"
+                "<summary>\nshould hide\n</summary>\n"
+                "usable text\n"
+                "[Info] Final response to user.\n"
+            )
+
+        def fake_list_sessions(**_kwargs):
+            return [("session-1", "demo")]
+
+        from unittest import mock
+
+        with mock.patch("frontends.continue_cmd.extract_ui_messages", fake_extract_ui_messages), mock.patch(
+            "frontends.continue_cmd.handle_frontend_command", fake_handle_frontend_command
+        ), mock.patch("frontends.continue_cmd.list_sessions", fake_list_sessions):
+            result = self.manager.continue_conversation("/continue 1")
+
+        self.assertEqual(result["message"], "✅ restored\nusable text")
+        self.assertEqual(len(result["history"]), 2)
+        self.assertEqual(result["history"][0]["content"], "hello")
+        self.assertEqual(result["history"][1]["content"], "final answer")
 
     def test_store_path_is_real_sqlite_file(self):
         self.assertTrue(os.path.exists(self.db_path))

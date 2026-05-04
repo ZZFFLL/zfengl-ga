@@ -25,6 +25,7 @@ DEFAULT_GROUP_NAME = "未分组"
 # 中文注释：用于从 GA 原始输出中拆出执行轮次和 summary。
 _TURN_RE = re.compile(r"\**LLM Running \(Turn (\d+)\) \.\.\.\**")
 _SUMMARY_RE = re.compile(r"<summary>\s*(.*?)\s*</summary>", re.DOTALL)
+_SUMMARY_BLOCK_RE = re.compile(r"\n*<summary>\s*.*?\s*</summary>\n*", re.DOTALL)
 _FINAL_INFO_BLOCK_RE = re.compile(
     r"\n*`{3,}\s*\n?\[Info\]\s*Final response to user\.\s*\n?`{3,}\s*$",
     re.IGNORECASE,
@@ -41,7 +42,7 @@ _FINAL_INFO_TRAIL_RE = re.compile(
 
 def strip_summary_blocks(text):
     """移除聊天展示里不应直接显示的 summary 规划块。"""
-    cleaned = _SUMMARY_RE.sub("", text or "")
+    cleaned = _SUMMARY_BLOCK_RE.sub("\n", text or "")
     cleaned = _TURN_RE.sub("", cleaned)
     cleaned = _FINAL_INFO_BLOCK_RE.sub("", cleaned)
     cleaned = _FINAL_INFO_TRAIL_RE.sub("", cleaned)
