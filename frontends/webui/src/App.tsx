@@ -510,7 +510,7 @@ function ControlPanelRail({
   onExpand: () => void;
 }) {
   return (
-    <aside className="hidden h-full border-l border-app-line bg-white xl:flex xl:w-[64px] xl:flex-col xl:items-center xl:gap-3 xl:py-4">
+    <div className="flex h-full flex-col items-center gap-3 py-4">
       <button
         type="button"
         className="icon-button-subtle"
@@ -526,7 +526,7 @@ function ControlPanelRail({
       <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-app-muted [writing-mode:vertical-rl]">
         Controls
       </span>
-    </aside>
+    </div>
   );
 }
 
@@ -560,41 +560,33 @@ function RightControlShell({
   executionCollapsed: boolean;
 }) {
   return (
-    <AnimatePresence initial={false} mode="wait">
-      {collapsed ? (
-        <motion.aside
-          key="rail"
-          initial={{ width: 64, opacity: 0.7 }}
-          animate={{ width: 64, opacity: 1 }}
-          exit={{ width: 0, opacity: 0 }}
-          transition={{ type: "spring", stiffness: 420, damping: 38, mass: 0.8 }}
-          className="hidden h-full overflow-hidden border-l border-app-line bg-white xl:flex xl:flex-col xl:items-center xl:gap-3 xl:py-4"
-        >
-          <button
-            type="button"
-            className="icon-button-subtle"
-            aria-label="展开运行控制"
-            onClick={onExpand}
+    <motion.aside
+      initial={false}
+      animate={{ width: collapsed ? 64 : 360 }}
+      transition={{ type: "spring", stiffness: 380, damping: 34, mass: 0.9 }}
+      className="hidden h-full min-h-0 overflow-hidden border-l border-app-line bg-white xl:flex xl:flex-col"
+    >
+      <AnimatePresence mode="sync" initial={false}>
+        {collapsed ? (
+          <motion.div
+            key="rail"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.14, ease: "easeOut" }}
+            className="h-full"
           >
-            <PanelRightOpen className="h-5 w-5" />
-          </button>
-          <Circle
-            className={`h-3 w-3 ${state?.running ? "fill-app-success text-app-success" : "fill-app-primary text-app-primary"}`}
-            aria-hidden="true"
-          />
-          <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-app-muted [writing-mode:vertical-rl]">
-            Controls
-          </span>
-        </motion.aside>
-      ) : (
-        <motion.aside
-          key="panel"
-          initial={{ width: 360, opacity: 0.7, x: 8 }}
-          animate={{ width: 360, opacity: 1, x: 0 }}
-          exit={{ width: 0, opacity: 0, x: 8 }}
-          transition={{ type: "spring", stiffness: 380, damping: 34, mass: 0.9 }}
-          className="hidden h-full min-h-0 overflow-hidden border-l border-app-line bg-white xl:flex xl:flex-col"
-        >
+            <ControlPanelRail state={state} onExpand={onExpand} />
+          </motion.div>
+        ) : (
+          <motion.div
+            key="panel"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.16, ease: "easeOut" }}
+            className="h-full min-h-0"
+          >
           <ControlPanel
             state={state}
             turns={turns}
@@ -608,9 +600,10 @@ function RightControlShell({
             executionCollapsed={executionCollapsed}
             onToggleExecution={onToggleExecution}
           />
-        </motion.aside>
-      )}
-    </AnimatePresence>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.aside>
   );
 }
 
