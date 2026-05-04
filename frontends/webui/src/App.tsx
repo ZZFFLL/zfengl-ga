@@ -2,6 +2,7 @@ import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
+  ArrowRight,
   ChevronDown,
   Circle,
   Folder,
@@ -51,6 +52,11 @@ import type {
   RuntimeState,
   StreamEvent,
 } from "./types";
+import {
+  buildExecutionChipLabel,
+  findLatestExecutionMessageId,
+  resolveExecutionTurns,
+} from "./execution-panel-state";
 
 const nowLabel = () => new Date().toLocaleString();
 const id = () => Math.random().toString(36).slice(2);
@@ -80,6 +86,8 @@ type ContinueCompatResult = {
 
 const FINAL_INFO_BLOCK_RE = /\n*`{3,}\s*\n?\[Info\]\s*Final response to user\.\s*\n?`{3,}\s*$/i;
 const FINAL_INFO_TRAIL_RE = /\n*\[Info\]\s*Final response to user\.\s*(?:`{3,}\s*)*$/i;
+const TOOL_BLOCK_RE = /(?:^|\n)🛠️ Tool:.*?(?=\n{2,}(?!`)|$)/gs;
+const ACTION_BLOCK_RE = /(?:^|\n)`````.*?\[Action\].*?`````\s*/gs;
 
 const graphemeSegmenter = (() => {
   const Segmenter = (Intl as typeof Intl & { Segmenter?: GraphemeSegmenterConstructor }).Segmenter;
@@ -119,8 +127,11 @@ function formatMessageTime(raw: string) {
 
 function sanitizeDisplayText(text: string) {
   let cleaned = text || "";
+  cleaned = cleaned.replace(TOOL_BLOCK_RE, "\n");
+  cleaned = cleaned.replace(ACTION_BLOCK_RE, "\n");
   cleaned = cleaned.replace(FINAL_INFO_BLOCK_RE, "");
   cleaned = cleaned.replace(FINAL_INFO_TRAIL_RE, "");
+  cleaned = cleaned.replace(/\n{3,}/g, "\n\n");
   return cleaned.trim();
 }
 
@@ -190,55 +201,56 @@ function MarkdownContent({
   );
 }
 
-function ExecutionSummaryCard({
+function ExecutionSummaryContent({
   turns,
-  defaultOpen = false,
 }: {
   turns: ExecutionTurn[];
-  defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
-
-  useEffect(() => {
-    if (defaultOpen) {
-      setOpen(true);
-    }
-  }, [defaultOpen, turns.length]);
-
   if (turns.length === 0) return null;
 
   return (
-    <section className="mt-3 rounded-[18px] border border-app-line/80 bg-app-surface/85">
-      <button
-        type="button"
-        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
-        onClick={() => setOpen((value) => !value)}
-      >
-        <div>
-          <div className="text-sm font-semibold text-app-text">执行摘要</div>
-          <div className="mt-1 text-xs text-app-muted">保留 GA 每轮 summary，页面刷新后仍可查看。</div>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="rounded-full bg-white px-2 py-1 text-xs text-app-muted">{turns.length}</span>
-          <ChevronDown className={`h-4 w-4 text-app-muted transition ${open ? "rotate-180" : ""}`} />
-        </div>
-      </button>
-      {open && (
-        <div className="space-y-2 border-t border-app-line/80 px-3 py-3">
-          {turns.map((turn, index) => (
-            <div key={`${turn.turn}-${index}`} className="rounded-2xl bg-white px-4 py-3">
-              <div className="text-sm font-medium text-app-text">
-                Turn {turn.turn}
-                <span className="ml-2 text-xs text-app-muted">{turn.title}</span>
-              </div>
-              <div className="mt-3 border-t border-app-line/70 pt-3 text-xs leading-6 text-app-muted">
-                {turn.content ? <MarkdownContent content={turn.content} /> : "此轮没有 summary。"}
-              </div>
+    <div className="space-y-3">
+      {turns.map((turn, index) => (
+        <section key={`${turn.turn}-${index}`} className="rounded-[22px] border border-app-line bg-app-surface px-4 py-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-sm font-semibold text-app-text">Turn {turn.turn}</div>
+              <div className="mt-1 text-xs text-app-muted">{turn.title}</div>
             </div>
-          ))}
-        </div>
-      )}
-    </section>
+            <span className="rounded-full bg-white px-2 py-1 text-[11px] text-app-muted">摘要</span>
+          </div>
+          <div className="mt-4 border-t border-app-line/70 pt-4 text-sm leading-7 text-app-muted">
+            {turn.content ? <MarkdownContent content={turn.content} /> : "此轮没有 summary。"}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function ExecutionChip({
+  turns,
+  streaming,
+  onClick,
+}: {
+  turns: ExecutionTurn[];
+  streaming: boolean;
+  onClick: () => void;
+}) {
+  const label = buildExecutionChipLabel(turns, streaming);
+  if (!label) return null;
+
+  return (
+    <button
+      type="button"
+      className="mb-3 inline-flex items-center gap-2 rounded-full border border-app-line bg-app-surface px-3 py-2 text-sm text-app-muted transition hover:border-app-primary/30 hover:bg-white hover:text-app-text"
+      onClick={onClick}
+    >
+      <Sparkles className="h-4 w-4 text-app-primary" />
+      <span className="font-medium">{label}</span>
+      <span className="rounded-full bg-white px-2 py-0.5 text-[11px] text-app-muted">{turns.length}</span>
+      <ArrowRight className="h-4 w-4" />
+    </button>
   );
 }
 
@@ -246,17 +258,26 @@ function ChatMessageView({
   message,
   streaming = false,
   liveExecutionLog = [],
+  onOpenExecution,
 }: {
   message: UiMessage;
   streaming?: boolean;
   liveExecutionLog?: ExecutionTurn[];
+  onOpenExecution: (messageId: string) => void;
 }) {
   const isUser = message.role === "user";
-  const effectiveExecutionLog = liveExecutionLog.length > 0 ? liveExecutionLog : message.executionLog;
+  const effectiveExecutionLog = resolveExecutionTurns(message, liveExecutionLog, streaming);
 
   return (
     <article className={`flex ${isUser ? "justify-end" : "justify-start"} ${streaming ? "smooth-message" : ""}`}>
       <div className="max-w-[88%]">
+        {!isUser ? (
+          <ExecutionChip
+            turns={effectiveExecutionLog}
+            streaming={streaming}
+            onClick={() => onOpenExecution(message.id)}
+          />
+        ) : null}
         <div
           className={`rounded-[24px] px-5 py-4 shadow-sm ${
             isUser
@@ -273,11 +294,101 @@ function ChatMessageView({
             <MarkdownContent content={message.content} streaming={streaming} />
           )}
         </div>
-        {!isUser && effectiveExecutionLog.length > 0 ? (
-          <ExecutionSummaryCard turns={effectiveExecutionLog} defaultOpen={streaming} />
-        ) : null}
       </div>
     </article>
+  );
+}
+
+function ExecutionPanel({
+  message,
+  turns,
+  running,
+  onClose,
+}: {
+  message: UiMessage | null;
+  turns: ExecutionTurn[];
+  running: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <aside className="hidden h-full min-h-0 overflow-hidden border-l border-app-line bg-white xl:flex xl:flex-col xl:w-[380px]">
+      {message ? (
+        <>
+          <div className="flex items-start justify-between gap-4 border-b border-app-line px-5 py-5">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <Circle
+                  className={`h-3 w-3 ${running ? "fill-app-success text-app-success" : "fill-app-primary text-app-primary"}`}
+                />
+                <span className="text-sm font-semibold text-app-text">{running ? "正在思考" : "已完成思考"}</span>
+              </div>
+              <div className="mt-3 text-xs leading-6 text-app-muted">
+                这里单独展示当前这条回复的执行过程，不把摘要正文挤进聊天主区。
+              </div>
+            </div>
+            <button type="button" className="icon-button-subtle" onClick={onClose} aria-label="关闭执行过程">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="operation-scroll min-h-0 flex-1 overflow-y-auto px-5 py-5">
+            <div className="mb-4 rounded-[22px] border border-app-line bg-white px-4 py-4">
+              <div className="text-xs font-medium uppercase tracking-[0.18em] text-app-muted">Reply</div>
+              <div className="mt-2 text-sm leading-7 text-app-text">{previewText(message.content)}</div>
+            </div>
+            <ExecutionSummaryContent turns={turns} />
+          </div>
+        </>
+      ) : null}
+    </aside>
+  );
+}
+
+function ExecutionPanelDialog({
+  open,
+  message,
+  turns,
+  running,
+  onOpenChange,
+}: {
+  open: boolean;
+  message: UiMessage | null;
+  turns: ExecutionTurn[];
+  running: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/28 xl:hidden" />
+        <Dialog.Content className="fixed inset-y-0 right-0 z-50 w-[min(92vw,420px)] bg-white shadow-panel xl:hidden">
+          {open && message ? (
+            <div className="flex h-full min-h-0 flex-col">
+              <div className="flex items-start justify-between gap-4 border-b border-app-line px-5 py-5">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <Circle className={`h-3 w-3 ${running ? "fill-app-success text-app-success" : "fill-app-primary text-app-primary"}`} />
+                    <div className="text-sm font-semibold text-app-text">{running ? "正在思考" : "已完成思考"}</div>
+                  </div>
+                  <div className="mt-2 text-xs leading-6 text-app-muted">
+                    当前回复的执行过程会在这里查看，不占聊天正文空间。
+                  </div>
+                </div>
+                <button type="button" className="icon-button-subtle" onClick={() => onOpenChange(false)} aria-label="关闭执行过程">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="operation-scroll min-h-0 flex-1 overflow-y-auto px-5 py-5">
+                <div className="mb-4 rounded-[22px] border border-app-line bg-white px-4 py-4">
+                  <div className="text-xs font-medium uppercase tracking-[0.18em] text-app-muted">Reply</div>
+                  <div className="mt-2 text-sm leading-7 text-app-text">{previewText(message.content)}</div>
+                </div>
+                <ExecutionSummaryContent turns={turns} />
+              </div>
+            </div>
+          ) : null}
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }
 
@@ -958,6 +1069,8 @@ export default function App() {
   const [continueLoading, setContinueLoading] = useState(false);
   const [continueError, setContinueError] = useState("");
   const [continueResult, setContinueResult] = useState<ContinueCompatResult | null>(null);
+  const [executionPanelOpen, setExecutionPanelOpen] = useState(false);
+  const [selectedExecutionMessageId, setSelectedExecutionMessageId] = useState<string | null>(null);
   const [streamAnimating, setStreamAnimating] = useState(false);
   const chatScrollRef = useRef<HTMLElement | null>(null);
   const streamRef = useRef<EventSource | null>(null);
@@ -971,6 +1084,15 @@ export default function App() {
   const activeConversationId = activeConversation?.summary.id ?? state?.active_conversation_id ?? null;
   const lastReplyTime = state?.last_reply_time || 0;
   const hasThread = messages.length > 0;
+  const selectedExecutionMessage = messages.find((message) => message.id === selectedExecutionMessageId) ?? null;
+  const latestExecutionMessageId = findLatestExecutionMessageId(messages);
+  const selectedExecutionTurns = selectedExecutionMessage
+    ? resolveExecutionTurns(
+        selectedExecutionMessage,
+        streamAnimating && selectedExecutionMessageId === messages[messages.length - 1]?.id ? turns : [],
+        Boolean(streamAnimating && selectedExecutionMessageId === messages[messages.length - 1]?.id),
+      )
+    : [];
 
   const syncConversationList = (nextState: RuntimeState | null) => {
     if (nextState?.conversations) {
@@ -994,6 +1116,7 @@ export default function App() {
         const detail = await fetchConversation(candidateId);
         setActiveConversation(detail);
         setMessages(toUiMessages(detail));
+        setSelectedExecutionMessageId(findLatestExecutionMessageId(toUiMessages(detail)));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -1115,6 +1238,8 @@ export default function App() {
     setActiveConversation(detail);
     setMessages(toUiMessages(detail));
     setTurns(detail.execution_log ?? []);
+    setExecutionPanelOpen(false);
+    setSelectedExecutionMessageId(findLatestExecutionMessageId(toUiMessages(detail)));
     setSidebarOpen(false);
     const nextState = await fetchState();
     setState(nextState);
@@ -1128,6 +1253,8 @@ export default function App() {
     setActiveConversation(detail);
     setMessages([]);
     setTurns([]);
+    setExecutionPanelOpen(false);
+    setSelectedExecutionMessageId(null);
     resetStreamingAssistant();
     const nextState = await fetchState();
     setState(nextState);
@@ -1160,10 +1287,13 @@ export default function App() {
       setActiveConversation(detail);
       setMessages(toUiMessages(detail));
       setTurns(detail.execution_log ?? []);
+      setSelectedExecutionMessageId(findLatestExecutionMessageId(toUiMessages(detail)));
     } else {
       setActiveConversation(null);
       setMessages([]);
       setTurns([]);
+      setExecutionPanelOpen(false);
+      setSelectedExecutionMessageId(null);
     }
   };
 
@@ -1257,7 +1387,7 @@ export default function App() {
             return;
           }
           if (payload.event === "execution_update") {
-            // 中文注释：当前运行态摘要只挂到正在生成的 assistant 消息下方，不再占右侧常驻面板。
+            // 中文注释：当前运行态摘要进入消息级思考胶囊和右侧执行过程面板，不再塞进聊天正文。
             setTurns(payload.execution_log);
             setMessages((items) => {
               const copy = [...items];
@@ -1267,6 +1397,7 @@ export default function App() {
               }
               return copy;
             });
+            setSelectedExecutionMessageId((current) => current ?? messages[messages.length - 1]?.id ?? null);
           }
         },
         onError: async (err) => {
@@ -1283,8 +1414,10 @@ export default function App() {
           if (conversationId) {
             const detail = await fetchConversation(conversationId);
             setActiveConversation(detail);
-            setMessages(toUiMessages(detail));
+            const nextMessages = toUiMessages(detail);
+            setMessages(nextMessages);
             setTurns(detail.execution_log ?? []);
+            setSelectedExecutionMessageId((current) => current ?? findLatestExecutionMessageId(nextMessages));
           }
         },
       });
@@ -1324,6 +1457,20 @@ export default function App() {
     }
   };
 
+  const handleOpenExecutionPanel = (messageId: string) => {
+    setSelectedExecutionMessageId(messageId);
+    setExecutionPanelOpen(true);
+  };
+
+  useEffect(() => {
+    if (!selectedExecutionMessageId) return;
+    const exists = messages.some((message) => message.id === selectedExecutionMessageId);
+    if (!exists) {
+      setExecutionPanelOpen(false);
+      setSelectedExecutionMessageId(null);
+    }
+  }, [messages, selectedExecutionMessageId]);
+
   if (state && !state.configured) {
     return (
       <main className="flex h-screen h-dvh items-center justify-center overflow-hidden bg-app-bg p-6">
@@ -1340,7 +1487,11 @@ export default function App() {
   }
 
   return (
-    <div className="grid h-screen h-dvh min-h-0 overflow-hidden bg-app-bg text-app-text xl:grid-cols-[280px_minmax(0,1fr)]">
+    <div
+      className={`grid h-screen h-dvh min-h-0 overflow-hidden bg-app-bg text-app-text ${
+        executionPanelOpen ? "xl:grid-cols-[280px_minmax(0,1fr)_380px]" : "xl:grid-cols-[280px_minmax(0,1fr)]"
+      }`}
+    >
       <div className="hidden xl:block">
         <ConversationSidebar
           state={state}
@@ -1425,6 +1576,7 @@ export default function App() {
                       message={message}
                       streaming={isStreamingAssistant}
                       liveExecutionLog={isStreamingAssistant ? turns : []}
+                      onOpenExecution={handleOpenExecutionPanel}
                     />
                   );
                 })}
@@ -1445,6 +1597,15 @@ export default function App() {
           />
         ) : null}
       </main>
+
+      {executionPanelOpen ? (
+        <ExecutionPanel
+          message={selectedExecutionMessage}
+          turns={selectedExecutionTurns}
+          running={running && selectedExecutionMessageId === latestExecutionMessageId}
+          onClose={() => setExecutionPanelOpen(false)}
+        />
+      ) : null}
 
       <SidebarDialog open={sidebarOpen} onOpenChange={setSidebarOpen}>
         <div className="flex h-full min-h-0 flex-col">
@@ -1484,6 +1645,14 @@ export default function App() {
         onOpenChange={setContinueDialogOpen}
         onCommandChange={setContinueCommand}
         onSubmit={(event) => void handleContinueCompat(event)}
+      />
+
+      <ExecutionPanelDialog
+        open={executionPanelOpen && !window.matchMedia("(min-width: 1280px)").matches}
+        message={selectedExecutionMessage}
+        turns={selectedExecutionTurns}
+        running={running && selectedExecutionMessageId === latestExecutionMessageId}
+        onOpenChange={setExecutionPanelOpen}
       />
 
       <div id="last-reply-time" className="hidden">

@@ -113,6 +113,27 @@ class WebUILogParserTests(unittest.TestCase):
 
         self.assertEqual(cleaned, "最终回答正文")
 
+    def test_strip_summary_blocks_removes_tool_trace_and_keeps_final_answer(self):
+        text = (
+            "🛠️ Tool: `code_run`  📥 args:\n"
+            "````text\n"
+            "{\n"
+            '  "script": "ls -la temp/model_responses/ 2>/dev/null | tail -10"\n'
+            "}\n"
+            "````\n"
+            "`````\n"
+            "[Action] Running powershell in temp: ls -la temp/model_responses/ 2>/dev/null | tail -10\n"
+            "[Status] ❌ Exit Code: 1\n"
+            "[Stdout]\n"
+            "out-file : 未能找到路径“E:\\dev\\null”的一部分。\n"
+            "`````\n\n"
+            "你好！请问有什么需要帮忙的吗？"
+        )
+
+        cleaned = strip_summary_blocks(text)
+
+        self.assertEqual(cleaned, "你好！请问有什么需要帮忙的吗？")
+
 
 class SQLiteConversationStoreTests(unittest.TestCase):
     def setUp(self):

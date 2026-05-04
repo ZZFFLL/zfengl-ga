@@ -26,6 +26,14 @@ DEFAULT_GROUP_NAME = "未分组"
 _TURN_RE = re.compile(r"\**LLM Running \(Turn (\d+)\) \.\.\.\**")
 _SUMMARY_RE = re.compile(r"<summary>\s*(.*?)\s*</summary>", re.DOTALL)
 _SUMMARY_BLOCK_RE = re.compile(r"\n*<summary>\s*.*?\s*</summary>\n*", re.DOTALL)
+_TOOL_BLOCK_RE = re.compile(
+    r"(?:^|\n)🛠️ Tool:.*?(?=\n{2,}(?!``)|\Z)",
+    re.DOTALL,
+)
+_ACTION_BLOCK_RE = re.compile(
+    r"(?:^|\n)`````.*?\[Action\].*?`````\s*",
+    re.DOTALL,
+)
 _FINAL_INFO_BLOCK_RE = re.compile(
     r"\n*`{3,}\s*\n?\[Info\]\s*Final response to user\.\s*\n?`{3,}\s*$",
     re.IGNORECASE,
@@ -44,6 +52,8 @@ def strip_summary_blocks(text):
     """移除聊天展示里不应直接显示的 summary 规划块。"""
     cleaned = _SUMMARY_BLOCK_RE.sub("\n", text or "")
     cleaned = _TURN_RE.sub("", cleaned)
+    cleaned = _TOOL_BLOCK_RE.sub("\n", cleaned)
+    cleaned = _ACTION_BLOCK_RE.sub("\n", cleaned)
     cleaned = _FINAL_INFO_BLOCK_RE.sub("", cleaned)
     cleaned = _FINAL_INFO_TRAIL_RE.sub("", cleaned)
     cleaned = _FINAL_INFO_LINE_RE.sub("", cleaned)
