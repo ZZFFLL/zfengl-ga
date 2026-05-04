@@ -1,7 +1,14 @@
+import os
 import queue
+import sqlite3
+import tempfile
 import unittest
+from pathlib import Path
 
 from frontends.webui_server import (
+    ChatStartRequest,
+    GroupMoveRequest,
+    SQLiteConversationStore,
     WebUITaskManager,
     build_state,
     parse_execution_log,
@@ -94,19 +101,86 @@ class WebUILogParserTests(unittest.TestCase):
         self.assertNotIn("Hidden planning", cleaned)
         self.assertNotIn("<summary>", cleaned)
 
+    def test_strip_summary_blocks_removes_final_info_marker(self):
+        text = (
+            "最终回答正文\n\n"
+            "`````\n"
+            "[Info] Final response to user.\n"
+            "`````"
+        )
+
+        cleaned = strip_summary_blocks(text)
+
+        self.assertEqual(cleaned, "最终回答正文")
+
+
+class SQLiteConversationStoreTests(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.db_path = Path(self.temp_dir.name) / "webui.sqlite3"
+        self.store = SQLiteConversationStore(self.db_path)
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def test_create_conversation_persists_default_title_and_message(self):
+        conversation = self.store.create_conversation(
+            initial_user_text="这是一个很长的首条消息标题，需要被裁剪到合适长度以便展示",
+        )
+
+        detail = self.store.get_conversation_detail(conversation["id"])
+        self.assertEqual(detail["summary"]["id"], conversation["id"])
+        self.assertTrue(detail["summary"]["title"].startswith("这是一个很长的首条消息标题"))
+        self.assertEqual(detail["messages"], [])
+
+    def test_group_and_pin_operations_update_list_sort(self):
+        alpha = self.store.create_conversation(initial_user_text="alpha")
+        beta = self.store.create_conversation(initial_user_text="beta")
+        group = self.store.create_group("重要分组")
+
+        self.store.pin_conversation(beta["id"], True)
+        self.store.move_conversation(beta["id"], GroupMoveRequest(group["id"]))
+
+        conversations = self.store.list_conversations()
+        self.assertEqual(conversations[0]["id"], beta["id"])
+        self.assertTrue(conversations[0]["pinned"])
+        self.assertEqual(conversations[0]["group_id"], group["id"])
+
+    def test_soft_delete_hides_conversation(self):
+        conversation = self.store.create_conversation(initial_user_text="to delete")
+        self.store.delete_conversation(conversation["id"])
+
+        conversations = self.store.list_conversations()
+        self.assertEqual(conversations, [])
+
 
 class WebUITaskManagerTests(unittest.TestCase):
-    def test_start_chat_creates_running_task_and_streams_to_done(self):
-        agent = FakeAgent()
-        manager = WebUITaskManager(agent)
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.db_path = Path(self.temp_dir.name) / "webui.sqlite3"
+        self.store = SQLiteConversationStore(self.db_path)
+        self.agent = FakeAgent()
+        self.manager = WebUITaskManager(self.agent, self.store)
 
-        task = manager.start_chat("hello")
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def test_start_chat_creates_conversation_and_streams_to_done(self):
+        conversation = self.store.create_conversation(initial_user_text="旧会话")
+
+        task = self.manager.start_chat(
+            ChatStartRequest(
+                conversation_id=conversation["id"],
+                prompt="hello world",
+            )
+        )
         task_id = task["task_id"]
-        self.assertEqual(agent.tasks[0][0], "hello")
-        self.assertEqual(agent.tasks[0][1], "user")
-        self.assertEqual(manager.tasks[task_id].status, "running")
+        self.assertEqual(self.manager.active_conversation_id, conversation["id"])
+        self.assertIn("Current User Message", self.agent.tasks[0][0])
+        self.assertIn("hello world", self.agent.tasks[0][0])
+        self.assertEqual(self.manager.tasks[task_id].status, "running")
 
-        output = agent.tasks[0][3]
+        output = self.agent.tasks[0][3]
         output.put(
             {
                 "next": (
@@ -128,27 +202,61 @@ class WebUITaskManagerTests(unittest.TestCase):
             }
         )
 
-        events = list(manager.drain_task(task_id, timeout=0.01))
+        events = list(self.manager.drain_task(task_id, timeout=0.01))
 
-        self.assertEqual(events[0]["event"], "next")
+        self.assertEqual(events[0]["event"], "message_delta")
         self.assertNotIn("<summary>", events[0]["content"])
         self.assertNotIn("Plan the response", events[0]["content"])
         self.assertIn("partial", events[0]["content"])
-        self.assertEqual(events[0]["execution_log"][0]["content"], "Plan the response")
-        self.assertEqual(events[1]["event"], "done")
-        self.assertNotIn("<summary>", events[1]["content"])
-        self.assertNotIn("Plan the response", events[1]["content"])
-        self.assertIn("final", events[1]["content"])
-        self.assertEqual(manager.tasks[task_id].status, "done")
-        self.assertGreater(manager.last_reply_time, 0)
+        self.assertEqual(events[1]["event"], "execution_update")
+        self.assertEqual(events[2]["event"], "message_done")
+        self.assertNotIn("<summary>", events[2]["content"])
+        self.assertIn("final", events[2]["content"])
+        self.assertEqual(self.manager.tasks[task_id].status, "done")
+        self.assertGreater(self.manager.last_reply_time, 0)
 
-    def test_build_state_reports_runtime_state(self):
-        agent = FakeAgent()
-        manager = WebUITaskManager(agent)
-        manager.autonomous_enabled = True
-        manager.last_reply_time = 123
+        detail = self.store.get_conversation_detail(conversation["id"])
+        self.assertEqual(len(detail["messages"]), 2)
+        self.assertEqual(detail["messages"][0]["role"], "user")
+        self.assertEqual(detail["messages"][1]["role"], "assistant")
+        self.assertEqual(detail["messages"][1]["content"], "final")
+        self.assertEqual(detail["execution_log"][0]["content"], "Plan the response")
 
-        state = build_state(agent, manager)
+    def test_switching_conversation_resets_agent_before_next_send(self):
+        first = self.store.create_conversation(initial_user_text="first")
+        second = self.store.create_conversation(initial_user_text="second")
+        self.store.add_message(first["id"], "user", "alpha question", "ui")
+        self.store.add_message(first["id"], "assistant", "alpha answer", "ga")
+        self.store.add_message(second["id"], "user", "beta question", "ui")
+        self.store.add_message(second["id"], "assistant", "beta answer", "ga")
+
+        self.manager.activate_conversation(first["id"])
+        self.agent.aborted = False
+        self.manager.activate_conversation(second["id"])
+
+        task = self.manager.start_chat(
+            ChatStartRequest(
+                conversation_id=second["id"],
+                prompt="new beta followup",
+            )
+        )
+
+        self.assertTrue(self.agent.aborted)
+        self.assertEqual(self.manager.active_conversation_id, second["id"])
+        prompt_text = self.agent.tasks[-1][0]
+        self.assertIn("beta question", prompt_text)
+        self.assertIn("beta answer", prompt_text)
+        self.assertIn("new beta followup", prompt_text)
+        self.assertNotIn("alpha question", prompt_text)
+        self.assertIsNotNone(task["task_id"])
+
+    def test_build_state_reports_runtime_state_and_active_conversation(self):
+        conversation = self.store.create_conversation(initial_user_text="stateful")
+        self.manager.activate_conversation(conversation["id"])
+        self.manager.autonomous_enabled = True
+        self.manager.last_reply_time = 123
+
+        state = build_state(self.agent, self.manager)
 
         self.assertTrue(state["configured"])
         self.assertEqual(state["current_llm"]["index"], 0)
@@ -156,33 +264,64 @@ class WebUITaskManagerTests(unittest.TestCase):
         self.assertEqual(len(state["llms"]), 2)
         self.assertTrue(state["autonomous_enabled"])
         self.assertEqual(state["last_reply_time"], 123)
+        self.assertEqual(state["active_conversation_id"], conversation["id"])
+        self.assertEqual(state["execution_log"], [])
+
+    def test_build_state_returns_persisted_execution_log_when_idle(self):
+        conversation = self.store.create_conversation(initial_user_text="stateful")
+        self.manager.activate_conversation(conversation["id"])
+        self.store.add_message(
+            conversation["id"],
+            "assistant",
+            "final",
+            "ga",
+            execution_log=[{"turn": 1, "title": "Inspect files", "content": "Inspect files"}],
+        )
+
+        state = build_state(self.agent, self.manager)
+
+        self.assertEqual(state["execution_log"][0]["title"], "Inspect files")
 
     def test_controls_delegate_to_agent(self):
-        agent = FakeAgent()
-        manager = WebUITaskManager(agent)
+        self.manager.switch_llm(1)
+        self.assertEqual(self.agent.llm_no, 1)
 
-        manager.switch_llm(1)
-        self.assertEqual(agent.llm_no, 1)
+        self.manager.abort()
+        self.assertTrue(self.agent.aborted)
 
-        manager.abort()
-        self.assertTrue(agent.aborted)
+        self.manager.reinject()
+        self.assertEqual(self.agent.llmclient.last_tools, "")
 
-        manager.reinject()
-        self.assertEqual(agent.llmclient.last_tools, "")
+        self.manager.set_autonomous(True)
+        self.assertTrue(self.manager.autonomous_enabled)
 
-        manager.set_autonomous(True)
-        self.assertTrue(manager.autonomous_enabled)
-
-    def test_reset_conversation_clears_visible_state(self):
-        agent = FakeAgent()
-        manager = WebUITaskManager(agent)
-        result = manager.reset_conversation()
+    def test_reset_conversation_clears_visible_state_and_creates_new_active_conversation(self):
+        self.store.create_conversation(initial_user_text="old")
+        result = self.manager.reset_conversation()
 
         self.assertIn("new conversation", result["message"].lower())
-        self.assertEqual(agent.history, [])
-        self.assertIsNone(agent.handler)
-        self.assertEqual(agent.llmclients[0].backend.history, [])
-        self.assertEqual(agent.llmclients[0].last_tools, "")
+        self.assertEqual(self.agent.history, [])
+        self.assertIsNone(self.agent.handler)
+        self.assertEqual(self.agent.llmclients[0].backend.history, [])
+        self.assertEqual(self.agent.llmclients[0].last_tools, "")
+        self.assertTrue(result["conversation"]["id"])
+        self.assertEqual(self.manager.active_conversation_id, result["conversation"]["id"])
+
+    def test_store_path_is_real_sqlite_file(self):
+        self.assertTrue(os.path.exists(self.db_path))
+        conn = sqlite3.connect(self.db_path)
+        try:
+            tables = {
+                row[0]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            }
+        finally:
+            conn.close()
+        self.assertIn("conversations", tables)
+        self.assertIn("messages", tables)
+        self.assertIn("conversation_groups", tables)
 
 
 if __name__ == "__main__":

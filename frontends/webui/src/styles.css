@@ -3,11 +3,11 @@
 @tailwind utilities;
 
 :root {
-  color: #16202f;
-  background: #f7f8fa;
+  color: #1f2430;
+  background: #f5f6f8;
   font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif;
+    "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui,
+    -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
 html,
@@ -21,18 +21,23 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100%;
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.8), transparent 35%),
+    linear-gradient(180deg, #f7f8fb 0%, #f3f5f8 100%);
 }
 
 button,
 select,
-textarea {
+textarea,
+input {
   font: inherit;
 }
 
 button:focus-visible,
 select:focus-visible,
-textarea:focus-visible {
-  outline: 3px solid rgba(49, 90, 125, 0.28);
+textarea:focus-visible,
+input:focus-visible {
+  outline: 3px solid rgba(85, 113, 186, 0.22);
   outline-offset: 2px;
 }
 
@@ -61,7 +66,7 @@ textarea:focus-visible {
 .markdown-content blockquote,
 .markdown-content pre,
 .markdown-content table {
-  margin: 0.65rem 0;
+  margin: 0.75rem 0;
 }
 
 .markdown-content ul,
@@ -82,31 +87,31 @@ textarea:focus-visible {
 }
 
 .markdown-content a {
-  color: #315a7d;
+  color: #516dd2;
   text-decoration: underline;
   text-underline-offset: 3px;
 }
 
 .markdown-content blockquote {
-  border-left: 3px solid #b7c2cf;
-  color: #657284;
+  border-left: 3px solid #cfd7ea;
+  color: #636f8a;
   padding-left: 0.85rem;
 }
 
 .markdown-content code {
-  border-radius: 0.35rem;
-  background: #eef3f8;
-  color: #16202f;
+  border-radius: 0.45rem;
+  background: #eef2fa;
+  color: #20293a;
   font-size: 0.92em;
-  padding: 0.1rem 0.3rem;
+  padding: 0.12rem 0.35rem;
 }
 
 .markdown-content pre {
   overflow-x: auto;
-  border-radius: 0.5rem;
-  background: #111827;
-  color: #f8fafc;
-  padding: 0.85rem;
+  border-radius: 0.9rem;
+  background: #0f172a;
+  color: #eef2ff;
+  padding: 1rem 1.05rem;
   white-space: pre;
 }
 
@@ -125,23 +130,25 @@ textarea:focus-visible {
 
 .markdown-content th,
 .markdown-content td {
-  border: 1px solid #dfe5ee;
-  padding: 0.45rem 0.6rem;
+  border: 1px solid #dfe5f1;
+  padding: 0.5rem 0.65rem;
 }
 
 .markdown-content th {
-  background: #f7f8fa;
+  background: #f8f9fc;
   font-weight: 600;
 }
 
 .operation-scroll {
   scrollbar-width: thin;
-  scrollbar-color: #b7c2cf transparent;
+  scrollbar-color: #c5cddd transparent;
 }
 
-.side-label {
-  writing-mode: vertical-rl;
-  text-orientation: mixed;
+.panel-animate {
+  transition:
+    width 260ms ease,
+    opacity 220ms ease,
+    transform 260ms ease;
 }
 
 .smooth-message .markdown-content {
@@ -164,14 +171,14 @@ textarea:focus-visible {
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(49, 90, 125, 0.1) 25%,
-    rgba(49, 90, 125, 0.48) 50%,
-    rgba(49, 90, 125, 0.1) 75%,
+    rgba(81, 109, 210, 0.08) 25%,
+    rgba(81, 109, 210, 0.48) 50%,
+    rgba(81, 109, 210, 0.08) 75%,
     transparent 100%
   );
-  opacity: 0.7;
+  opacity: 0.72;
   transform: translateX(-72%);
-  animation: stream-sheen 1.65s ease-in-out infinite;
+  animation: stream-sheen 1.45s ease-in-out infinite;
   pointer-events: none;
 }
 
@@ -179,10 +186,10 @@ textarea:focus-visible {
   display: inline-block;
   width: 0.16rem;
   height: 1.12em;
-  margin-left: 0.2rem;
+  margin-left: 0.22rem;
   border-radius: 999px;
-  background: linear-gradient(180deg, #4c7596, #315a7d);
-  box-shadow: 0 0 10px rgba(49, 90, 125, 0.32);
+  background: linear-gradient(180deg, #7087de, #516dd2);
+  box-shadow: 0 0 10px rgba(81, 109, 210, 0.26);
   vertical-align: -0.12em;
   animation:
     stream-cursor-blink 1s steps(2, start) infinite,
@@ -208,7 +215,7 @@ textarea:focus-visible {
 @keyframes stream-cursor-blink {
   0%,
   45% {
-    opacity: 0.9;
+    opacity: 0.95;
   }
 
   46%,
@@ -220,11 +227,11 @@ textarea:focus-visible {
 @keyframes stream-cursor-glow {
   0%,
   100% {
-    box-shadow: 0 0 6px rgba(49, 90, 125, 0.2);
+    box-shadow: 0 0 6px rgba(81, 109, 210, 0.16);
   }
 
   50% {
-    box-shadow: 0 0 14px rgba(49, 90, 125, 0.36);
+    box-shadow: 0 0 14px rgba(81, 109, 210, 0.3);
   }
 }
 
@@ -244,10 +251,38 @@ textarea:focus-visible {
 
 @layer components {
   .control-button {
-    @apply inline-flex min-h-11 w-full items-center gap-2 rounded-md border border-app-line bg-white px-3 text-left text-sm font-medium text-app-text transition hover:bg-app-primarySoft disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex min-h-11 w-full items-center gap-2 rounded-[18px] border border-app-line bg-white px-4 text-left text-sm font-medium text-app-text transition hover:bg-app-surface disabled:cursor-not-allowed disabled:opacity-50;
   }
 
-  .icon-button {
-    @apply inline-flex min-h-11 min-w-11 items-center justify-center rounded-md border border-app-line bg-white text-app-text transition hover:bg-app-primarySoft;
+  .icon-button-subtle {
+    @apply inline-flex h-10 w-10 items-center justify-center rounded-[18px] border border-app-line bg-white text-app-text transition hover:bg-app-surface;
+  }
+
+  .icon-button-ghost {
+    @apply inline-flex h-8 w-8 items-center justify-center rounded-xl text-app-muted transition hover:bg-white hover:text-app-text disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .chip-muted {
+    @apply inline-flex items-center rounded-full bg-white px-3 py-1 text-xs text-app-muted ring-1 ring-app-line;
+  }
+
+  .sidebar-item {
+    @apply flex w-full items-center gap-3 rounded-[18px] px-3 py-3 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .sidebar-item.active {
+    @apply bg-white shadow-soft ring-1 ring-app-line;
+  }
+
+  .dropdown-panel {
+    @apply z-[60] min-w-[180px] rounded-2xl border border-app-line bg-white p-1 shadow-panel;
+  }
+
+  .dropdown-item {
+    @apply flex cursor-pointer items-center gap-2 rounded-xl px-3 py-2 text-sm text-app-text outline-none transition hover:bg-app-surface focus:bg-app-surface;
+  }
+
+  .dropdown-item.danger {
+    @apply text-app-danger;
   }
 }

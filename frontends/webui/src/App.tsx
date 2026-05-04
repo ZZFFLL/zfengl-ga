@@ -1,37 +1,67 @@
-import { FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, KeyboardEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import * as Dialog from "@radix-ui/react-dialog";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { AnimatePresence, motion } from "framer-motion";
 import {
-  ChevronDown,
+  Check,
   Circle,
+  ChevronDown,
+  Folder,
+  FolderPlus,
+  Menu,
   MessageSquareText,
-  PanelLeft,
-  PanelRight,
+  MoreHorizontal,
+  PanelRightClose,
+  PanelRightOpen,
   PauseCircle,
+  Pin,
+  PinOff,
   PlayCircle,
+  Plus,
   RefreshCcw,
   RotateCcw,
   Send,
-  Settings2,
+  SlidersHorizontal,
+  Sparkles,
   Square,
+  Trash2,
+  X,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   abortTask,
-  continueConversation,
+  activateConversation,
+  createConversation,
+  createGroup,
+  deleteConversation,
+  deleteGroup,
+  fetchConversation,
   fetchState,
+  pinConversation,
   reinject,
+  renameConversation,
+  renameGroup,
   resetConversation,
   setAutonomous,
   startChat,
   streamTask,
   switchLlm,
 } from "./api";
-import type { ChatMessage, ExecutionTurn, RuntimeState } from "./types";
+import type {
+  ConversationDetail,
+  ConversationMessage,
+  ConversationSummary,
+  ExecutionTurn,
+  GroupSummary,
+  RuntimeState,
+  StreamEvent,
+} from "./types";
 
 const nowLabel = () => new Date().toLocaleString();
 const id = () => Math.random().toString(36).slice(2);
-const STREAM_STEP_INTERVAL_MS = 55;
-const STREAM_DONE_CATCHUP_INTERVAL_MS = 36;
+const STREAM_STEP_INTERVAL_MS = 40;
+const STREAM_DONE_CATCHUP_INTERVAL_MS = 8;
 
 type GraphemeSegment = { segment: string };
 type GraphemeSegmenter = { segment(input: string): Iterable<GraphemeSegment> };
@@ -39,6 +69,16 @@ type GraphemeSegmenterConstructor = new (
   locales?: string | string[],
   options?: { granularity: "grapheme" },
 ) => GraphemeSegmenter;
+
+type UiMessage = {
+  id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  time: string;
+};
+
+const FINAL_INFO_BLOCK_RE = /\n*`{3,}\s*\n?\[Info\]\s*Final response to user\.\s*\n?`{3,}\s*$/i;
+const FINAL_INFO_TRAIL_RE = /\n*\[Info\]\s*Final response to user\.\s*(?:`{3,}\s*)*$/i;
 
 const graphemeSegmenter = (() => {
   const Segmenter = (Intl as typeof Intl & { Segmenter?: GraphemeSegmenterConstructor }).Segmenter;
@@ -54,18 +94,63 @@ function splitGraphemes(text: string) {
 }
 
 function streamStepInterval(remainingChars: number, done: boolean) {
-  return done && remainingChars > 900 ? STREAM_DONE_CATCHUP_INTERVAL_MS : STREAM_STEP_INTERVAL_MS;
+  if (!done) return STREAM_STEP_INTERVAL_MS;
+  if (remainingChars > 480) return 0;
+  if (remainingChars > 160) return 2;
+  return STREAM_DONE_CATCHUP_INTERVAL_MS;
 }
 
-function nextSmoothContent(displayed: string, target: string) {
+function nextSmoothContent(displayed: string, target: string, done = false) {
   const remaining = splitGraphemes(target.slice(displayed.length));
   if (remaining.length === 0) return target;
-  const step = 1;
+  const step = done ? Math.min(24, remaining.length) : Math.min(3, remaining.length);
   return displayed + remaining.slice(0, step).join("");
 }
 
 function prefersReducedMotion() {
   return Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
+}
+
+function formatMessageTime(raw: string) {
+  if (!raw) return nowLabel();
+  return raw;
+}
+
+function sanitizeDisplayText(text: string) {
+  let cleaned = text || "";
+  cleaned = cleaned.replace(FINAL_INFO_BLOCK_RE, "");
+  cleaned = cleaned.replace(FINAL_INFO_TRAIL_RE, "");
+  return cleaned.trim();
+}
+
+function previewText(text: string) {
+  const cleaned = sanitizeDisplayText(text || "");
+  return cleaned.replace(/\s+/g, " ").trim() || "暂无消息";
+}
+
+function toUiMessages(detail: ConversationDetail | null) {
+  if (!detail) return [];
+  return detail.messages.map((message) => ({
+    id: message.id,
+    role: message.role,
+    content: sanitizeDisplayText(message.content),
+    time: formatMessageTime(message.created_at),
+  }));
+}
+
+function buildGroups(groups: GroupSummary[], conversations: ConversationSummary[]) {
+  const groupMap = new Map<string, ConversationSummary[]>();
+  for (const conversation of conversations) {
+    if (!conversation.group_id) continue;
+    if (!groupMap.has(conversation.group_id)) {
+      groupMap.set(conversation.group_id, []);
+    }
+    groupMap.get(conversation.group_id)?.push(conversation);
+  }
+  return groups.map((group) => ({
+    ...group,
+    conversations: groupMap.get(group.id) ?? [],
+  }));
 }
 
 function statusTone(state: RuntimeState | null) {
@@ -77,97 +162,39 @@ function statusTone(state: RuntimeState | null) {
 function StatusBadge({ state }: { state: RuntimeState | null }) {
   const label = !state?.configured ? "未配置" : state.running ? "运行中" : "空闲";
   return (
-    <span className={`inline-flex min-h-9 items-center gap-2 rounded-md px-3 text-sm font-medium ${statusTone(state)}`}>
+    <span className={`inline-flex min-h-9 items-center gap-2 rounded-full px-3 text-sm font-medium ${statusTone(state)}`}>
       <Circle className="h-3 w-3 fill-current" aria-hidden="true" />
       {label}
     </span>
   );
 }
 
-function ControlPanel({
-  state,
-  onRefresh,
-  onSwitchLlm,
-  onAbort,
-  onReinject,
-  onNew,
-  onAutonomous,
+function SurfaceHeader({
+  eyebrow,
+  title,
+  icon,
+  rightSlot,
 }: {
-  state: RuntimeState | null;
-  onRefresh: () => void;
-  onSwitchLlm: (index: number) => void;
-  onAbort: () => void;
-  onReinject: () => void;
-  onNew: () => void;
-  onAutonomous: (enabled: boolean) => void;
+  eyebrow: string;
+  title: string;
+  icon?: ReactNode;
+  rightSlot?: ReactNode;
 }) {
   return (
-    <aside className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto border-r border-app-line bg-app-panel p-4">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wide text-app-muted">Agent</p>
-        <h1 className="mt-1 text-xl font-semibold text-app-text">GenericAgent</h1>
+    <div className="flex min-h-[68px] items-center justify-between border-b border-app-line bg-white px-5">
+      <div className="flex min-w-0 items-center gap-3">
+        {icon ? (
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-app-primarySoft text-app-primary">
+            {icon}
+          </div>
+        ) : null}
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-app-muted">{eyebrow}</p>
+          <h2 className="mt-1 truncate text-lg font-semibold text-app-text">{title}</h2>
+        </div>
       </div>
-
-      <StatusBadge state={state} />
-
-      <section className="space-y-2">
-        <label className="text-sm font-medium text-app-text" htmlFor="llm-select">
-          LLM Core
-        </label>
-        <select
-          id="llm-select"
-          className="min-h-11 w-full rounded-md border border-app-line bg-white px-3 text-sm text-app-text"
-          value={state?.current_llm?.index ?? 0}
-          onChange={(event) => onSwitchLlm(Number(event.target.value))}
-          disabled={!state?.configured}
-        >
-          {(state?.llms ?? []).map((llm) => (
-            <option key={llm.index} value={llm.index}>
-              {llm.index}: {llm.name}
-            </option>
-          ))}
-        </select>
-        <p className="text-xs leading-5 text-app-muted">
-          当前：{state?.current_llm?.name ?? "未检测到可用模型"}
-        </p>
-      </section>
-
-      <section className="grid gap-2">
-        <button className="control-button" type="button" onClick={onAbort} disabled={!state?.running}>
-          <Square className="h-4 w-4" aria-hidden="true" />
-          停止任务
-        </button>
-        <button className="control-button" type="button" onClick={onReinject} disabled={!state?.configured}>
-          <RefreshCcw className="h-4 w-4" aria-hidden="true" />
-          重新注入 System Prompt
-        </button>
-        <button className="control-button" type="button" onClick={onNew} disabled={!state?.configured}>
-          <RotateCcw className="h-4 w-4" aria-hidden="true" />
-          新对话
-        </button>
-      </section>
-
-      <section className="grid gap-2 border-t border-app-line pt-4">
-        <button
-          className="control-button"
-          type="button"
-          onClick={() => onAutonomous(!state?.autonomous_enabled)}
-          disabled={!state?.configured}
-        >
-          {state?.autonomous_enabled ? (
-            <PauseCircle className="h-4 w-4" aria-hidden="true" />
-          ) : (
-            <PlayCircle className="h-4 w-4" aria-hidden="true" />
-          )}
-          {state?.autonomous_enabled ? "禁止自主行动" : "允许自主行动"}
-        </button>
-      </section>
-
-      <button className="control-button mt-auto" type="button" onClick={onRefresh}>
-        <Settings2 className="h-4 w-4" aria-hidden="true" />
-        刷新状态
-      </button>
-    </aside>
+      {rightSlot ? <div className="flex items-center gap-2">{rightSlot}</div> : null}
+    </div>
   );
 }
 
@@ -179,7 +206,7 @@ function MarkdownContent({
   streaming?: boolean;
 }) {
   return (
-    <div className="markdown-content text-sm leading-6">
+    <div className="markdown-content text-sm leading-7">
       <div>
         <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
       </div>
@@ -188,109 +215,28 @@ function MarkdownContent({
   );
 }
 
-function ExecutionLog({
-  turns,
-  collapsed = false,
-  onToggle,
-}: {
-  turns: ExecutionTurn[];
-  collapsed?: boolean;
-  onToggle?: () => void;
-}) {
-  if (collapsed) {
-    return (
-      <aside className="flex h-full min-h-0 flex-col items-center gap-3 border-l border-app-line bg-app-panel p-2">
-        <button
-          type="button"
-          className="icon-button"
-          aria-label="展开当前执行摘要"
-          title="展开当前执行摘要"
-          onClick={onToggle}
-        >
-          <PanelRight className="h-5 w-5" aria-hidden="true" />
-        </button>
-        <span className="rounded-md bg-app-primarySoft px-2 py-1 text-xs font-medium text-app-primary">
-          {turns.length}
-        </span>
-        <span className="side-label text-xs font-semibold text-app-muted">当前执行摘要</span>
-      </aside>
-    );
-  }
-
-  return (
-    <aside className="flex h-full min-h-0 flex-col border-l border-app-line bg-app-panel">
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-app-line p-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-app-muted">Execution</p>
-          <h2 className="mt-1 text-lg font-semibold text-app-text">当前执行摘要</h2>
-        </div>
-        {onToggle && (
-          <button
-            type="button"
-            className="icon-button"
-            aria-label="收起当前执行摘要"
-            title="收起当前执行摘要"
-            onClick={onToggle}
-          >
-            <PanelRight className="h-5 w-5" aria-hidden="true" />
-          </button>
-        )}
-      </div>
-      <div className="operation-scroll min-h-0 flex-1 overflow-auto p-3">
-        {turns.length === 0 ? (
-          <div className="rounded-md border border-dashed border-app-line p-4 text-sm leading-6 text-app-muted">
-            当前还没有可展示的执行摘要。最新任务出现 summary 后会显示在这里。
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {turns.map((turn, index) => (
-              <details
-                key={`${turn.turn}-${index}`}
-                open={index === turns.length - 1}
-                className="rounded-md border border-app-line bg-white"
-              >
-                <summary className="flex min-h-11 cursor-pointer items-center gap-2 px-3 text-sm font-medium text-app-text">
-                  <ChevronDown className="h-4 w-4" aria-hidden="true" />
-                  Turn {turn.turn}: {turn.title}
-                </summary>
-                <div className="border-t border-app-line p-3 text-app-muted">
-                  {turn.content ? (
-                    <MarkdownContent content={turn.content} />
-                  ) : (
-                    <p className="text-sm leading-6 text-app-muted">此轮没有 summary。</p>
-                  )}
-                </div>
-              </details>
-            ))}
-          </div>
-        )}
-      </div>
-    </aside>
-  );
-}
-
 function ChatMessageView({
   message,
   streaming = false,
 }: {
-  message: ChatMessage;
+  message: UiMessage;
   streaming?: boolean;
 }) {
   const isUser = message.role === "user";
   return (
     <article className={`flex ${isUser ? "justify-end" : "justify-start"} ${streaming ? "smooth-message" : ""}`}>
       <div
-        className={`max-w-[86%] rounded-lg border px-4 py-3 shadow-sm ${
+        className={`max-w-[86%] rounded-[24px] px-5 py-4 shadow-sm ${
           isUser
-            ? "border-app-primary/20 bg-app-primary text-white"
-            : "border-app-line bg-white text-app-text"
+            ? "bg-app-userBubble text-white"
+            : "border border-app-line bg-white text-app-text"
         }`}
       >
-        <div className={`mb-2 text-xs ${isUser ? "text-white/75" : "text-app-muted"}`}>
-          {isUser ? "User" : message.role === "system" ? "System" : "Agent"} · {message.time}
+        <div className={`mb-2 text-xs ${isUser ? "text-white/70" : "text-app-muted"}`}>
+          {isUser ? "你" : message.role === "system" ? "System" : "GA"} · {message.time}
         </div>
         {isUser ? (
-          <div className="message-content text-sm leading-6">{message.content}</div>
+          <div className="message-content text-sm leading-7">{message.content}</div>
         ) : (
           <MarkdownContent content={message.content} streaming={streaming} />
         )}
@@ -299,15 +245,710 @@ function ChatMessageView({
   );
 }
 
+function EmptyHome({
+  state,
+  draft,
+  running,
+  onDraftChange,
+  onKeyDown,
+  onSubmit,
+}: {
+  state: RuntimeState | null;
+  draft: string;
+  running: boolean;
+  onDraftChange: (value: string) => void;
+  onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
+  onSubmit: (event?: FormEvent) => void;
+}) {
+  return (
+    <section className="flex min-h-0 flex-1 items-center justify-center px-6 pb-10 pt-8">
+      <div className="w-full max-w-[980px]">
+        <div className="mx-auto max-w-2xl text-center">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-app-primarySoft text-app-primary shadow-soft">
+            <Sparkles className="h-7 w-7" aria-hidden="true" />
+          </div>
+          <h2 className="mt-8 text-5xl font-semibold tracking-tight text-app-text">你好，我是 GenericAgent</h2>
+          <p className="mt-4 text-base leading-8 text-app-muted">
+            极简、自我进化、自主执行。你可以直接交代任务，GA 会用浏览器、终端、文件系统和工具链把事情推进下去。
+          </p>
+        </div>
+
+        <form className="mx-auto mt-12 max-w-3xl" onSubmit={onSubmit}>
+          <div className="rounded-[32px] border border-app-line bg-white px-6 pb-4 pt-5 shadow-panel">
+            <textarea
+              className="min-h-[96px] w-full resize-none border-0 bg-transparent text-base leading-8 text-app-text placeholder:text-app-muted focus:outline-none"
+              placeholder={running ? "任务运行中..." : "向 GenericAgent 提问"}
+              value={draft}
+              disabled={running || !state?.configured}
+              onChange={(event) => onDraftChange(event.target.value)}
+              onKeyDown={onKeyDown}
+              rows={3}
+            />
+            <div className="mt-3 flex items-center justify-between gap-4">
+              <div className="text-sm text-app-muted">支持自然语言任务输入，右侧保留 GA 控制能力。</div>
+              <button
+                type="submit"
+                className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-app-primary text-white disabled:cursor-not-allowed disabled:bg-app-line"
+                disabled={!draft.trim() || running || !state?.configured}
+                aria-label="发送"
+              >
+                <Send className="h-5 w-5" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </section>
+  );
+}
+
+function Composer({
+  state,
+  draft,
+  running,
+  onDraftChange,
+  onKeyDown,
+  onSubmit,
+  onAbort,
+}: {
+  state: RuntimeState | null;
+  draft: string;
+  running: boolean;
+  onDraftChange: (value: string) => void;
+  onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
+  onSubmit: (event?: FormEvent) => void;
+  onAbort: () => void;
+}) {
+  return (
+    <form className="shrink-0 border-t border-app-line bg-white px-6 pb-6 pt-4" onSubmit={onSubmit}>
+      <div className="rounded-[28px] border border-app-line bg-app-composer px-5 pb-3 pt-4 shadow-soft">
+        <textarea
+          className="min-h-[68px] w-full resize-none border-0 bg-transparent text-[15px] leading-7 text-app-text placeholder:text-app-muted focus:outline-none"
+          placeholder={running ? "任务运行中..." : "继续补充问题，Shift+Enter 换行"}
+          value={draft}
+          disabled={running || !state?.configured}
+          onChange={(event) => onDraftChange(event.target.value)}
+          onKeyDown={onKeyDown}
+          rows={2}
+        />
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <div className="text-xs text-app-muted">Shift+Enter 换行，Enter 发送。</div>
+          <div className="flex items-center gap-2">
+            {running && (
+              <button
+                type="button"
+                className="icon-button-subtle"
+                onClick={onAbort}
+                aria-label="停止任务"
+                title="停止任务"
+              >
+                <Square className="h-4 w-4" />
+              </button>
+            )}
+            <button
+              type="submit"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-app-primary text-white disabled:cursor-not-allowed disabled:bg-app-line"
+              disabled={!draft.trim() || running || !state?.configured}
+              aria-label="发送"
+            >
+              <Send className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+    </form>
+  );
+}
+
+function ControlPanel({
+  state,
+  turns,
+  onRefresh,
+  onSwitchLlm,
+  onAbort,
+  onReinject,
+  onNew,
+  onAutonomous,
+  onTogglePanel,
+  executionCollapsed,
+  onToggleExecution,
+  compact = false,
+}: {
+  state: RuntimeState | null;
+  turns: ExecutionTurn[];
+  onRefresh: () => void;
+  onSwitchLlm: (index: number) => void;
+  onAbort: () => void;
+  onReinject: () => void;
+  onNew: () => void;
+  onAutonomous: (enabled: boolean) => void;
+  onTogglePanel: () => void;
+  executionCollapsed: boolean;
+  onToggleExecution: () => void;
+  compact?: boolean;
+}) {
+  return (
+    <aside className={`flex h-full min-h-0 flex-col bg-white ${compact ? "" : "border-l border-app-line"}`}>
+      <SurfaceHeader
+        eyebrow="GA Controls"
+        title="运行控制"
+        icon={<SlidersHorizontal className="h-5 w-5" />}
+        rightSlot={
+          compact ? null : (
+            <button
+              type="button"
+              className="icon-button-subtle"
+              aria-label="收起运行控制"
+              onClick={onTogglePanel}
+            >
+              <PanelRightClose className="h-5 w-5" />
+            </button>
+          )
+        }
+      />
+
+      <div className="operation-scroll flex-1 space-y-5 overflow-y-auto px-5 py-5">
+        <section className="space-y-3">
+          <StatusBadge state={state} />
+          <div className="rounded-2xl border border-app-line bg-app-surface p-4">
+            <label className="mb-2 block text-sm font-medium text-app-text" htmlFor="llm-select">
+              当前模型
+            </label>
+            <select
+              id="llm-select"
+              className="min-h-11 w-full rounded-xl border border-app-line bg-white px-3 text-sm text-app-text"
+              value={state?.current_llm?.index ?? 0}
+              onChange={(event) => onSwitchLlm(Number(event.target.value))}
+              disabled={!state?.configured || state?.running}
+            >
+              {(state?.llms ?? []).map((llm) => (
+                <option key={llm.index} value={llm.index}>
+                  {llm.index}: {llm.name}
+                </option>
+              ))}
+            </select>
+            <p className="mt-2 text-xs leading-6 text-app-muted">
+              切模型会让后续会话同步重新建立，运行中禁用切换以避免状态错乱。
+            </p>
+          </div>
+        </section>
+
+        <section className="space-y-2">
+          <button className="control-button" type="button" onClick={onNew} disabled={!state?.configured || state?.running}>
+            <RotateCcw className="h-4 w-4" />
+            新建空白会话
+          </button>
+          <button className="control-button" type="button" onClick={onAbort} disabled={!state?.running}>
+            <Square className="h-4 w-4" />
+            停止当前任务
+          </button>
+          <button className="control-button" type="button" onClick={onReinject} disabled={!state?.configured || state?.running}>
+            <RefreshCcw className="h-4 w-4" />
+            重新注入 System Prompt
+          </button>
+          <button
+            className="control-button"
+            type="button"
+            onClick={() => onAutonomous(!state?.autonomous_enabled)}
+            disabled={!state?.configured || state?.running}
+          >
+            {state?.autonomous_enabled ? <PauseCircle className="h-4 w-4" /> : <PlayCircle className="h-4 w-4" />}
+            {state?.autonomous_enabled ? "关闭自主行动" : "开启自主行动"}
+          </button>
+          <button className="control-button" type="button" onClick={onRefresh}>
+            <Check className="h-4 w-4" />
+            刷新状态
+          </button>
+        </section>
+
+        <section className="rounded-2xl border border-app-line bg-app-surface p-4">
+          <button
+            type="button"
+            className="flex w-full items-center justify-between text-left"
+            onClick={onToggleExecution}
+          >
+            <h4 className="text-sm font-semibold text-app-text">执行摘要</h4>
+            <div className="flex items-center gap-2">
+              <span className="rounded-full bg-white px-2 py-1 text-xs text-app-muted">{turns.length}</span>
+              <ChevronDown className={`h-4 w-4 text-app-muted transition ${executionCollapsed ? "" : "rotate-180"}`} />
+            </div>
+          </button>
+          {!executionCollapsed && (
+            <div className="mt-3 max-h-[42vh] space-y-2 overflow-y-auto pr-1">
+              {turns.length === 0 ? (
+                <p className="text-xs leading-6 text-app-muted">当前会话还没有执行摘要。</p>
+              ) : (
+                turns.map((turn, index) => (
+                  <details
+                    key={`${turn.turn}-${index}`}
+                    open={index === turns.length - 1}
+                    className="rounded-xl bg-white px-3 py-3 text-sm text-app-text"
+                  >
+                    <summary className="cursor-pointer list-none font-medium">
+                      Turn {turn.turn}
+                      <span className="ml-2 text-xs text-app-muted">{turn.title}</span>
+                    </summary>
+                    <div className="mt-3 border-t border-app-line pt-3 text-xs leading-6 text-app-muted">
+                      {turn.content ? <MarkdownContent content={turn.content} /> : "此轮没有 summary。"}
+                    </div>
+                  </details>
+                ))
+              )}
+            </div>
+          )}
+        </section>
+      </div>
+    </aside>
+  );
+}
+
+function ControlPanelRail({
+  state,
+  onExpand,
+}: {
+  state: RuntimeState | null;
+  onExpand: () => void;
+}) {
+  return (
+    <aside className="hidden h-full border-l border-app-line bg-white xl:flex xl:w-[64px] xl:flex-col xl:items-center xl:gap-3 xl:py-4">
+      <button
+        type="button"
+        className="icon-button-subtle"
+        aria-label="展开运行控制"
+        onClick={onExpand}
+      >
+        <PanelRightOpen className="h-5 w-5" />
+      </button>
+      <Circle
+        className={`h-3 w-3 ${state?.running ? "fill-app-success text-app-success" : "fill-app-primary text-app-primary"}`}
+        aria-hidden="true"
+      />
+      <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-app-muted [writing-mode:vertical-rl]">
+        Controls
+      </span>
+    </aside>
+  );
+}
+
+function RightControlShell({
+  collapsed,
+  state,
+  turns,
+  onExpand,
+  onCollapse,
+  onRefresh,
+  onSwitchLlm,
+  onAbort,
+  onReinject,
+  onNew,
+  onAutonomous,
+  onToggleExecution,
+  executionCollapsed,
+}: {
+  collapsed: boolean;
+  state: RuntimeState | null;
+  turns: ExecutionTurn[];
+  onExpand: () => void;
+  onCollapse: () => void;
+  onRefresh: () => void;
+  onSwitchLlm: (index: number) => void;
+  onAbort: () => void;
+  onReinject: () => void;
+  onNew: () => void;
+  onAutonomous: (enabled: boolean) => void;
+  onToggleExecution: () => void;
+  executionCollapsed: boolean;
+}) {
+  return (
+    <AnimatePresence initial={false} mode="wait">
+      {collapsed ? (
+        <motion.aside
+          key="rail"
+          initial={{ width: 64, opacity: 0.7 }}
+          animate={{ width: 64, opacity: 1 }}
+          exit={{ width: 0, opacity: 0 }}
+          transition={{ type: "spring", stiffness: 420, damping: 38, mass: 0.8 }}
+          className="hidden h-full overflow-hidden border-l border-app-line bg-white xl:flex xl:flex-col xl:items-center xl:gap-3 xl:py-4"
+        >
+          <button
+            type="button"
+            className="icon-button-subtle"
+            aria-label="展开运行控制"
+            onClick={onExpand}
+          >
+            <PanelRightOpen className="h-5 w-5" />
+          </button>
+          <Circle
+            className={`h-3 w-3 ${state?.running ? "fill-app-success text-app-success" : "fill-app-primary text-app-primary"}`}
+            aria-hidden="true"
+          />
+          <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-app-muted [writing-mode:vertical-rl]">
+            Controls
+          </span>
+        </motion.aside>
+      ) : (
+        <motion.aside
+          key="panel"
+          initial={{ width: 360, opacity: 0.7, x: 8 }}
+          animate={{ width: 360, opacity: 1, x: 0 }}
+          exit={{ width: 0, opacity: 0, x: 8 }}
+          transition={{ type: "spring", stiffness: 380, damping: 34, mass: 0.9 }}
+          className="hidden h-full min-h-0 overflow-hidden border-l border-app-line bg-white xl:flex xl:flex-col"
+        >
+          <ControlPanel
+            state={state}
+            turns={turns}
+            onRefresh={onRefresh}
+            onSwitchLlm={onSwitchLlm}
+            onAbort={onAbort}
+            onReinject={onReinject}
+            onNew={onNew}
+            onAutonomous={onAutonomous}
+            onTogglePanel={onCollapse}
+            executionCollapsed={executionCollapsed}
+            onToggleExecution={onToggleExecution}
+          />
+        </motion.aside>
+      )}
+    </AnimatePresence>
+  );
+}
+
+function ConversationActions({
+  conversation,
+  groups,
+  running,
+  onRename,
+  onDelete,
+  onPin,
+  onMove,
+}: {
+  conversation: ConversationSummary;
+  groups: GroupSummary[];
+  running: boolean;
+  onRename: (conversation: ConversationSummary) => void;
+  onDelete: (conversation: ConversationSummary) => void;
+  onPin: (conversation: ConversationSummary, pinned: boolean) => void;
+  onMove: (conversation: ConversationSummary, groupId: string | null) => void;
+}) {
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <button
+          type="button"
+          className="icon-button-ghost"
+          aria-label="会话更多操作"
+          disabled={running}
+        >
+          <MoreHorizontal className="h-4 w-4" />
+        </button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          className="dropdown-panel"
+          sideOffset={8}
+          align="end"
+        >
+          <DropdownMenu.Item className="dropdown-item" onSelect={() => onRename(conversation)}>
+            <MessageSquareText className="h-4 w-4" />
+            重命名
+          </DropdownMenu.Item>
+          <DropdownMenu.Item
+            className="dropdown-item"
+            onSelect={() => onPin(conversation, !conversation.pinned)}
+          >
+            {conversation.pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
+            {conversation.pinned ? "取消置顶" : "置顶"}
+          </DropdownMenu.Item>
+          <DropdownMenu.Sub>
+            <DropdownMenu.SubTrigger className="dropdown-item">
+              <Folder className="h-4 w-4" />
+              移动到分组
+            </DropdownMenu.SubTrigger>
+            <DropdownMenu.Portal>
+              <DropdownMenu.SubContent className="dropdown-panel" sideOffset={6}>
+                <DropdownMenu.Item className="dropdown-item" onSelect={() => onMove(conversation, null)}>
+                  未分组
+                </DropdownMenu.Item>
+                {groups.map((group) => (
+                  <DropdownMenu.Item
+                    key={group.id}
+                    className="dropdown-item"
+                    onSelect={() => onMove(conversation, group.id)}
+                  >
+                    {group.name}
+                  </DropdownMenu.Item>
+                ))}
+              </DropdownMenu.SubContent>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Sub>
+          <DropdownMenu.Separator className="my-1 h-px bg-app-line" />
+          <DropdownMenu.Item className="dropdown-item danger" onSelect={() => onDelete(conversation)}>
+            <Trash2 className="h-4 w-4" />
+            删除
+          </DropdownMenu.Item>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  );
+}
+
+function ConversationSidebar({
+  state,
+  conversations,
+  groups,
+  activeConversationId,
+  running,
+  onCreateConversation,
+  onSelectConversation,
+  onRenameConversation,
+  onDeleteConversation,
+  onPinConversation,
+  onMoveConversation,
+  onCreateGroup,
+  onRenameGroup,
+  onDeleteGroup,
+}: {
+  state: RuntimeState | null;
+  conversations: ConversationSummary[];
+  groups: GroupSummary[];
+  activeConversationId: string | null;
+  running: boolean;
+  onCreateConversation: () => void;
+  onSelectConversation: (conversationId: string) => void;
+  onRenameConversation: (conversation: ConversationSummary) => void;
+  onDeleteConversation: (conversation: ConversationSummary) => void;
+  onPinConversation: (conversation: ConversationSummary, pinned: boolean) => void;
+  onMoveConversation: (conversation: ConversationSummary, groupId: string | null) => void;
+  onCreateGroup: () => void;
+  onRenameGroup: (group: GroupSummary) => void;
+  onDeleteGroup: (group: GroupSummary) => void;
+}) {
+  const pinned = conversations.filter((conversation) => conversation.pinned);
+  const ungrouped = conversations.filter((conversation) => !conversation.group_id && !conversation.pinned);
+  const grouped = buildGroups(
+    groups,
+    conversations.filter((conversation) => !conversation.pinned),
+  );
+
+  return (
+    <aside className="flex h-full min-h-0 flex-col border-r border-app-line bg-app-sidebar">
+      <div className="px-6 pb-4 pt-6">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h1 className="text-[34px] font-semibold tracking-tight text-app-text">GenericAgent</h1>
+            <p className="mt-2 text-sm leading-6 text-app-muted">极简、自我进化、自主执行的本地 Agent 框架。</p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          className="mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-white px-4 text-sm font-medium text-app-text shadow-soft ring-1 ring-app-line transition hover:bg-app-surface disabled:cursor-not-allowed disabled:opacity-50"
+          onClick={onCreateConversation}
+          disabled={!state?.configured || running}
+        >
+          <Plus className="h-4 w-4" />
+          新建对话
+        </button>
+      </div>
+
+      <div className="operation-scroll min-h-0 flex-1 overflow-y-auto px-4 pb-6">
+        <div className="space-y-6">
+          {pinned.length > 0 && (
+            <section>
+              <div className="mb-2 px-2 text-xs font-semibold uppercase tracking-[0.18em] text-app-muted">
+                置顶对话
+              </div>
+              <div className="space-y-1.5">
+                {pinned.map((conversation) => (
+                  <button
+                    key={conversation.id}
+                    type="button"
+                    className={`sidebar-item ${activeConversationId === conversation.id ? "active" : ""}`}
+                    onClick={() => onSelectConversation(conversation.id)}
+                    disabled={running && activeConversationId !== conversation.id}
+                  >
+                    <div className="flex min-w-0 flex-1 items-start gap-3">
+                      <Pin className="mt-1 h-4 w-4 shrink-0 text-app-primary" />
+                      <div className="min-w-0 flex-1 text-left">
+                      <div className="truncate text-sm font-medium">{conversation.title}</div>
+                        <div className="mt-1 truncate text-xs text-app-muted">{previewText(conversation.preview)}</div>
+                      </div>
+                    </div>
+                    <ConversationActions
+                      conversation={conversation}
+                      groups={groups}
+                      running={running}
+                      onRename={onRenameConversation}
+                      onDelete={onDeleteConversation}
+                      onPin={onPinConversation}
+                      onMove={onMoveConversation}
+                    />
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
+          <section>
+            <div className="mb-2 flex items-center justify-between px-2">
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-app-muted">对话分组</div>
+              <button
+                type="button"
+                className="icon-button-ghost"
+                aria-label="新建分组"
+                onClick={onCreateGroup}
+                disabled={running}
+              >
+                <FolderPlus className="h-4 w-4" />
+              </button>
+            </div>
+
+            {grouped.map((group) => (
+              <div key={group.id} className="mb-4">
+                <div className="mb-1 flex items-center justify-between px-2">
+                  <div className="flex items-center gap-2 text-sm font-medium text-app-text">
+                    <Folder className="h-4 w-4 text-app-muted" />
+                    {group.name}
+                  </div>
+                  <DropdownMenu.Root>
+                    <DropdownMenu.Trigger asChild>
+                      <button type="button" className="icon-button-ghost" disabled={running}>
+                        <MoreHorizontal className="h-4 w-4" />
+                      </button>
+                    </DropdownMenu.Trigger>
+                    <DropdownMenu.Portal>
+                      <DropdownMenu.Content className="dropdown-panel" sideOffset={8} align="end">
+                        <DropdownMenu.Item className="dropdown-item" onSelect={() => onRenameGroup(group)}>
+                          重命名分组
+                        </DropdownMenu.Item>
+                        <DropdownMenu.Item className="dropdown-item danger" onSelect={() => onDeleteGroup(group)}>
+                          删除分组
+                        </DropdownMenu.Item>
+                      </DropdownMenu.Content>
+                    </DropdownMenu.Portal>
+                  </DropdownMenu.Root>
+                </div>
+                <div className="space-y-1.5">
+                  {group.conversations.length === 0 ? (
+                    <div className="rounded-2xl px-4 py-3 text-xs text-app-muted">分组里还没有会话</div>
+                  ) : (
+                    group.conversations.map((conversation) => (
+                      <button
+                        key={conversation.id}
+                        type="button"
+                        className={`sidebar-item ${activeConversationId === conversation.id ? "active" : ""}`}
+                        onClick={() => onSelectConversation(conversation.id)}
+                        disabled={running && activeConversationId !== conversation.id}
+                      >
+                        <div className="min-w-0 flex-1 text-left">
+                          <div className="truncate text-sm font-medium">{conversation.title}</div>
+                          <div className="mt-1 truncate text-xs text-app-muted">{previewText(conversation.preview)}</div>
+                        </div>
+                        <ConversationActions
+                          conversation={conversation}
+                          groups={groups}
+                          running={running}
+                          onRename={onRenameConversation}
+                          onDelete={onDeleteConversation}
+                          onPin={onPinConversation}
+                          onMove={onMoveConversation}
+                        />
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            ))}
+
+            <div className="mb-2 px-2 text-xs font-semibold uppercase tracking-[0.18em] text-app-muted">最近对话</div>
+            <div className="space-y-1.5">
+              {ungrouped.map((conversation) => (
+                <button
+                  key={conversation.id}
+                  type="button"
+                  className={`sidebar-item ${activeConversationId === conversation.id ? "active" : ""}`}
+                  onClick={() => onSelectConversation(conversation.id)}
+                  disabled={running && activeConversationId !== conversation.id}
+                >
+                  <div className="min-w-0 flex-1 text-left">
+                    <div className="truncate text-sm font-medium">{conversation.title}</div>
+                    <div className="mt-1 truncate text-xs text-app-muted">{previewText(conversation.preview)}</div>
+                  </div>
+                  <ConversationActions
+                    conversation={conversation}
+                    groups={groups}
+                    running={running}
+                    onRename={onRenameConversation}
+                    onDelete={onDeleteConversation}
+                    onPin={onPinConversation}
+                    onMove={onMoveConversation}
+                  />
+                </button>
+              ))}
+            </div>
+          </section>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function SidebarDialog({
+  open,
+  onOpenChange,
+  children,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/28 lg:hidden" />
+        <Dialog.Content className="fixed inset-y-0 left-0 z-50 w-[min(92vw,360px)] border-r border-app-line bg-app-sidebar shadow-panel lg:hidden">
+          {children}
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
+function ControlDialog({
+  open,
+  onOpenChange,
+  children,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/28 xl:hidden" />
+        <Dialog.Content className="fixed inset-y-0 right-0 z-50 w-[min(92vw,360px)] bg-white shadow-panel xl:hidden">
+          {children}
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
 export default function App() {
   const [state, setState] = useState<RuntimeState | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [groups, setGroups] = useState<GroupSummary[]>([]);
+  const [activeConversation, setActiveConversation] = useState<ConversationDetail | null>(null);
+  const [messages, setMessages] = useState<UiMessage[]>([]);
   const [turns, setTurns] = useState<ExecutionTurn[]>([]);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
-  const [controlsOpen, setControlsOpen] = useState(false);
-  const [logsOpen, setLogsOpen] = useState(false);
-  const [logsCollapsed, setLogsCollapsed] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [controlOpen, setControlOpen] = useState(false);
+  const [controlsCollapsed, setControlsCollapsed] = useState(false);
+  const [executionCollapsed, setExecutionCollapsed] = useState(false);
   const [streamAnimating, setStreamAnimating] = useState(false);
   const chatScrollRef = useRef<HTMLElement | null>(null);
   const streamRef = useRef<EventSource | null>(null);
@@ -318,11 +959,24 @@ export default function App() {
   const streamLastStepAtRef = useRef(0);
 
   const running = Boolean(state?.running);
+  const activeConversationId = activeConversation?.summary.id ?? state?.active_conversation_id ?? null;
   const lastReplyTime = state?.last_reply_time || 0;
+  const hasThread = messages.length > 0;
 
   const refreshState = async () => {
     try {
-      setState(await fetchState());
+      const next = await fetchState();
+      setState(next);
+      setConversations(next.conversations ?? []);
+      setGroups(next.groups ?? []);
+      setTurns(next.execution_log ?? []);
+
+      const candidateId = activeConversationId ?? next.active_conversation_id;
+      if (candidateId) {
+        const detail = await fetchConversation(candidateId);
+        setActiveConversation(detail);
+        setMessages(toUiMessages(detail));
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -334,19 +988,12 @@ export default function App() {
       streamRef.current?.close();
       cancelStreamingFrame();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     scrollChatToBottom(streamAnimating ? "auto" : "smooth");
   }, [messages, streamAnimating]);
-
-  const pushSystem = (content: string) => {
-    setMessages((items) => [...items, { id: id(), role: "system", content, time: nowLabel() }]);
-  };
-
-  const appendAssistant = (content: string) => {
-    setMessages((items) => [...items, { id: id(), role: "assistant", content, time: nowLabel() }]);
-  };
 
   function scrollChatToBottom(behavior: ScrollBehavior = "auto") {
     const target = chatScrollRef.current;
@@ -385,6 +1032,7 @@ export default function App() {
       setStreamAnimating(!streamDoneRef.current);
       return;
     }
+    // 中文注释：如果流式目标被后端整体替换，直接用最新内容覆盖，避免动画状态错乱。
     if (!target.startsWith(displayed)) {
       updateStreamingAssistant(target);
       setStreamAnimating(false);
@@ -397,7 +1045,7 @@ export default function App() {
       return;
     }
     streamLastStepAtRef.current = timestamp;
-    const nextContent = nextSmoothContent(displayed, target);
+    const nextContent = nextSmoothContent(displayed, target, streamDoneRef.current);
     updateStreamingAssistant(nextContent);
     scrollChatToBottom("auto");
     if (nextContent.length < target.length) {
@@ -420,6 +1068,9 @@ export default function App() {
       setStreamAnimating(!streamDoneRef.current);
       return;
     }
+    if (done && content.startsWith(streamDisplayedRef.current)) {
+      streamLastStepAtRef.current = 0;
+    }
     setStreamAnimating(true);
     if (streamAnimationFrameRef.current === null) {
       streamAnimationFrameRef.current = window.requestAnimationFrame(stepStreamingAssistant);
@@ -435,89 +1086,212 @@ export default function App() {
     setStreamAnimating(false);
   }
 
+  const syncConversationList = (nextState: RuntimeState | null) => {
+    if (nextState?.conversations) {
+      setConversations(nextState.conversations);
+    }
+    if (nextState?.groups) {
+      setGroups(nextState.groups);
+    }
+  };
+
+  const openConversation = async (conversationId: string) => {
+    if (running && activeConversationId !== conversationId) {
+      setError("当前任务仍在运行，请先停止任务后再切换会话。");
+      return;
+    }
+    // 中文注释：切换会话时先切 UI 与中间层 active 会话，不在这里直接触发 GA 重放。
+    setError("");
+    const detail = await activateConversation(conversationId);
+    setActiveConversation(detail);
+    setMessages(toUiMessages(detail));
+    setSidebarOpen(false);
+    const nextState = await fetchState();
+    setState(nextState);
+    syncConversationList(nextState);
+  };
+
+  const handleCreateConversation = async () => {
+    setError("");
+    const conversation = await createConversation();
+    const detail = await fetchConversation(conversation.id);
+    setActiveConversation(detail);
+    setMessages([]);
+    resetStreamingAssistant();
+    const nextState = await fetchState();
+    setState(nextState);
+    syncConversationList(nextState);
+    setSidebarOpen(false);
+  };
+
+  const handleRenameConversation = async (conversation: ConversationSummary) => {
+    const title = window.prompt("请输入新的会话标题", conversation.title);
+    if (!title) return;
+    await renameConversation(conversation.id, title);
+    const nextState = await fetchState();
+    setState(nextState);
+    syncConversationList(nextState);
+    if (activeConversationId === conversation.id) {
+      const detail = await fetchConversation(conversation.id);
+      setActiveConversation(detail);
+    }
+  };
+
+  const handleDeleteConversation = async (conversation: ConversationSummary) => {
+    if (!window.confirm(`确认删除会话“${conversation.title}”吗？`)) return;
+    await deleteConversation(conversation.id);
+    const nextState = await fetchState();
+    setState(nextState);
+    syncConversationList(nextState);
+    const nextActiveId = nextState.active_conversation_id;
+    if (nextActiveId) {
+      const detail = await fetchConversation(nextActiveId);
+      setActiveConversation(detail);
+      setMessages(toUiMessages(detail));
+    } else {
+      setActiveConversation(null);
+      setMessages([]);
+    }
+  };
+
+  const handlePinConversation = async (conversation: ConversationSummary, pinned: boolean) => {
+    await pinConversation(conversation.id, pinned);
+    const nextState = await fetchState();
+    setState(nextState);
+    syncConversationList(nextState);
+  };
+
+  const handleMoveConversation = async (conversation: ConversationSummary, groupId: string | null) => {
+    await fetch("/api/conversations/" + conversation.id + "/move", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ group_id: groupId }),
+    });
+    const nextState = await fetchState();
+    setState(nextState);
+    syncConversationList(nextState);
+  };
+
+  const handleCreateGroup = async () => {
+    const name = window.prompt("请输入分组名称", "新分组");
+    if (!name) return;
+    await createGroup(name);
+    const nextState = await fetchState();
+    setState(nextState);
+    syncConversationList(nextState);
+  };
+
+  const handleRenameGroup = async (group: GroupSummary) => {
+    const name = window.prompt("请输入新的分组名称", group.name);
+    if (!name) return;
+    await renameGroup(group.id, name);
+    const nextState = await fetchState();
+    setState(nextState);
+    syncConversationList(nextState);
+  };
+
+  const handleDeleteGroup = async (group: GroupSummary) => {
+    if (!window.confirm(`确认删除分组“${group.name}”吗？分组内会话会回到未分组。`)) return;
+    await deleteGroup(group.id);
+    const nextState = await fetchState();
+    setState(nextState);
+    syncConversationList(nextState);
+  };
+
   const handleSubmit = async (event?: FormEvent) => {
     event?.preventDefault();
     const prompt = draft.trim();
-    if (!prompt || running) return;
+    if (!prompt || running || !state?.configured) return;
+
     setDraft("");
     setError("");
     resetStreamingAssistant();
-    setMessages((items) => [...items, { id: id(), role: "user", content: prompt, time: nowLabel() }]);
+
+    let conversationId = activeConversationId;
+    // 中文注释：空首页首发消息时，先由中间层创建真实会话，再进入线程态。
+    if (!conversationId) {
+      const created = await createConversation(prompt);
+      conversationId = created.id;
+      const detail = await fetchConversation(conversationId);
+      setActiveConversation(detail);
+      setMessages([]);
+    }
+
+    const userMessage: UiMessage = {
+      id: id(),
+      role: "user",
+      content: prompt,
+      time: nowLabel(),
+    };
+    setMessages((items) => [...items, userMessage]);
     scrollChatToBottom("smooth");
 
     try {
-      if (prompt === "/new") {
-        const result = await resetConversation();
-        resetStreamingAssistant();
-        setMessages([{ id: id(), role: "system", content: result.message, time: nowLabel() }]);
-        setTurns([]);
-        await refreshState();
-        return;
-      }
-      if (prompt.startsWith("/continue")) {
-        const result = await continueConversation(prompt);
-        resetStreamingAssistant();
-        if (result.history.length) {
-          setMessages(
-            result.history.map((msg) => ({
-              id: id(),
-              role: msg.role,
-              content: msg.content,
-              time: nowLabel(),
-            })),
-          );
-        }
-        appendAssistant(result.message);
-        await refreshState();
-        return;
-      }
-
-      updateStreamingAssistant("");
-      const { task_id } = await startChat(prompt);
-      await refreshState();
+      const { task_id } = await startChat(conversationId, prompt);
+      const nextState = await fetchState();
+      setState(nextState);
+      syncConversationList(nextState);
       streamRef.current = streamTask(task_id, {
-        onEvent: (payload) => {
-          if (payload.content !== undefined) queueStreamingAssistant(payload.content, payload.event === "done");
-          if (payload.execution_log) setTurns(payload.execution_log);
+        onEvent: (payload: StreamEvent) => {
+          if (payload.event === "message_delta") {
+            queueStreamingAssistant(payload.content);
+            return;
+          }
+          if (payload.event === "message_done") {
+            queueStreamingAssistant(payload.content, true);
+            return;
+          }
+          if (payload.event === "execution_update") {
+            // 中文注释：执行摘要与聊天正文分流展示，避免把规划内容混入主消息流。
+            setTurns(payload.execution_log);
+          }
         },
-        onError: (err) => {
+        onError: async (err) => {
           resetStreamingAssistant();
           setError(err.message);
-          refreshState();
+          const latest = await fetchState();
+          setState(latest);
+          syncConversationList(latest);
         },
-        onClose: () => refreshState(),
+        onClose: async () => {
+          const latest = await fetchState();
+          setState(latest);
+          syncConversationList(latest);
+          if (conversationId) {
+            const detail = await fetchConversation(conversationId);
+            setActiveConversation(detail);
+            setMessages(toUiMessages(detail));
+          }
+        },
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
-      await refreshState();
+      const latest = await fetchState();
+      setState(latest);
+      syncConversationList(latest);
     }
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      handleSubmit();
+      void handleSubmit();
     }
   };
 
-  const shellClass = useMemo(
-    () =>
-      `grid h-screen h-dvh min-h-0 overflow-hidden bg-app-bg text-app-text md:grid-cols-[240px_minmax(0,1fr)] ${
-        logsCollapsed
-          ? "lg:grid-cols-[260px_minmax(0,1fr)_56px]"
-          : "lg:grid-cols-[260px_minmax(0,1fr)_360px]"
-      }`,
-    [logsCollapsed],
+  const desktopShellClass = useMemo(
+    () => "grid h-screen h-dvh min-h-0 overflow-hidden bg-app-bg text-app-text xl:grid-cols-[320px_minmax(0,1fr)_auto]",
+    [],
   );
 
   if (state && !state.configured) {
     return (
       <main className="flex h-screen h-dvh items-center justify-center overflow-hidden bg-app-bg p-6">
-        <section className="max-w-xl rounded-lg border border-app-line bg-white p-6 shadow-panel">
+        <section className="max-w-2xl rounded-[28px] border border-app-line bg-white p-8 shadow-panel">
           <StatusBadge state={state} />
-          <h1 className="mt-4 text-2xl font-semibold text-app-text">LLM 尚未配置</h1>
-          <p className="mt-3 text-sm leading-6 text-app-muted">
-            请在 mykey.py 中配置可用模型后重启 WebUI。当前错误：
+          <h1 className="mt-5 text-3xl font-semibold text-app-text">LLM 尚未配置</h1>
+          <p className="mt-4 text-sm leading-8 text-app-muted">
+            请先在 `mykey.py` 中配置可用模型后重启 WebUI。当前错误：
             {state.error || "没有检测到可用的 LLM backend。"}
           </p>
         </section>
@@ -526,158 +1300,191 @@ export default function App() {
   }
 
   return (
-    <div className={shellClass}>
-      <div className="hidden min-h-0 md:block">
-        <ControlPanel
+    <div className={desktopShellClass}>
+      <div className="hidden xl:block">
+        <ConversationSidebar
           state={state}
-          onRefresh={refreshState}
-          onSwitchLlm={async (index) => setState(await switchLlm(index))}
-          onAbort={async () => {
-            await abortTask();
-            await refreshState();
-          }}
-          onReinject={async () => {
-            await reinject();
-            pushSystem("System Prompt will be reinjected on next task.");
-          }}
-          onNew={async () => {
-            const result = await resetConversation();
-            setMessages([{ id: id(), role: "system", content: result.message, time: nowLabel() }]);
-            setTurns([]);
-            await refreshState();
-          }}
-          onAutonomous={async (enabled) => {
-            const result = await setAutonomous(enabled);
-            setState((prev) => (prev ? { ...prev, autonomous_enabled: result.autonomous_enabled } : prev));
-          }}
+          conversations={conversations}
+          groups={groups}
+          activeConversationId={activeConversationId}
+          running={running}
+          onCreateConversation={() => void handleCreateConversation()}
+          onSelectConversation={(conversationId) => void openConversation(conversationId)}
+          onRenameConversation={(conversation) => void handleRenameConversation(conversation)}
+          onDeleteConversation={(conversation) => void handleDeleteConversation(conversation)}
+          onPinConversation={(conversation, pinned) => void handlePinConversation(conversation, pinned)}
+          onMoveConversation={(conversation, groupId) => void handleMoveConversation(conversation, groupId)}
+          onCreateGroup={() => void handleCreateGroup()}
+          onRenameGroup={(group) => void handleRenameGroup(group)}
+          onDeleteGroup={(group) => void handleDeleteGroup(group)}
         />
       </div>
 
       <main className="flex min-h-0 min-w-0 flex-col overflow-hidden">
-        <header className="flex min-h-16 shrink-0 items-center justify-between border-b border-app-line bg-white px-4">
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              className="icon-button md:hidden"
-              aria-label="打开控制面板"
-              onClick={() => setControlsOpen(true)}
-            >
-              <PanelLeft className="h-5 w-5" />
-            </button>
-            <MessageSquareText className="h-5 w-5 text-app-primary" aria-hidden="true" />
-            <div>
-              <h1 className="text-base font-semibold">GenericAgent</h1>
-              <p className="text-xs text-app-muted">Agent operations console</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <StatusBadge state={state} />
-            <button
-              type="button"
-              className="icon-button lg:hidden"
-              aria-label="打开当前执行摘要"
-              onClick={() => setLogsOpen(true)}
-            >
-              <PanelRight className="h-5 w-5" />
-            </button>
-          </div>
-        </header>
+        <SurfaceHeader
+          eyebrow="Conversation"
+          title={activeConversation?.summary.title || "新建对话"}
+          icon={<MessageSquareText className="h-5 w-5" />}
+          rightSlot={
+            <>
+              <button
+                type="button"
+                className="icon-button-subtle xl:hidden"
+                aria-label="打开会话侧栏"
+                onClick={() => setSidebarOpen(true)}
+              >
+                <Menu className="h-5 w-5" />
+              </button>
+              <button
+                type="button"
+                className="icon-button-subtle xl:hidden"
+                aria-label="打开 GA 控制面板"
+                onClick={() => setControlOpen(true)}
+              >
+                <PanelRightOpen className="h-5 w-5" />
+              </button>
+            </>
+          }
+        />
 
         {error && (
-          <div className="shrink-0 border-b border-app-line bg-app-danger/10 px-4 py-2 text-sm text-app-danger">
+          <div className="shrink-0 border-b border-app-line bg-app-danger/10 px-6 py-3 text-sm text-app-danger">
             {error}
           </div>
         )}
 
-        <section ref={chatScrollRef} className="operation-scroll min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
-          {messages.length === 0 ? (
-            <div className="mx-auto mt-12 max-w-2xl rounded-lg border border-dashed border-app-line bg-white p-6 text-center text-app-muted">
-              <h2 className="text-lg font-semibold text-app-text">开始一个任务</h2>
-              <p className="mt-2 text-sm leading-6">
-                输入自然语言任务，或使用 /new、/continue、/continue N 管理当前上下文。
-              </p>
-            </div>
+        <section ref={chatScrollRef} className="operation-scroll min-h-0 flex-1 overflow-y-auto">
+          {!hasThread ? (
+            <EmptyHome
+              state={state}
+              draft={draft}
+              running={running}
+              onDraftChange={setDraft}
+              onKeyDown={handleKeyDown}
+              onSubmit={(event) => void handleSubmit(event)}
+            />
           ) : (
-            messages.map((message) => (
-              <ChatMessageView
-                key={message.id}
-                message={message}
-                streaming={
-                  streamAnimating && message.role === "assistant" && message === messages[messages.length - 1]
-                }
-              />
-            ))
+            <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col px-6 pb-8 pt-8">
+              <div className="mb-6">
+                <h2 className="text-[30px] font-semibold tracking-tight text-app-text">
+                  {activeConversation?.summary.title || "当前会话"}
+                </h2>
+                <p className="mt-2 text-sm leading-7 text-app-muted">
+                  当前会话基于 GA 的执行能力持续推进，可在右侧控制模型和运行状态。
+                </p>
+              </div>
+              <div className="space-y-5">
+                {messages.map((message) => (
+                  <ChatMessageView
+                    key={message.id}
+                    message={message}
+                    streaming={
+                      streamAnimating && message.role === "assistant" && message === messages[messages.length - 1]
+                    }
+                  />
+                ))}
+              </div>
+            </div>
           )}
         </section>
 
-        <form className="shrink-0 border-t border-app-line bg-white p-4" onSubmit={handleSubmit}>
-          <div className="flex items-end gap-3 rounded-lg border border-app-line bg-app-bg p-2">
-            <textarea
-              className="min-h-12 flex-1 resize-none bg-transparent px-2 py-2 text-sm leading-6 text-app-text placeholder:text-app-muted"
-              placeholder={running ? "任务运行中..." : "输入指令，Shift+Enter 换行"}
-              value={draft}
-              disabled={running}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={handleKeyDown}
-              rows={2}
-            />
-            <button
-              type="submit"
-              className="inline-flex min-h-11 items-center gap-2 rounded-md bg-app-primary px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={!draft.trim() || running}
-            >
-              <Send className="h-4 w-4" aria-hidden="true" />
-              发送
-            </button>
-          </div>
-        </form>
+        {hasThread && (
+          <Composer
+            state={state}
+            draft={draft}
+            running={running}
+            onDraftChange={setDraft}
+            onKeyDown={handleKeyDown}
+            onSubmit={(event) => void handleSubmit(event)}
+            onAbort={() => void abortTask().then(refreshState)}
+          />
+        )}
       </main>
 
-      <div className="hidden min-h-0 lg:block">
-        <ExecutionLog
-          turns={turns}
-          collapsed={logsCollapsed}
-          onToggle={() => setLogsCollapsed((value) => !value)}
-        />
-      </div>
+      <RightControlShell
+        collapsed={controlsCollapsed}
+        state={state}
+        turns={turns}
+        onExpand={() => setControlsCollapsed(false)}
+        onCollapse={() => setControlsCollapsed(true)}
+        onRefresh={() => void refreshState()}
+        onSwitchLlm={(index) => void switchLlm(index).then((next) => { setState(next); syncConversationList(next); })}
+        onAbort={() => void abortTask().then(refreshState)}
+        onReinject={() => void reinject().then(refreshState)}
+        onNew={() => void handleCreateConversation()}
+        onAutonomous={(enabled) =>
+          void setAutonomous(enabled).then((result) => {
+            setState((prev) => (prev ? { ...prev, autonomous_enabled: result.autonomous_enabled } : prev));
+          })
+        }
+        onToggleExecution={() => setExecutionCollapsed((value) => !value)}
+        executionCollapsed={executionCollapsed}
+      />
 
-      {controlsOpen && (
-        <div className="fixed inset-0 z-40 bg-black/20 md:hidden" onClick={() => setControlsOpen(false)}>
-          <div className="h-full w-[280px]" onClick={(event) => event.stopPropagation()}>
-            <ControlPanel
+      <SidebarDialog open={sidebarOpen} onOpenChange={setSidebarOpen}>
+        <div className="flex h-full min-h-0 flex-col">
+          <div className="flex items-center justify-between border-b border-app-line px-5 py-4">
+            <div className="text-base font-semibold text-app-text">会话列表</div>
+            <button type="button" className="icon-button-subtle" onClick={() => setSidebarOpen(false)}>
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="min-h-0 flex-1">
+            <ConversationSidebar
               state={state}
-              onRefresh={refreshState}
-              onSwitchLlm={async (index) => setState(await switchLlm(index))}
-              onAbort={async () => {
-                await abortTask();
-                await refreshState();
-              }}
-              onReinject={async () => {
-                await reinject();
-                pushSystem("System Prompt will be reinjected on next task.");
-              }}
-              onNew={async () => {
-                const result = await resetConversation();
-                setMessages([{ id: id(), role: "system", content: result.message, time: nowLabel() }]);
-                setTurns([]);
-                await refreshState();
-              }}
-              onAutonomous={async (enabled) => {
-                const result = await setAutonomous(enabled);
-                setState((prev) => (prev ? { ...prev, autonomous_enabled: result.autonomous_enabled } : prev));
-              }}
+              conversations={conversations}
+              groups={groups}
+              activeConversationId={activeConversationId}
+              running={running}
+              onCreateConversation={() => void handleCreateConversation()}
+              onSelectConversation={(conversationId) => void openConversation(conversationId)}
+              onRenameConversation={(conversation) => void handleRenameConversation(conversation)}
+              onDeleteConversation={(conversation) => void handleDeleteConversation(conversation)}
+              onPinConversation={(conversation, pinned) => void handlePinConversation(conversation, pinned)}
+              onMoveConversation={(conversation, groupId) => void handleMoveConversation(conversation, groupId)}
+              onCreateGroup={() => void handleCreateGroup()}
+              onRenameGroup={(group) => void handleRenameGroup(group)}
+              onDeleteGroup={(group) => void handleDeleteGroup(group)}
             />
           </div>
         </div>
-      )}
+      </SidebarDialog>
 
-      {logsOpen && (
-        <div className="fixed inset-0 z-40 bg-black/20 lg:hidden" onClick={() => setLogsOpen(false)}>
-          <div className="ml-auto h-full w-[min(390px,92vw)]" onClick={(event) => event.stopPropagation()}>
-            <ExecutionLog turns={turns} />
+      <ControlDialog open={controlOpen} onOpenChange={setControlOpen}>
+        <div className="flex h-full min-h-0 flex-col">
+          <div className="flex items-center justify-between border-b border-app-line px-5 py-4">
+            <div className="text-base font-semibold text-app-text">GA 控制区</div>
+            <button type="button" className="icon-button-subtle" onClick={() => setControlOpen(false)}>
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="min-h-0 flex-1">
+            <ControlPanel
+              state={state}
+              turns={turns}
+              compact
+              onRefresh={() => void refreshState()}
+              onSwitchLlm={(index) =>
+                void switchLlm(index).then((next) => {
+                  setState(next);
+                  syncConversationList(next);
+                })
+              }
+              onAbort={() => void abortTask().then(refreshState)}
+              onReinject={() => void reinject().then(refreshState)}
+              onNew={() => void handleCreateConversation()}
+              onAutonomous={(enabled) =>
+                void setAutonomous(enabled).then((result) => {
+                  setState((prev) => (prev ? { ...prev, autonomous_enabled: result.autonomous_enabled } : prev));
+                })
+              }
+              onTogglePanel={() => setControlOpen(false)}
+              executionCollapsed={executionCollapsed}
+              onToggleExecution={() => setExecutionCollapsed((value) => !value)}
+            />
           </div>
         </div>
-      )}
+      </ControlDialog>
 
       <div id="last-reply-time" className="hidden">
         {lastReplyTime}

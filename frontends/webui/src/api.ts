@@ -1,4 +1,10 @@
-import type { RuntimeState, StreamEvent } from "./types";
+import type {
+  ConversationDetail,
+  ConversationSummary,
+  GroupSummary,
+  RuntimeState,
+  StreamEvent,
+} from "./types";
 
 async function readJson<T>(response: Response): Promise<T> {
   const payload = await response.json();
@@ -12,12 +18,115 @@ export async function fetchState(): Promise<RuntimeState> {
   return readJson<RuntimeState>(await fetch("/api/state"));
 }
 
-export async function startChat(prompt: string): Promise<{ task_id: string }> {
+export async function createConversation(
+  titleHint = "",
+  groupId: string | null = null,
+): Promise<ConversationSummary> {
+  return readJson<ConversationSummary>(
+    await fetch("/api/conversations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title_hint: titleHint, group_id: groupId }),
+    }),
+  );
+}
+
+export async function fetchConversation(conversationId: string): Promise<ConversationDetail> {
+  return readJson<ConversationDetail>(await fetch(`/api/conversations/${conversationId}`));
+}
+
+export async function renameConversation(
+  conversationId: string,
+  title: string,
+): Promise<ConversationSummary> {
+  return readJson<ConversationSummary>(
+    await fetch(`/api/conversations/${conversationId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title }),
+    }),
+  );
+}
+
+export async function deleteConversation(conversationId: string): Promise<{ ok: boolean }> {
+  return readJson<{ ok: boolean }>(
+    await fetch(`/api/conversations/${conversationId}`, {
+      method: "DELETE",
+    }),
+  );
+}
+
+export async function activateConversation(conversationId: string): Promise<ConversationDetail> {
+  return readJson<ConversationDetail>(
+    await fetch(`/api/conversations/${conversationId}/activate`, {
+      method: "POST",
+    }),
+  );
+}
+
+export async function pinConversation(
+  conversationId: string,
+  pinned: boolean,
+): Promise<ConversationSummary> {
+  return readJson<ConversationSummary>(
+    await fetch(`/api/conversations/${conversationId}/pin`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pinned }),
+    }),
+  );
+}
+
+export async function moveConversation(
+  conversationId: string,
+  groupId: string | null,
+): Promise<ConversationSummary> {
+  return readJson<ConversationSummary>(
+    await fetch(`/api/conversations/${conversationId}/move`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ group_id: groupId }),
+    }),
+  );
+}
+
+export async function createGroup(name: string): Promise<GroupSummary> {
+  return readJson<GroupSummary>(
+    await fetch("/api/groups", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    }),
+  );
+}
+
+export async function renameGroup(groupId: string, name: string): Promise<GroupSummary> {
+  return readJson<GroupSummary>(
+    await fetch(`/api/groups/${groupId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    }),
+  );
+}
+
+export async function deleteGroup(groupId: string): Promise<{ ok: boolean }> {
+  return readJson<{ ok: boolean }>(
+    await fetch(`/api/groups/${groupId}`, {
+      method: "DELETE",
+    }),
+  );
+}
+
+export async function startChat(
+  conversationId: string,
+  prompt: string,
+): Promise<{ task_id: string }> {
   return readJson<{ task_id: string }>(
     await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt }),
+      body: JSON.stringify({ conversation_id: conversationId, prompt }),
     }),
   );
 }
@@ -34,13 +143,14 @@ export function streamTask(
   const handle = (event: MessageEvent) => {
     const payload = JSON.parse(event.data) as StreamEvent;
     handlers.onEvent(payload);
-    if (payload.event === "done" || payload.event === "app_error") {
+    if (payload.event === "message_done" || payload.event === "app_error") {
       source.close();
       handlers.onClose();
     }
   };
-  source.addEventListener("next", handle);
-  source.addEventListener("done", handle);
+  source.addEventListener("message_delta", handle);
+  source.addEventListener("message_done", handle);
+  source.addEventListener("execution_update", handle);
   source.addEventListener("heartbeat", handle);
   source.addEventListener("app_error", handle);
   source.onerror = () => {
@@ -68,8 +178,11 @@ export async function reinject(): Promise<{ ok: boolean }> {
   return readJson<{ ok: boolean }>(await fetch("/api/reinject", { method: "POST" }));
 }
 
-export async function resetConversation(): Promise<{ message: string }> {
-  return readJson<{ message: string }>(await fetch("/api/new", { method: "POST" }));
+export async function resetConversation(): Promise<{
+  message: string;
+  conversation: ConversationSummary;
+}> {
+  return readJson(await fetch("/api/new", { method: "POST" }));
 }
 
 export async function continueConversation(command: string): Promise<{

@@ -4,6 +4,7 @@ import mimetypes
 import os
 import queue
 import re
+import sqlite3
 import sys
 import threading
 import time
@@ -12,25 +13,45 @@ from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Optional
 from urllib.parse import urlparse
 
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 WEBUI_DIST = Path(__file__).resolve().parent / "webui" / "dist"
+DEFAULT_DB_PATH = ROOT_DIR / "temp" / "webui_state.sqlite3"
+DEFAULT_GROUP_NAME = "未分组"
 
+# 中文注释：用于从 GA 原始输出中拆出执行轮次和 summary。
 _TURN_RE = re.compile(r"\**LLM Running \(Turn (\d+)\) \.\.\.\**")
 _SUMMARY_RE = re.compile(r"<summary>\s*(.*?)\s*</summary>", re.DOTALL)
+_FINAL_INFO_BLOCK_RE = re.compile(
+    r"\n*`{3,}\s*\n?\[Info\]\s*Final response to user\.\s*\n?`{3,}\s*$",
+    re.IGNORECASE,
+)
+_FINAL_INFO_LINE_RE = re.compile(
+    r"\n*\[Info\]\s*Final response to user\.\s*$",
+    re.IGNORECASE,
+)
+_FINAL_INFO_TRAIL_RE = re.compile(
+    r"\n*\[Info\]\s*Final response to user\.\s*(?:`{3,}\s*)*\Z",
+    re.IGNORECASE,
+)
 
 
 def strip_summary_blocks(text):
-    """Remove execution summary blocks from text shown in the chat transcript."""
+    """移除聊天展示里不应直接显示的 summary 规划块。"""
     cleaned = _SUMMARY_RE.sub("", text or "")
+    cleaned = _TURN_RE.sub("", cleaned)
+    cleaned = _FINAL_INFO_BLOCK_RE.sub("", cleaned)
+    cleaned = _FINAL_INFO_TRAIL_RE.sub("", cleaned)
+    cleaned = _FINAL_INFO_LINE_RE.sub("", cleaned)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     return cleaned.strip()
 
 
 def parse_execution_log(text):
-    """Split assistant output into summary-only LLM turn entries."""
+    """从 GA 响应中提取按轮次展示的执行摘要。"""
     parts = list(_TURN_RE.finditer(text or ""))
     turns = []
     for idx, match in enumerate(parts):
@@ -50,15 +71,412 @@ def parse_execution_log(text):
     return turns
 
 
+def _now_ts():
+    return int(time.time())
+
+
+def _now_iso():
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+
+
+def _title_from_user_text(text, limit=28):
+    text = re.sub(r"\s+", " ", (text or "").strip())
+    if not text:
+        return "新对话"
+    return text[:limit]
+
+
+def _preview_from_text(text, limit=80):
+    text = re.sub(r"\s+", " ", (text or "").strip())
+    return text[:limit]
+
+
+def _conversation_history_prompt(messages, prompt):
+    history_lines = []
+    for message in messages or []:
+        role = message.get("role", "user")
+        content = (message.get("content") or "").strip()
+        if content:
+            history_lines.append(f"{role}: {content}")
+    history_text = "\n".join(history_lines)
+    if history_text:
+        return f"Conversation History:\n{history_text}\n\nCurrent User Message:\n{prompt}"
+    return f"Current User Message:\n{prompt}"
+
+
+@dataclass
+class GroupMoveRequest:
+    group_id: Optional[str]
+
+
+@dataclass
+class ChatStartRequest:
+    conversation_id: str
+    prompt: str
+
+
 @dataclass
 class TaskRecord:
     task_id: str
     output_queue: queue.Queue
     prompt: str
+    conversation_id: str
     status: str = "running"
     current_response: str = ""
     created_at: float = 0.0
     completed_at: float = 0.0
+    execution_log: Optional[list] = None
+
+
+class SQLiteConversationStore:
+    """WebUI 会话真相层，独立于 GA 原生日志。"""
+
+    def __init__(self, db_path):
+        self.db_path = Path(db_path)
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
+        self._init_db()
+
+    def _connect(self):
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def _fetchall(self, sql, params=()):
+        conn = self._connect()
+        try:
+            rows = conn.execute(sql, params).fetchall()
+            return [dict(row) for row in rows]
+        finally:
+            conn.close()
+
+    def _fetchone(self, sql, params=()):
+        conn = self._connect()
+        try:
+            row = conn.execute(sql, params).fetchone()
+            return dict(row) if row is not None else None
+        finally:
+            conn.close()
+
+    def _init_db(self):
+        conn = self._connect()
+        try:
+            conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS conversation_groups (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS conversations (
+                    id TEXT PRIMARY KEY,
+                    group_id TEXT,
+                    title TEXT NOT NULL,
+                    pinned INTEGER NOT NULL DEFAULT 0,
+                    archived INTEGER NOT NULL DEFAULT 0,
+                    deleted_at TEXT,
+                    preview TEXT NOT NULL DEFAULT '',
+                    last_message_at TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(group_id) REFERENCES conversation_groups(id)
+                );
+
+                CREATE TABLE IF NOT EXISTS messages (
+                    id TEXT PRIMARY KEY,
+                    conversation_id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    execution_log TEXT NOT NULL DEFAULT '[]',
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(conversation_id) REFERENCES conversations(id)
+                );
+
+                CREATE TABLE IF NOT EXISTS runtime_state (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                );
+                """
+            )
+            columns = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(messages)").fetchall()
+            }
+            if "execution_log" not in columns:
+                conn.execute(
+                    "ALTER TABLE messages ADD COLUMN execution_log TEXT NOT NULL DEFAULT '[]'"
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def create_group(self, name):
+        now = _now_iso()
+        group_id = uuid.uuid4().hex
+        with self._lock:
+            conn = self._connect()
+            try:
+                row = conn.execute(
+                    "SELECT COALESCE(MAX(sort_order), 0) + 1 AS next_order FROM conversation_groups"
+                ).fetchone()
+                conn.execute(
+                    """
+                    INSERT INTO conversation_groups (id, name, sort_order, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (group_id, name.strip() or DEFAULT_GROUP_NAME, int(row["next_order"]), now, now),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        return self.get_group(group_id)
+
+    def list_groups(self):
+        return self._fetchall(
+            """
+            SELECT id, name, sort_order, created_at, updated_at
+            FROM conversation_groups
+            ORDER BY sort_order ASC, updated_at DESC
+            """
+        )
+
+    def get_group(self, group_id):
+        return self._fetchone(
+            """
+            SELECT id, name, sort_order, created_at, updated_at
+            FROM conversation_groups
+            WHERE id = ?
+            """,
+            (group_id,),
+        )
+
+    def update_group(self, group_id, name):
+        with self._lock:
+            conn = self._connect()
+            try:
+                conn.execute(
+                    "UPDATE conversation_groups SET name = ?, updated_at = ? WHERE id = ?",
+                    (name.strip() or DEFAULT_GROUP_NAME, _now_iso(), group_id),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        return self.get_group(group_id)
+
+    def delete_group(self, group_id):
+        with self._lock:
+            conn = self._connect()
+            try:
+                conn.execute(
+                    "UPDATE conversations SET group_id = NULL, updated_at = ? WHERE group_id = ?",
+                    (_now_iso(), group_id),
+                )
+                conn.execute("DELETE FROM conversation_groups WHERE id = ?", (group_id,))
+                conn.commit()
+            finally:
+                conn.close()
+        return {"ok": True}
+
+    def create_conversation(self, initial_user_text="", group_id=None):
+        now = _now_iso()
+        conversation_id = uuid.uuid4().hex
+        title = _title_from_user_text(initial_user_text)
+        preview = _preview_from_text(initial_user_text)
+        with self._lock:
+            conn = self._connect()
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO conversations (
+                        id, group_id, title, pinned, archived, deleted_at, preview,
+                        last_message_at, created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, 0, 0, NULL, ?, ?, ?, ?)
+                    """,
+                    (conversation_id, group_id, title, preview, now, now, now),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        return self.get_conversation_summary(conversation_id)
+
+    def list_conversations(self):
+        items = self._fetchall(
+            """
+            SELECT id, title, group_id, pinned, archived, preview,
+                   last_message_at, created_at, updated_at
+            FROM conversations
+            WHERE deleted_at IS NULL AND archived = 0
+            ORDER BY pinned DESC, last_message_at DESC, updated_at DESC
+            """
+        )
+        for row in items:
+            row["pinned"] = bool(row["pinned"])
+            row["archived"] = bool(row["archived"])
+        return items
+
+    def get_conversation_summary(self, conversation_id):
+        row = self._fetchone(
+            """
+            SELECT id, title, group_id, pinned, archived, preview,
+                   last_message_at, created_at, updated_at
+            FROM conversations
+            WHERE id = ? AND deleted_at IS NULL
+            """,
+            (conversation_id,),
+        )
+        if row is None:
+            return None
+        row["pinned"] = bool(row["pinned"])
+        row["archived"] = bool(row["archived"])
+        return row
+
+    def get_conversation_detail(self, conversation_id):
+        summary = self.get_conversation_summary(conversation_id)
+        if summary is None:
+            return None
+        rows = self._fetchall(
+            """
+            SELECT id, conversation_id, role, content, source, execution_log, created_at
+            FROM messages
+            WHERE conversation_id = ?
+            ORDER BY created_at ASC, rowid ASC
+            """,
+            (conversation_id,),
+        )
+        for row in rows:
+            try:
+                row["execution_log"] = json.loads(row.get("execution_log") or "[]")
+            except json.JSONDecodeError:
+                row["execution_log"] = []
+        return {
+            "summary": summary,
+            "messages": rows,
+            "execution_log": next(
+                (
+                    row["execution_log"]
+                    for row in reversed(rows)
+                    if row.get("execution_log")
+                ),
+                [],
+            ),
+        }
+
+    def update_conversation(self, conversation_id, title=None):
+        summary = self.get_conversation_summary(conversation_id)
+        if summary is None:
+            return None
+        title = (title or "").strip() or summary["title"]
+        with self._lock:
+            conn = self._connect()
+            try:
+                conn.execute(
+                    "UPDATE conversations SET title = ?, updated_at = ? WHERE id = ?",
+                    (title, _now_iso(), conversation_id),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        return self.get_conversation_summary(conversation_id)
+
+    def delete_conversation(self, conversation_id):
+        with self._lock:
+            conn = self._connect()
+            try:
+                conn.execute(
+                    "UPDATE conversations SET deleted_at = ?, updated_at = ? WHERE id = ?",
+                    (_now_iso(), _now_iso(), conversation_id),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        return {"ok": True}
+
+    def pin_conversation(self, conversation_id, pinned):
+        with self._lock:
+            conn = self._connect()
+            try:
+                conn.execute(
+                    "UPDATE conversations SET pinned = ?, updated_at = ? WHERE id = ?",
+                    (1 if pinned else 0, _now_iso(), conversation_id),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        return self.get_conversation_summary(conversation_id)
+
+    def move_conversation(self, conversation_id, request: GroupMoveRequest):
+        with self._lock:
+            conn = self._connect()
+            try:
+                conn.execute(
+                    "UPDATE conversations SET group_id = ?, updated_at = ? WHERE id = ?",
+                    (request.group_id, _now_iso(), conversation_id),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        return self.get_conversation_summary(conversation_id)
+
+    def add_message(self, conversation_id, role, content, source, execution_log=None):
+        now = _now_iso()
+        message_id = uuid.uuid4().hex
+        preview = _preview_from_text(content)
+        execution_payload = json.dumps(execution_log or [], ensure_ascii=False)
+        with self._lock:
+            conn = self._connect()
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO messages (id, conversation_id, role, content, source, execution_log, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (message_id, conversation_id, role, content, source, execution_payload, now),
+                )
+                conn.execute(
+                    """
+                    UPDATE conversations
+                    SET preview = ?, last_message_at = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (preview, now, now, conversation_id),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        return self.get_conversation_detail(conversation_id)["messages"][-1]
+
+    def set_runtime_state(self, key, value):
+        payload = json.dumps(value, ensure_ascii=False)
+        with self._lock:
+            conn = self._connect()
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO runtime_state (key, value) VALUES (?, ?)
+                    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                    """,
+                    (key, payload),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+    def get_runtime_state(self, key, default=None):
+        row = self._fetchone(
+            "SELECT value FROM runtime_state WHERE key = ?",
+            (key,),
+        )
+        if row is None:
+            return default
+        try:
+            return json.loads(row["value"])
+        except json.JSONDecodeError:
+            return default
 
 
 def _llms(agent):
@@ -84,8 +502,16 @@ def build_state(agent, manager):
         except Exception:
             current = None
     running = False
+    execution_log = []
     if manager is not None:
         running = any(task.status == "running" for task in manager.tasks.values())
+        active_task = manager.active_task()
+        if active_task and active_task.execution_log:
+            execution_log = active_task.execution_log
+        elif getattr(manager, "active_conversation_id", None):
+            detail = manager.store.get_conversation_detail(manager.active_conversation_id)
+            if detail is not None:
+                execution_log = detail.get("execution_log", [])
     return {
         "configured": agent is not None and bool(llms or current),
         "current_llm": current,
@@ -93,26 +519,138 @@ def build_state(agent, manager):
         "running": running or bool(getattr(agent, "is_running", False)),
         "autonomous_enabled": bool(getattr(manager, "autonomous_enabled", False)),
         "last_reply_time": int(getattr(manager, "last_reply_time", 0) or 0),
+        "active_conversation_id": getattr(manager, "active_conversation_id", None),
+        "execution_log": execution_log,
     }
 
 
 class WebUITaskManager:
-    def __init__(self, agent):
+    """WebUI 会话主控层：以中间层会话真相驱动 GA。"""
+
+    def __init__(self, agent, store):
         self.agent = agent
+        self.store = store
         self.tasks = {}
         self.autonomous_enabled = False
         self.last_reply_time = 0
+        self.active_conversation_id = store.get_runtime_state("active_conversation_id")
+        self.ga_bound_conversation_id = store.get_runtime_state("ga_bound_conversation_id")
+        if self.active_conversation_id is None:
+            conversation = self.store.create_conversation()
+            self.active_conversation_id = conversation["id"]
+            self.store.set_runtime_state("active_conversation_id", self.active_conversation_id)
 
-    def start_chat(self, prompt):
+    def active_task(self):
+        for task in reversed(list(self.tasks.values())):
+            if task.status == "running":
+                return task
+        return None
+
+    def list_conversations(self):
+        return self.store.list_conversations()
+
+    def create_conversation(self, initial_user_text="", group_id=None):
+        conversation = self.store.create_conversation(
+            initial_user_text=initial_user_text,
+            group_id=group_id,
+        )
+        self.activate_conversation(conversation["id"])
+        return conversation
+
+    def get_conversation(self, conversation_id):
+        detail = self.store.get_conversation_detail(conversation_id)
+        if detail is None:
+            raise KeyError("conversation_not_found")
+        return detail
+
+    def rename_conversation(self, conversation_id, title):
+        updated = self.store.update_conversation(conversation_id, title=title)
+        if updated is None:
+            raise KeyError("conversation_not_found")
+        return updated
+
+    def delete_conversation(self, conversation_id):
+        self.store.delete_conversation(conversation_id)
+        if self.active_conversation_id == conversation_id:
+            remaining = self.store.list_conversations()
+            if remaining:
+                self.activate_conversation(remaining[0]["id"])
+            else:
+                conversation = self.store.create_conversation()
+                self.activate_conversation(conversation["id"])
+        return {"ok": True}
+
+    def pin_conversation(self, conversation_id, pinned):
+        updated = self.store.pin_conversation(conversation_id, pinned)
+        if updated is None:
+            raise KeyError("conversation_not_found")
+        return updated
+
+    def move_conversation(self, conversation_id, group_id):
+        updated = self.store.move_conversation(
+            conversation_id,
+            GroupMoveRequest(group_id),
+        )
+        if updated is None:
+            raise KeyError("conversation_not_found")
+        return updated
+
+    def list_groups(self):
+        return self.store.list_groups()
+
+    def create_group(self, name):
+        return self.store.create_group(name)
+
+    def update_group(self, group_id, name):
+        updated = self.store.update_group(group_id, name)
+        if updated is None:
+            raise KeyError("group_not_found")
+        return updated
+
+    def delete_group(self, group_id):
+        return self.store.delete_group(group_id)
+
+    def activate_conversation(self, conversation_id):
+        detail = self.store.get_conversation_detail(conversation_id)
+        if detail is None:
+            raise KeyError("conversation_not_found")
+        self.active_conversation_id = conversation_id
+        self.store.set_runtime_state("active_conversation_id", conversation_id)
+        return detail
+
+    def start_chat(self, request: ChatStartRequest):
         if self.agent is None:
             raise RuntimeError("agent_not_configured")
-        output_queue = self.agent.put_task(prompt, source="user")
+        prompt = (request.prompt or "").strip()
+        if not prompt:
+            raise ValueError("empty_prompt")
+        detail = self.store.get_conversation_detail(request.conversation_id)
+        if detail is None:
+            raise KeyError("conversation_not_found")
+        if self.active_task() is not None:
+            raise RuntimeError("task_running")
+
+        if self.active_conversation_id != request.conversation_id:
+            self.activate_conversation(request.conversation_id)
+
+        # 中文注释：只有当目标会话与当前绑定到 GA 的会话不一致时，才重置并重放上下文。
+        if self.ga_bound_conversation_id != request.conversation_id:
+            self._reset_agent_runtime()
+            self.ga_bound_conversation_id = request.conversation_id
+            self.store.set_runtime_state("ga_bound_conversation_id", request.conversation_id)
+
+        history_messages = detail["messages"]
+        ga_prompt = _conversation_history_prompt(history_messages, prompt)
+        output_queue = self.agent.put_task(ga_prompt, source="user")
         task_id = uuid.uuid4().hex
+        self.store.add_message(request.conversation_id, "user", prompt, "ui")
         self.tasks[task_id] = TaskRecord(
             task_id=task_id,
             output_queue=output_queue,
             prompt=prompt,
+            conversation_id=request.conversation_id,
             created_at=time.time(),
+            execution_log=[],
         )
         return {"task_id": task_id}
 
@@ -129,20 +667,42 @@ class WebUITaskManager:
                 continue
             if "next" in item:
                 task.current_response = item["next"]
+                task.execution_log = parse_execution_log(task.current_response)
+                cleaned = strip_summary_blocks(task.current_response)
+                # 中文注释：聊天区只吃清洗后的正文，执行摘要则单独通过 execution_update 事件发送。
                 yield {
-                    "event": "next",
-                    "content": strip_summary_blocks(task.current_response),
-                    "execution_log": parse_execution_log(task.current_response),
+                    "event": "message_delta",
+                    "content": cleaned,
+                    "conversation_id": task.conversation_id,
+                }
+                yield {
+                    "event": "execution_update",
+                    "execution_log": task.execution_log,
+                    "conversation_id": task.conversation_id,
                 }
             if "done" in item:
                 task.current_response = item["done"]
                 task.status = "done"
                 task.completed_at = time.time()
                 self.last_reply_time = int(task.completed_at)
+                task.execution_log = parse_execution_log(task.current_response)
+                cleaned = strip_summary_blocks(task.current_response)
+                self.store.add_message(
+                    task.conversation_id,
+                    "assistant",
+                    cleaned,
+                    "ga",
+                    execution_log=task.execution_log,
+                )
                 yield {
-                    "event": "done",
-                    "content": strip_summary_blocks(task.current_response),
-                    "execution_log": parse_execution_log(task.current_response),
+                    "event": "message_done",
+                    "content": cleaned,
+                    "conversation_id": task.conversation_id,
+                }
+                yield {
+                    "event": "execution_update",
+                    "execution_log": task.execution_log,
+                    "conversation_id": task.conversation_id,
                 }
 
     def abort(self):
@@ -158,29 +718,37 @@ class WebUITaskManager:
         if self.agent is None:
             raise RuntimeError("agent_not_configured")
         self.agent.next_llm(int(index))
+        self.ga_bound_conversation_id = None
+        self.store.set_runtime_state("ga_bound_conversation_id", None)
         return build_state(self.agent, self)
 
     def reinject(self):
         client = getattr(self.agent, "llmclient", None)
         if client is not None and hasattr(client, "last_tools"):
             client.last_tools = ""
+        self.ga_bound_conversation_id = None
+        self.store.set_runtime_state("ga_bound_conversation_id", None)
         return {"ok": True}
 
     def reset_conversation(self):
-        try:
-            from .continue_cmd import reset_conversation
-        except ImportError:
-            from continue_cmd import reset_conversation
-
-        message = reset_conversation(self.agent, message="New conversation started")
-        self.last_reply_time = int(time.time())
-        return {"message": message}
+        self._reset_agent_runtime()
+        conversation = self.store.create_conversation()
+        self.activate_conversation(conversation["id"])
+        self.ga_bound_conversation_id = None
+        self.store.set_runtime_state("ga_bound_conversation_id", None)
+        self.last_reply_time = _now_ts()
+        return {
+            "message": "New conversation started",
+            "conversation": conversation,
+        }
 
     def continue_conversation(self, command):
-        try:
-            from .continue_cmd import extract_ui_messages, handle_frontend_command, list_sessions
-        except ImportError:
-            from continue_cmd import extract_ui_messages, handle_frontend_command, list_sessions
+        """兼容旧命令，但不再作为新会话体系主数据源。"""
+        from frontends.continue_cmd import (
+            extract_ui_messages,
+            handle_frontend_command,
+            list_sessions,
+        )
 
         command = (command or "").strip()
         target = None
@@ -202,12 +770,19 @@ class WebUITaskManager:
                 else item
                 for item in history
             ]
-        self.last_reply_time = int(time.time())
+        self.ga_bound_conversation_id = None
+        self.store.set_runtime_state("ga_bound_conversation_id", None)
+        self.last_reply_time = _now_ts()
         return {"message": strip_summary_blocks(message), "history": history or []}
 
     def set_autonomous(self, enabled):
         self.autonomous_enabled = bool(enabled)
         return {"autonomous_enabled": self.autonomous_enabled}
+
+    def _reset_agent_runtime(self):
+        from frontends.continue_cmd import reset_conversation
+
+        reset_conversation(self.agent, message=None)
 
 
 class WebUIRuntime:
@@ -271,7 +846,7 @@ class WebUIRequestHandler(BaseHTTPRequestHandler):
         self.send_response(HTTPStatus.NO_CONTENT)
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS")
         self.end_headers()
 
     def do_GET(self):
@@ -279,10 +854,26 @@ class WebUIRequestHandler(BaseHTTPRequestHandler):
         path = parsed.path
         if path == "/api/state":
             payload = build_state(self.runtime.agent, self.runtime.manager)
+            if self.runtime.manager is not None:
+                payload["conversations"] = self.runtime.manager.list_conversations()
+                payload["groups"] = self.runtime.manager.list_groups()
             if self.runtime.init_error:
                 payload["configured"] = False
                 payload["error"] = self.runtime.init_error
             self._send_json(payload)
+            return
+        if path == "/api/conversations":
+            self._send_json({"items": self.runtime.manager.list_conversations()})
+            return
+        if path == "/api/groups":
+            self._send_json({"items": self.runtime.manager.list_groups()})
+            return
+        conversation_match = re.match(r"^/api/conversations/([^/]+)$", path)
+        if conversation_match:
+            try:
+                self._send_json(self.runtime.manager.get_conversation(conversation_match.group(1)))
+            except KeyError:
+                self._send_error_json(HTTPStatus.NOT_FOUND, "conversation_not_found")
             return
         stream_match = re.match(r"^/api/chat/([^/]+)/stream$", path)
         if stream_match:
@@ -302,11 +893,13 @@ class WebUIRequestHandler(BaseHTTPRequestHandler):
             if self.runtime.manager is None:
                 raise RuntimeError("agent_not_configured")
             if path == "/api/chat":
-                prompt = str(body.get("prompt", "")).strip()
-                if not prompt:
-                    self._send_error_json(HTTPStatus.BAD_REQUEST, "empty_prompt")
-                    return
-                self._send_json(self.runtime.manager.start_chat(prompt))
+                request = ChatStartRequest(
+                    conversation_id=str(body.get("conversation_id") or self.runtime.manager.active_conversation_id or ""),
+                    prompt=str(body.get("prompt", "")).strip(),
+                )
+                if not request.conversation_id:
+                    raise KeyError("conversation_not_found")
+                self._send_json(self.runtime.manager.start_chat(request))
                 return
             if path == "/api/abort":
                 self._send_json(self.runtime.manager.abort())
@@ -326,8 +919,96 @@ class WebUIRequestHandler(BaseHTTPRequestHandler):
             if path == "/api/autonomous":
                 self._send_json(self.runtime.manager.set_autonomous(body.get("enabled", False)))
                 return
+            if path == "/api/conversations":
+                conversation = self.runtime.manager.create_conversation(
+                    initial_user_text=str(body.get("title_hint", "") or ""),
+                    group_id=body.get("group_id"),
+                )
+                self._send_json(conversation, HTTPStatus.CREATED)
+                return
+            if path == "/api/groups":
+                group = self.runtime.manager.create_group(str(body.get("name", "") or DEFAULT_GROUP_NAME))
+                self._send_json(group, HTTPStatus.CREATED)
+                return
+            activate_match = re.match(r"^/api/conversations/([^/]+)/activate$", path)
+            if activate_match:
+                self._send_json(self.runtime.manager.activate_conversation(activate_match.group(1)))
+                return
+            pin_match = re.match(r"^/api/conversations/([^/]+)/pin$", path)
+            if pin_match:
+                self._send_json(
+                    self.runtime.manager.pin_conversation(
+                        pin_match.group(1),
+                        bool(body.get("pinned", True)),
+                    )
+                )
+                return
+            move_match = re.match(r"^/api/conversations/([^/]+)/move$", path)
+            if move_match:
+                self._send_json(
+                    self.runtime.manager.move_conversation(
+                        move_match.group(1),
+                        body.get("group_id"),
+                    )
+                )
+                return
+        except KeyError as exc:
+            self._send_error_json(HTTPStatus.NOT_FOUND, str(exc))
+            return
+        except ValueError as exc:
+            self._send_error_json(HTTPStatus.BAD_REQUEST, str(exc))
+            return
         except Exception as exc:
             self._send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, "server_error", str(exc))
+            return
+        self._send_error_json(HTTPStatus.NOT_FOUND, "not_found")
+
+    def do_PATCH(self):
+        parsed = urlparse(self.path)
+        path = parsed.path
+        try:
+            body = _read_json(self)
+        except ValueError:
+            self._send_error_json(HTTPStatus.BAD_REQUEST, "invalid_json")
+            return
+        try:
+            conversation_match = re.match(r"^/api/conversations/([^/]+)$", path)
+            if conversation_match:
+                self._send_json(
+                    self.runtime.manager.rename_conversation(
+                        conversation_match.group(1),
+                        body.get("title", ""),
+                    )
+                )
+                return
+            group_match = re.match(r"^/api/groups/([^/]+)$", path)
+            if group_match:
+                self._send_json(
+                    self.runtime.manager.update_group(
+                        group_match.group(1),
+                        body.get("name", ""),
+                    )
+                )
+                return
+        except KeyError as exc:
+            self._send_error_json(HTTPStatus.NOT_FOUND, str(exc))
+            return
+        self._send_error_json(HTTPStatus.NOT_FOUND, "not_found")
+
+    def do_DELETE(self):
+        parsed = urlparse(self.path)
+        path = parsed.path
+        try:
+            conversation_match = re.match(r"^/api/conversations/([^/]+)$", path)
+            if conversation_match:
+                self._send_json(self.runtime.manager.delete_conversation(conversation_match.group(1)))
+                return
+            group_match = re.match(r"^/api/groups/([^/]+)$", path)
+            if group_match:
+                self._send_json(self.runtime.manager.delete_group(group_match.group(1)))
+                return
+        except KeyError as exc:
+            self._send_error_json(HTTPStatus.NOT_FOUND, str(exc))
             return
         self._send_error_json(HTTPStatus.NOT_FOUND, "not_found")
 
@@ -347,7 +1028,7 @@ class WebUIRequestHandler(BaseHTTPRequestHandler):
             self.wfile.write(f"event: {name}\n".encode("utf-8"))
             self.wfile.write(f"data: {data}\n\n".encode("utf-8"))
             self.wfile.flush()
-            if name in {"done", "app_error"}:
+            if name in {"message_done", "app_error"}:
                 break
 
     def _send_static(self, path):
@@ -368,16 +1049,19 @@ class WebUIRequestHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
 
-def create_runtime(dev_url=None):
+def create_runtime(dev_url=None, db_path=None):
     try:
         sys.path.insert(0, str(ROOT_DIR))
         from agentmain import GeneraticAgent
-        import chatapp_common  # noqa: F401 - activates shared frontend command patches
+        from frontends.continue_cmd import install as install_continue_patch
 
+        # 中文注释：continue_cmd patch 只在新 WebUI 的 server 里安装，避免改动共享前端模块。
+        install_continue_patch(GeneraticAgent)
         agent = GeneraticAgent()
         thread = threading.Thread(target=agent.run, daemon=True)
         thread.start()
-        manager = WebUITaskManager(agent)
+        store = SQLiteConversationStore(db_path or DEFAULT_DB_PATH)
+        manager = WebUITaskManager(agent, store)
         return WebUIRuntime(agent=agent, manager=manager, dev_url=dev_url)
     except Exception as exc:
         return WebUIRuntime(init_error=str(exc), dev_url=dev_url)
@@ -396,9 +1080,13 @@ def main(argv=None):
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=18601)
     parser.add_argument("--dev-url", default="")
+    parser.add_argument("--db-path", default="")
     args = parser.parse_args(argv)
 
-    runtime = create_runtime(dev_url=args.dev_url or None)
+    runtime = create_runtime(
+        dev_url=args.dev_url or None,
+        db_path=args.db_path or None,
+    )
     server = create_server(args.host, args.port, runtime)
     print(f"[WebUI] serving on http://{args.host}:{server.server_port}")
     if runtime.init_error:

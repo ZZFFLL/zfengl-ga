@@ -9,6 +9,7 @@ venv/
 env/
 build/
 dist/
+frontends/webui/node_modules/
 *.egg-info/
 
 .streamlit/
