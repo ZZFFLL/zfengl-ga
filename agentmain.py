@@ -61,6 +61,10 @@ def get_system_prompt(query=None):
                         meta = r.get("metadata", {})
                         snippet = r["text"][:200].replace('\n', ' ')
                         prompt += f"- [{meta.get('role','?')}] {snippet}\n"
+                # MemPalace KG: inject entity relationship context
+                kg_ctx = bridge.get_session_facts_context(session_id=None, max_facts=8)
+                if kg_ctx:
+                    prompt += "\n" + kg_ctx
         except Exception:
             pass
     return prompt
@@ -195,6 +199,7 @@ class GeneraticAgent:
                         if sess: sess = os.path.basename(sess) if self.task_dir else sess
                         bridge.store_turn(sess, 'user', raw_query)
                         bridge.store_turn(sess, 'assistant', full_resp)
+                        bridge.extract_conversation_facts(sess, raw_query, full_resp)
                 except Exception: pass
             except Exception as e:
                 print(f"Backend Error: {format_error(e)}")

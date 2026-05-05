@@ -162,6 +162,88 @@ class PalaceBridge:
         """Mark a fact as no longer valid."""
         self.kg.invalidate(subject, predicate, obj, ended=ended)
 
+    # ── Auto-extraction from conversation ─────────────────
+
+    # Simple heuristic patterns for extracting facts from GA turns
+    _TOOL_PATTERNS = [
+        (r'\b(web_scan|web_execute_js|file_read|file_patch|file_write|code_run|'
+         r'web_search|ask_user|apply_patch|start_long_term)\b', 'uses_tool'),
+    ]
+    _PREF_PATTERNS = [
+        (r'(?:不要|禁止|别|严禁|Never)\s*(\S+(?:\s+\S+){0,5})', 'dislikes'),
+        (r'(?:优先|总是|Always|prefer)\s*(\S+(?:\s+\S+){0,5})', 'prefers'),
+    ]
+
+    def extract_conversation_facts(self, session_id: str,
+                                   user_text: str, assistant_text: str):
+        """Extract lightweight entity facts from a conversation turn.
+        
+        Detects: tool usage, user preferences, task topics.
+        Stores facts as (session, predicate, object) triples.
+        Non-blocking; errors are silently ignored.
+        """
+        import re
+        now = time.strftime('%Y-%m-%d %H:%M:%S')
+        combined = f"{user_text}\n{assistant_text}"
+
+        # Tool usage
+        for pat, pred in self._TOOL_PATTERNS:
+            for m in re.finditer(pat, combined, re.IGNORECASE):
+                tool = m.group(1).lower()
+                try:
+                    self.add_fact(session_id, pred, tool,
+                                  valid_from=now, confidence=0.9)
+                except Exception:
+                    pass
+
+        # User preferences (only from user text)
+        for pat, pred in self._PREF_PATTERNS:
+            for m in re.finditer(pat, user_text, re.IGNORECASE):
+                obj = m.group(1).strip().lower()
+                if len(obj) > 2 and len(obj) < 60:
+                    try:
+                        self.add_fact('user', pred, obj,
+                                      valid_from=now, confidence=0.7)
+                    except Exception:
+                        pass
+
+        # Session metadata
+        try:
+            self.add_fact(session_id, 'occurred_at', now,
+                          confidence=1.0)
+        except Exception:
+            pass
+
+    def get_session_facts_context(self, session_id: str = None,
+                                  max_facts: int = 10) -> str:
+        """Return a compact KG fact summary for prompt injection.
+        
+        If session_id is None, returns recent facts across all sessions.
+        """
+        try:
+            if session_id:
+                facts = self.query_facts(session_id)
+            else:
+                facts = self.kg.query_recent(max_facts * 2)
+        except Exception:
+            return ""
+
+        if not facts:
+            return ""
+
+        lines = ["[MemPalace KG] 实体关系图谱:"]
+        seen = set()
+        for f in facts[:max_facts]:
+            s, p, o = (f.get('subject','?'), f.get('predicate','?'),
+                       f.get('object','?'))
+            key = (s, p, o)
+            if key in seen:
+                continue
+            seen.add(key)
+            valid = f.get('valid_from', '')
+            lines.append(f"- {s} {p} {o}" + (f" (since {valid})" if valid else ""))
+        return '\n'.join(lines)
+
 
 # ── Module-level convenience ────────────────────────────
 
