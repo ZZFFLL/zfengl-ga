@@ -4,7 +4,7 @@
 
 :root {
   color: #1f2430;
-  background: #f5f6f8;
+  background: #f5f7fb;
   font-family:
     "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui,
     -apple-system, BlinkMacSystemFont, sans-serif;
@@ -23,7 +23,7 @@ body {
   min-height: 100%;
   background:
     radial-gradient(circle at top left, rgba(255, 255, 255, 0.8), transparent 35%),
-    linear-gradient(180deg, #f7f8fb 0%, #f3f5f8 100%);
+    linear-gradient(180deg, #f8f9fc 0%, #f2f4f8 100%);
 }
 
 button,
@@ -151,35 +151,33 @@ input:focus-visible {
     transform 260ms ease;
 }
 
-.smooth-message .markdown-content {
-  text-rendering: optimizeLegibility;
-}
-
-.smooth-message > div {
+.thought-chip {
   position: relative;
   overflow: hidden;
 }
 
-.smooth-message > div::after {
+.thought-chip.is-thinking::after {
   content: "";
   position: absolute;
-  right: 1rem;
-  bottom: 0.55rem;
-  left: 1rem;
-  height: 2px;
+  inset: 0;
   border-radius: 999px;
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(81, 109, 210, 0.08) 25%,
-    rgba(81, 109, 210, 0.48) 50%,
-    rgba(81, 109, 210, 0.08) 75%,
+    rgba(81, 109, 210, 0.06) 25%,
+    rgba(81, 109, 210, 0.22) 50%,
+    rgba(81, 109, 210, 0.06) 75%,
     transparent 100%
   );
-  opacity: 0.72;
+  opacity: 0.8;
   transform: translateX(-72%);
   animation: stream-sheen 1.45s ease-in-out infinite;
   pointer-events: none;
+}
+
+.thought-chip > * {
+  position: relative;
+  z-index: 1;
 }
 
 .streaming-cursor {
@@ -236,9 +234,9 @@ input:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .smooth-message > div::after {
+  .thought-chip.is-thinking::after {
     animation: none;
-    opacity: 0.28;
+    opacity: 0.22;
     transform: none;
   }
 
@@ -259,19 +257,28 @@ input:focus-visible {
   }
 
   .icon-button-ghost {
-    @apply inline-flex h-8 w-8 items-center justify-center rounded-xl text-app-muted transition hover:bg-white hover:text-app-text disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex h-8 w-8 items-center justify-center rounded-xl text-app-muted transition hover:bg-[#e8ecf3] hover:text-app-text disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .chip-muted {
     @apply inline-flex items-center rounded-full bg-white px-3 py-1 text-xs text-app-muted ring-1 ring-app-line;
   }
 
+  /* 中文注释：侧栏采用千问式轻灰底和紧凑 pill，避免运维台式白卡片堆叠。 */
+  .sidebar-section-title {
+    @apply px-2 text-[13px] font-semibold tracking-normal text-app-text/80;
+  }
+
+  .sidebar-list {
+    @apply space-y-1;
+  }
+
   .sidebar-item {
-    @apply flex w-full items-center gap-3 rounded-[18px] px-3 py-3 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60;
+    @apply flex w-full items-center gap-2.5 rounded-2xl px-3 py-2.5 text-app-text transition hover:bg-[#e8ecf3] disabled:cursor-not-allowed disabled:opacity-60;
   }
 
   .sidebar-item.active {
-    @apply bg-white shadow-soft ring-1 ring-app-line;
+    @apply bg-[#e3e7ef] shadow-none;
   }
 
   .dropdown-panel {

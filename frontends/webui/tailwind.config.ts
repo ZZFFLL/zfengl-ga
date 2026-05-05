@@ -6,25 +6,25 @@ export default {
     extend: {
       colors: {
         app: {
-          bg: "#f5f6f8",
-          sidebar: "#f6f7fa",
+          bg: "#f5f7fb",
+          sidebar: "#f1f3f8",
           panel: "#ffffff",
-          surface: "#fafbfe",
+          surface: "#f6f8fb",
           composer: "#fbfcff",
-          line: "#dfe5f1",
-          text: "#1f2430",
-          muted: "#6f7a92",
-          primary: "#516dd2",
+          line: "#d8deeb",
+          text: "#202532",
+          muted: "#657086",
+          primary: "#4f67c9",
           primarySoft: "#eef2ff",
           success: "#1f8a5b",
           danger: "#ca4141",
           warning: "#b77a1e",
-          userBubble: "#5b75d7"
+          userBubble: "#5870d2"
         }
       },
       boxShadow: {
-        panel: "0 18px 44px rgba(34, 44, 72, 0.1)",
-        soft: "0 8px 24px rgba(30, 38, 62, 0.06)"
+        panel: "0 18px 44px rgba(28, 37, 65, 0.08)",
+        soft: "0 6px 18px rgba(28, 37, 65, 0.045)"
       }
     }
   },

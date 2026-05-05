@@ -1,4 +1,4 @@
-import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
+import { CSSProperties, FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
@@ -10,6 +10,7 @@ import {
   Menu,
   MessageSquareText,
   MoreHorizontal,
+  PanelLeft,
   PauseCircle,
   Pin,
   PinOff,
@@ -54,10 +55,18 @@ import type {
 } from "./types";
 import {
   buildExecutionChipLabel,
+  buildExecutionPanelStateClassName,
   findLatestExecutionMessageId,
+  resolveExecutionChipRunning,
+  resolveExecutionPanelToggle,
   resolveExecutionTurns,
   shouldShowPendingAssistant,
 } from "./execution-panel-state";
+import {
+  buildBulkDeleteLabel,
+  pruneSelectedConversations,
+  toggleSelectedConversation,
+} from "./sidebar-selection";
 
 const nowLabel = () => new Date().toLocaleString();
 const id = () => Math.random().toString(36).slice(2);
@@ -317,7 +326,6 @@ function ExecutionSummaryContent({
               <div className="text-sm font-semibold text-app-text">Turn {turn.turn}</div>
               <div className="mt-1 text-xs text-app-muted">{turn.title}</div>
             </div>
-            <span className="rounded-full bg-white px-2 py-1 text-[11px] text-app-muted">摘要</span>
           </div>
           <div className="mt-4 border-t border-app-line/70 pt-4 text-sm leading-7 text-app-muted">
             {turn.content ? <MarkdownContent content={turn.content} /> : "此轮没有 summary。"}
@@ -356,7 +364,9 @@ function ExecutionChip({
   return (
     <button
       type="button"
-      className="mb-3 inline-flex items-center gap-2 rounded-full border border-app-line bg-app-surface px-3 py-2 text-sm text-app-muted transition hover:border-app-primary/30 hover:bg-white hover:text-app-text"
+      className={`thought-chip mb-3 inline-flex items-center gap-2 rounded-full border border-app-line bg-app-surface px-3 py-2 text-sm text-app-muted transition hover:border-app-primary/30 hover:bg-white hover:text-app-text ${
+        streaming ? "is-thinking" : ""
+      }`}
       onClick={onClick}
     >
       <Sparkles className="h-4 w-4 text-app-primary" />
@@ -380,17 +390,18 @@ function ChatMessageView({
 }) {
   const isUser = message.role === "user";
   const effectiveExecutionLog = resolveExecutionTurns(message, liveExecutionLog, streaming);
+  const executionChipRunning = resolveExecutionChipRunning(Boolean(message.pending), streaming);
   const isPendingAssistant =
     message.role === "assistant" &&
     shouldShowPendingAssistant(Boolean(message.pending), message.content, effectiveExecutionLog);
 
   return (
-    <article className={`flex ${isUser ? "justify-end" : "justify-start"} ${streaming ? "smooth-message" : ""}`}>
+    <article className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div className="max-w-[88%]">
         {!isUser ? (
           <ExecutionChip
             turns={effectiveExecutionLog}
-            streaming={streaming}
+            streaming={executionChipRunning}
             onClick={() => onOpenExecution(message.id)}
           />
         ) : null}
@@ -423,35 +434,33 @@ function ChatMessageView({
 function ExecutionPanel({
   message,
   turns,
-  running,
+  open,
   onClose,
 }: {
   message: UiMessage | null;
   turns: ExecutionTurn[];
-  running: boolean;
+  open: boolean;
   onClose: () => void;
 }) {
   return (
-    <aside className="hidden h-full min-h-0 overflow-hidden border-l border-app-line bg-white xl:flex xl:flex-col xl:w-[380px]">
+    <aside className={buildExecutionPanelStateClassName(open)}>
       {message ? (
         <>
-          <div className="flex items-start justify-between gap-4 border-b border-app-line px-5 py-5">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <Circle
-                  className={`h-3 w-3 ${running ? "fill-app-success text-app-success" : "fill-app-primary text-app-primary"}`}
-                />
-                <span className="text-sm font-semibold text-app-text">{running ? "正在思考" : "已完成思考"}</span>
-              </div>
-              <div className="mt-3 text-xs leading-6 text-app-muted">
-                这里单独展示当前这条回复的执行过程，不把摘要正文挤进聊天主区。
-              </div>
-            </div>
-            <button type="button" className="icon-button-subtle" onClick={onClose} aria-label="关闭执行过程">
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-          <div className="operation-scroll min-h-0 flex-1 overflow-y-auto px-5 py-5">
+          <button
+            type="button"
+            className={`absolute right-5 top-5 z-10 flex h-12 w-12 items-center justify-center rounded-full border border-app-line bg-white text-app-text shadow-panel transition-[opacity,transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-soft ${
+              open ? "opacity-100 translate-y-0" : "pointer-events-none opacity-0 -translate-y-1"
+            }`}
+            onClick={onClose}
+            aria-label="关闭执行过程"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          <div
+            className={`operation-scroll min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-24 transition-[opacity,transform] duration-200 ${
+              open ? "opacity-100 translate-x-0" : "pointer-events-none opacity-0 translate-x-2"
+            }`}
+          >
             <ExecutionSummaryContent turns={turns} />
           </div>
         </>
@@ -464,37 +473,29 @@ function ExecutionPanelDialog({
   open,
   message,
   turns,
-  running,
   onOpenChange,
 }: {
   open: boolean;
   message: UiMessage | null;
   turns: ExecutionTurn[];
-  running: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/28 xl:hidden" />
-        <Dialog.Content className="fixed inset-y-0 right-0 z-50 w-[min(92vw,420px)] bg-white shadow-panel xl:hidden">
+        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/28 backdrop-blur-[1px] xl:hidden" />
+        <Dialog.Content className="fixed inset-y-0 right-0 z-50 w-[min(92vw,420px)] bg-white shadow-panel transition-[transform,opacity] duration-300 ease-out xl:hidden data-[state=open]:translate-x-0 data-[state=open]:opacity-100 data-[state=closed]:translate-x-full data-[state=closed]:opacity-0">
           {open && message ? (
-            <div className="flex h-full min-h-0 flex-col">
-              <div className="flex items-start justify-between gap-4 border-b border-app-line px-5 py-5">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <Circle className={`h-3 w-3 ${running ? "fill-app-success text-app-success" : "fill-app-primary text-app-primary"}`} />
-                    <div className="text-sm font-semibold text-app-text">{running ? "正在思考" : "已完成思考"}</div>
-                  </div>
-                  <div className="mt-2 text-xs leading-6 text-app-muted">
-                    当前回复的执行过程会在这里查看，不占聊天正文空间。
-                  </div>
-                </div>
-                <button type="button" className="icon-button-subtle" onClick={() => onOpenChange(false)} aria-label="关闭执行过程">
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-              <div className="operation-scroll min-h-0 flex-1 overflow-y-auto px-5 py-5">
+            <div className="relative flex h-full min-h-0 flex-col">
+              <button
+                type="button"
+                className="absolute right-5 top-5 z-10 flex h-12 w-12 items-center justify-center rounded-full border border-app-line bg-white text-app-text shadow-panel transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-soft"
+                onClick={() => onOpenChange(false)}
+                aria-label="关闭执行过程"
+              >
+                <X className="h-5 w-5" />
+              </button>
+              <div className="operation-scroll min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-24">
                 <ExecutionSummaryContent turns={turns} />
               </div>
             </div>
@@ -628,6 +629,7 @@ function Composer({
 function TopBar({
   state,
   running,
+  conversationTitle,
   onOpenSidebar,
   onCreateConversation,
   onSwitchLlm,
@@ -639,6 +641,7 @@ function TopBar({
 }: {
   state: RuntimeState | null;
   running: boolean;
+  conversationTitle: string;
   onOpenSidebar: () => void;
   onCreateConversation: () => void;
   onSwitchLlm: (index: number) => void;
@@ -650,10 +653,10 @@ function TopBar({
 }) {
   return (
     <header className="shrink-0 border-b border-app-line/80 bg-white/90 backdrop-blur">
-      <div className="flex items-center gap-3 px-4 py-3 md:px-6">
+      <div className="flex min-h-[54px] items-center gap-3 px-4 py-2 md:px-6">
         <button
           type="button"
-          className="icon-button-subtle xl:hidden"
+          className="icon-button-subtle h-9 w-9 xl:hidden"
           aria-label="打开会话侧栏"
           onClick={onOpenSidebar}
         >
@@ -661,17 +664,13 @@ function TopBar({
         </button>
 
         <div className="min-w-0 flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-app-primarySoft text-app-primary">
-            <Sparkles className="h-5 w-5" />
-          </div>
           <div className="min-w-0">
-            <div className="truncate text-sm font-semibold text-app-text">GenericAgent</div>
-            <div className="truncate text-xs text-app-muted">聊天优先，GA 能力不减</div>
+            <div className="truncate text-sm font-semibold text-app-text">{conversationTitle}</div>
           </div>
         </div>
 
         <div className="ml-auto flex min-w-0 items-center gap-2">
-          <div className="hidden min-w-0 items-center gap-2 rounded-full border border-app-line bg-app-surface px-3 py-1.5 sm:flex">
+          <div className="hidden min-h-9 min-w-0 items-center gap-2 rounded-full border border-app-line bg-app-surface px-3 py-1 sm:flex">
             <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">
               Model
             </span>
@@ -694,7 +693,7 @@ function TopBar({
           {running ? (
             <button
               type="button"
-              className="inline-flex min-h-10 items-center gap-2 rounded-full bg-app-primary px-4 text-sm font-medium text-white"
+              className="inline-flex min-h-9 items-center gap-2 rounded-full bg-app-primary px-4 text-sm font-medium text-white"
               onClick={onAbort}
             >
               <Square className="h-4 w-4" />
@@ -704,7 +703,7 @@ function TopBar({
 
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>
-              <button type="button" className="icon-button-subtle" aria-label="更多 GA 操作">
+              <button type="button" className="icon-button-subtle h-9 w-9" aria-label="更多 GA 操作">
                 <MoreHorizontal className="h-5 w-5" />
               </button>
             </DropdownMenu.Trigger>
@@ -946,8 +945,15 @@ function ConversationSidebar({
   groups,
   activeConversationId,
   running,
+  collapsed = false,
+  selectingRecent = false,
+  selectedRecentIds = [],
+  onToggleCollapsed,
   onCreateConversation,
   onSelectConversation,
+  onToggleRecentSelection,
+  onToggleRecentConversation,
+  onBulkDeleteRecent,
   onRenameConversation,
   onDeleteConversation,
   onPinConversation,
@@ -961,8 +967,15 @@ function ConversationSidebar({
   groups: GroupSummary[];
   activeConversationId: string | null;
   running: boolean;
+  collapsed?: boolean;
+  selectingRecent?: boolean;
+  selectedRecentIds?: string[];
+  onToggleCollapsed?: () => void;
   onCreateConversation: () => void;
   onSelectConversation: (conversationId: string) => void;
+  onToggleRecentSelection?: () => void;
+  onToggleRecentConversation?: (conversationId: string) => void;
+  onBulkDeleteRecent?: () => void;
   onRenameConversation: (conversation: ConversationSummary) => void;
   onDeleteConversation: (conversation: ConversationSummary) => void;
   onPinConversation: (conversation: ConversationSummary, pinned: boolean) => void;
@@ -977,23 +990,57 @@ function ConversationSidebar({
     groups,
     conversations.filter((conversation) => !conversation.pinned),
   );
+  const selectedRecentSet = new Set(selectedRecentIds);
+
+  if (collapsed) {
+    return (
+      <aside className="flex h-full min-h-0 flex-col items-center border-r border-app-line/80 bg-app-sidebar px-2 py-3">
+        <button
+          type="button"
+          className="flex h-10 w-10 items-center justify-center rounded-[15px] text-app-text transition hover:bg-[#e8ecf3]"
+          aria-label="展开会话侧栏"
+          onClick={onToggleCollapsed}
+        >
+          <PanelLeft className="h-5 w-5" />
+        </button>
+        <button
+          type="button"
+          className="mt-2 flex h-10 w-10 items-center justify-center rounded-[15px] text-app-text transition hover:bg-[#e8ecf3] disabled:cursor-not-allowed disabled:opacity-50"
+          aria-label="新建对话"
+          onClick={onCreateConversation}
+          disabled={!state?.configured || running}
+        >
+          <Plus className="h-5 w-5" />
+        </button>
+      </aside>
+    );
+  }
 
   return (
-    <aside className="flex h-full min-h-0 flex-col border-r border-app-line bg-app-sidebar">
-      <div className="px-5 pb-4 pt-5">
+    <aside className="flex h-full min-h-0 flex-col border-r border-app-line/80 bg-app-sidebar">
+      <div className="px-4 pb-3 pt-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white text-app-primary shadow-soft">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[15px] bg-white/75 text-app-primary ring-1 ring-app-line/70">
             <Sparkles className="h-5 w-5" />
           </div>
-          <div className="min-w-0">
-            <h1 className="truncate text-xl font-semibold tracking-tight text-app-text">GenericAgent</h1>
-            <p className="mt-1 text-xs leading-6 text-app-muted">保留 GA 全部能力的聊天页封装。</p>
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-lg font-semibold tracking-tight text-app-text">GenericAgent</h1>
           </div>
+          {onToggleCollapsed ? (
+            <button
+              type="button"
+              className="icon-button-ghost"
+              aria-label="收起会话侧栏"
+              onClick={onToggleCollapsed}
+            >
+              <PanelLeft className="h-4 w-4" />
+            </button>
+          ) : null}
         </div>
 
         <button
           type="button"
-          className="mt-5 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full bg-white px-4 text-sm font-medium text-app-text shadow-soft ring-1 ring-app-line transition hover:bg-app-surface disabled:cursor-not-allowed disabled:opacity-50"
+          className="mt-4 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-full bg-white/75 px-4 text-sm font-medium text-app-text ring-1 ring-app-line/80 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
           onClick={onCreateConversation}
           disabled={!state?.configured || running}
         >
@@ -1002,14 +1049,14 @@ function ConversationSidebar({
         </button>
       </div>
 
-      <div className="operation-scroll min-h-0 flex-1 overflow-y-auto px-3 pb-6">
-        <div className="space-y-6">
+      <div className="operation-scroll min-h-0 flex-1 overflow-y-auto px-2 pb-4">
+        <div className="space-y-4">
           {pinned.length > 0 ? (
             <section>
-              <div className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">
+              <div className="sidebar-section-title mb-1.5">
                 置顶对话
               </div>
-              <div className="space-y-1.5">
+              <div className="sidebar-list">
                 {pinned.map((conversation) => (
                   <button
                     key={conversation.id}
@@ -1018,8 +1065,8 @@ function ConversationSidebar({
                     onClick={() => onSelectConversation(conversation.id)}
                     disabled={running && activeConversationId !== conversation.id}
                   >
-                    <div className="flex min-w-0 flex-1 items-start gap-3">
-                      <Pin className="mt-1 h-4 w-4 shrink-0 text-app-primary" />
+                    <div className="flex min-w-0 flex-1 items-start gap-2.5">
+                      <Pin className="mt-0.5 h-4 w-4 shrink-0 text-app-primary" />
                       <div className="min-w-0 flex-1 text-left">
                         <div className="truncate text-sm font-medium">{conversation.title}</div>
                         <div className="mt-1 truncate text-xs text-app-muted">{previewText(conversation.preview)}</div>
@@ -1041,8 +1088,8 @@ function ConversationSidebar({
           ) : null}
 
           <section>
-            <div className="mb-2 flex items-center justify-between px-3">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">对话分组</div>
+            <div className="mb-1.5 flex items-center justify-between px-2">
+              <div className="sidebar-section-title px-0">对话分组</div>
               <button
                 type="button"
                 className="icon-button-ghost"
@@ -1055,10 +1102,10 @@ function ConversationSidebar({
             </div>
 
             {grouped.map((group) => (
-              <div key={group.id} className="mb-4">
-                <div className="mb-1 flex items-center justify-between px-3">
-                  <div className="flex items-center gap-2 text-sm font-medium text-app-text">
-                    <Folder className="h-4 w-4 text-app-muted" />
+              <div key={group.id} className="mb-3">
+                <div className="mb-1 flex items-center justify-between px-2">
+                  <div className="flex items-center gap-2 text-[13px] font-medium text-app-text/90">
+                    <Folder className="h-3.5 w-3.5 text-app-muted" />
                     {group.name}
                   </div>
                   <DropdownMenu.Root>
@@ -1079,9 +1126,9 @@ function ConversationSidebar({
                     </DropdownMenu.Portal>
                   </DropdownMenu.Root>
                 </div>
-                <div className="space-y-1.5">
+                <div className="sidebar-list">
                   {group.conversations.length === 0 ? (
-                    <div className="rounded-2xl px-4 py-3 text-xs text-app-muted">分组里还没有会话</div>
+                    <div className="rounded-xl px-3 py-2 text-xs text-app-muted">分组里还没有会话</div>
                   ) : (
                     group.conversations.map((conversation) => (
                       <button
@@ -1111,31 +1158,71 @@ function ConversationSidebar({
               </div>
             ))}
 
-            <div className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">
-              最近对话
+            <div className="mb-1.5 flex items-center justify-between gap-2 px-2">
+              <div className="sidebar-section-title px-0">最近对话</div>
+              {ungrouped.length > 0 ? (
+                <div className="flex items-center gap-1">
+                  {selectingRecent ? (
+                    <button
+                      type="button"
+                      className="rounded-full px-2 py-1 text-[11px] font-medium text-app-danger transition hover:bg-[#e8ecf3] disabled:cursor-not-allowed disabled:opacity-40"
+                      disabled={selectedRecentIds.length === 0 || running}
+                      onClick={onBulkDeleteRecent}
+                    >
+                      {buildBulkDeleteLabel(selectedRecentIds.length)}
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="rounded-full px-2 py-1 text-[11px] font-medium text-app-muted transition hover:bg-[#e8ecf3] hover:text-app-text disabled:cursor-not-allowed disabled:opacity-40"
+                    disabled={running}
+                    onClick={onToggleRecentSelection}
+                  >
+                    {selectingRecent ? "取消" : "选择"}
+                  </button>
+                </div>
+              ) : null}
             </div>
-            <div className="space-y-1.5">
+            <div className="sidebar-list">
               {ungrouped.map((conversation) => (
                 <button
                   key={conversation.id}
                   type="button"
                   className={`sidebar-item ${activeConversationId === conversation.id ? "active" : ""}`}
-                  onClick={() => onSelectConversation(conversation.id)}
+                  onClick={() =>
+                    selectingRecent
+                      ? onToggleRecentConversation?.(conversation.id)
+                      : onSelectConversation(conversation.id)
+                  }
                   disabled={running && activeConversationId !== conversation.id}
                 >
+                  {selectingRecent ? (
+                    <span
+                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
+                        selectedRecentSet.has(conversation.id)
+                          ? "border-app-primary bg-app-primary text-white"
+                          : "border-app-line bg-white"
+                      }`}
+                      aria-hidden="true"
+                    >
+                      {selectedRecentSet.has(conversation.id) ? <span className="h-1.5 w-1.5 rounded-full bg-white" /> : null}
+                    </span>
+                  ) : null}
                   <div className="min-w-0 flex-1 text-left">
                     <div className="truncate text-sm font-medium">{conversation.title}</div>
                     <div className="mt-1 truncate text-xs text-app-muted">{previewText(conversation.preview)}</div>
                   </div>
-                  <ConversationActions
-                    conversation={conversation}
-                    groups={groups}
-                    running={running}
-                    onRename={onRenameConversation}
-                    onDelete={onDeleteConversation}
-                    onPin={onPinConversation}
-                    onMove={onMoveConversation}
-                  />
+                  {selectingRecent ? null : (
+                    <ConversationActions
+                      conversation={conversation}
+                      groups={groups}
+                      running={running}
+                      onRename={onRenameConversation}
+                      onDelete={onDeleteConversation}
+                      onPin={onPinConversation}
+                      onMove={onMoveConversation}
+                    />
+                  )}
                 </button>
               ))}
             </div>
@@ -1184,6 +1271,9 @@ export default function App() {
   const [continueResult, setContinueResult] = useState<ContinueCompatResult | null>(null);
   const [executionPanelOpen, setExecutionPanelOpen] = useState(false);
   const [selectedExecutionMessageId, setSelectedExecutionMessageId] = useState<string | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [selectingRecent, setSelectingRecent] = useState(false);
+  const [selectedRecentIds, setSelectedRecentIds] = useState<string[]>([]);
   const [streamAnimating, setStreamAnimating] = useState(false);
   const chatScrollRef = useRef<HTMLElement | null>(null);
   const streamRef = useRef<EventSource | null>(null);
@@ -1206,6 +1296,9 @@ export default function App() {
         Boolean(streamAnimating && selectedExecutionMessageId === messages[messages.length - 1]?.id),
       )
     : [];
+  const recentConversationIds = conversations
+    .filter((conversation) => !conversation.group_id && !conversation.pinned)
+    .map((conversation) => conversation.id);
 
   const syncConversationList = (nextState: RuntimeState | null) => {
     if (nextState?.conversations) {
@@ -1215,6 +1308,10 @@ export default function App() {
       setGroups(nextState.groups);
     }
   };
+
+  useEffect(() => {
+    setSelectedRecentIds((current) => pruneSelectedConversations(current, recentConversationIds));
+  }, [conversations]);
 
   const refreshState = async () => {
     try {
@@ -1414,6 +1511,35 @@ export default function App() {
     }
   };
 
+  const handleBulkDeleteRecent = async () => {
+    if (selectedRecentIds.length === 0) return;
+    if (!window.confirm(`确认删除选中的 ${selectedRecentIds.length} 个最近对话吗？`)) return;
+    // 中文注释：复用现有软删除接口逐个删除，避免为首版批量操作扩后端协议。
+    for (const conversationId of selectedRecentIds) {
+      await deleteConversation(conversationId);
+    }
+    setSelectingRecent(false);
+    setSelectedRecentIds([]);
+    const nextState = await fetchState();
+    setState(nextState);
+    syncConversationList(nextState);
+    const nextActiveId = nextState.active_conversation_id;
+    if (nextActiveId) {
+      const detail = await fetchConversation(nextActiveId);
+      const nextMessages = toUiMessages(detail);
+      setActiveConversation(detail);
+      setMessages(nextMessages);
+      setTurns(detail.execution_log ?? []);
+      setSelectedExecutionMessageId(findLatestExecutionMessageId(nextMessages));
+    } else {
+      setActiveConversation(null);
+      setMessages([]);
+      setTurns([]);
+      setExecutionPanelOpen(false);
+      setSelectedExecutionMessageId(null);
+    }
+  };
+
   const handlePinConversation = async (conversation: ConversationSummary, pinned: boolean) => {
     await pinConversation(conversation.id, pinned);
     const nextState = await fetchState();
@@ -1501,6 +1627,8 @@ export default function App() {
       const nextState = await fetchState();
       setState(nextState);
       syncConversationList(nextState);
+      const renamedDetail = await fetchConversation(conversationId);
+      setActiveConversation(renamedDetail);
       streamRef.current = streamTask(task_id, {
         onEvent: (payload: StreamEvent) => {
           if (payload.event === "message_delta") {
@@ -1583,8 +1711,9 @@ export default function App() {
   };
 
   const handleOpenExecutionPanel = (messageId: string) => {
-    setSelectedExecutionMessageId(messageId);
-    setExecutionPanelOpen(true);
+    const next = resolveExecutionPanelToggle(selectedExecutionMessageId, executionPanelOpen, messageId);
+    setSelectedExecutionMessageId(next.messageId);
+    setExecutionPanelOpen(next.open);
   };
 
   useEffect(() => {
@@ -1613,9 +1742,13 @@ export default function App() {
 
   return (
     <div
-      className={`grid h-screen h-dvh min-h-0 overflow-hidden bg-app-bg text-app-text ${
-        executionPanelOpen ? "xl:grid-cols-[280px_minmax(0,1fr)_380px]" : "xl:grid-cols-[280px_minmax(0,1fr)]"
-      }`}
+      style={
+        {
+          "--sidebar-width": sidebarCollapsed ? "76px" : "280px",
+          "--execution-width": executionPanelOpen ? "380px" : "0px",
+        } as CSSProperties
+      }
+      className="grid h-screen h-dvh min-h-0 overflow-hidden bg-app-bg text-app-text xl:grid-cols-[var(--sidebar-width)_minmax(0,1fr)_var(--execution-width)] xl:transition-[grid-template-columns] xl:duration-300 xl:ease-out"
     >
       <div className="hidden xl:block">
         <ConversationSidebar
@@ -1624,8 +1757,20 @@ export default function App() {
           groups={groups}
           activeConversationId={activeConversationId}
           running={running}
+          collapsed={sidebarCollapsed}
+          selectingRecent={selectingRecent}
+          selectedRecentIds={selectedRecentIds}
+          onToggleCollapsed={() => setSidebarCollapsed((current) => !current)}
           onCreateConversation={() => void handleCreateConversation()}
           onSelectConversation={(conversationId) => void openConversation(conversationId)}
+          onToggleRecentSelection={() => {
+            setSelectingRecent((current) => !current);
+            setSelectedRecentIds([]);
+          }}
+          onToggleRecentConversation={(conversationId) =>
+            setSelectedRecentIds((current) => toggleSelectedConversation(current, conversationId))
+          }
+          onBulkDeleteRecent={() => void handleBulkDeleteRecent()}
           onRenameConversation={(conversation) => void handleRenameConversation(conversation)}
           onDeleteConversation={(conversation) => void handleDeleteConversation(conversation)}
           onPinConversation={(conversation, pinned) => void handlePinConversation(conversation, pinned)}
@@ -1640,6 +1785,7 @@ export default function App() {
         <TopBar
           state={state}
           running={running}
+          conversationTitle={activeConversation?.summary.title || "新对话"}
           onOpenSidebar={() => setSidebarOpen(true)}
           onCreateConversation={() => void handleCreateConversation()}
           onSwitchLlm={(index) =>
@@ -1682,15 +1828,6 @@ export default function App() {
             />
           ) : (
             <div className="mx-auto flex min-h-full w-full max-w-[920px] flex-col px-6 pb-10 pt-8">
-              <div className="mb-8">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-app-muted">Conversation</div>
-                <h2 className="mt-3 text-[30px] font-semibold tracking-tight text-app-text">
-                  {activeConversation?.summary.title || "当前会话"}
-                </h2>
-                <p className="mt-3 text-sm leading-7 text-app-muted">
-                  模型切换、停止任务、重注入和兼容恢复入口都在顶部，执行摘要会附在对应回复下方。
-                </p>
-              </div>
               <div className="space-y-5">
                 {messages.map((message, index) => {
                   const isStreamingAssistant =
@@ -1723,14 +1860,12 @@ export default function App() {
         ) : null}
       </main>
 
-      {executionPanelOpen ? (
-        <ExecutionPanel
-          message={selectedExecutionMessage}
-          turns={selectedExecutionTurns}
-          running={running && selectedExecutionMessageId === latestExecutionMessageId}
-          onClose={() => setExecutionPanelOpen(false)}
-        />
-      ) : null}
+      <ExecutionPanel
+        message={selectedExecutionMessage}
+        turns={selectedExecutionTurns}
+        open={executionPanelOpen}
+        onClose={() => setExecutionPanelOpen(false)}
+      />
 
       <SidebarDialog open={sidebarOpen} onOpenChange={setSidebarOpen}>
         <div className="flex h-full min-h-0 flex-col">
@@ -1747,8 +1882,18 @@ export default function App() {
               groups={groups}
               activeConversationId={activeConversationId}
               running={running}
+              selectingRecent={selectingRecent}
+              selectedRecentIds={selectedRecentIds}
               onCreateConversation={() => void handleCreateConversation()}
               onSelectConversation={(conversationId) => void openConversation(conversationId)}
+              onToggleRecentSelection={() => {
+                setSelectingRecent((current) => !current);
+                setSelectedRecentIds([]);
+              }}
+              onToggleRecentConversation={(conversationId) =>
+                setSelectedRecentIds((current) => toggleSelectedConversation(current, conversationId))
+              }
+              onBulkDeleteRecent={() => void handleBulkDeleteRecent()}
               onRenameConversation={(conversation) => void handleRenameConversation(conversation)}
               onDeleteConversation={(conversation) => void handleDeleteConversation(conversation)}
               onPinConversation={(conversation, pinned) => void handlePinConversation(conversation, pinned)}
@@ -1776,7 +1921,6 @@ export default function App() {
         open={executionPanelOpen && !window.matchMedia("(min-width: 1280px)").matches}
         message={selectedExecutionMessage}
         turns={selectedExecutionTurns}
-        running={running && selectedExecutionMessageId === latestExecutionMessageId}
         onOpenChange={setExecutionPanelOpen}
       />
 

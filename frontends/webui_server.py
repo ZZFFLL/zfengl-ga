@@ -39,6 +39,7 @@ _FINAL_INFO_TRAIL_RE = re.compile(
     re.IGNORECASE,
 )
 _TOOL_START_RE = re.compile(r"🛠️ Tool:\s*`(?P<tool>[^`]+)`\s*📥 args:\s*", re.DOTALL)
+_JS_RESULT_RE = re.compile(r"\n*JS\s*执行结果\s*:\s*[\s\S]*\Z")
 
 
 def _consume_fenced_block(text):
@@ -97,6 +98,12 @@ def _strip_tool_trace_blocks(text):
     return "".join(result_parts)
 
 
+def _strip_process_only_tail(text):
+    """清理增量流里孤立出现的工具结果尾巴，避免过程日志闪进聊天正文。"""
+    cleaned = _JS_RESULT_RE.sub("", text or "")
+    return cleaned
+
+
 def _parse_tool_calls(text):
     """从单轮原始文本里提取工具调用、参数和结果。"""
     tool_calls = []
@@ -146,6 +153,7 @@ def strip_summary_blocks(text):
     cleaned = re.sub(r"\n*<summary>[\s\S]*\Z", "\n", cleaned)
     cleaned = _TURN_RE.sub("", cleaned)
     cleaned = _strip_tool_trace_blocks(cleaned)
+    cleaned = _strip_process_only_tail(cleaned)
     cleaned = _FINAL_INFO_BLOCK_RE.sub("", cleaned)
     cleaned = _FINAL_INFO_TRAIL_RE.sub("", cleaned)
     cleaned = _FINAL_INFO_LINE_RE.sub("", cleaned)
@@ -200,6 +208,64 @@ def _title_from_user_text(text, limit=28):
     if not text:
         return "新对话"
     return text[:limit]
+
+
+def _clean_generated_title(text, limit=28):
+    text = re.sub(r"^[#\-\s\"'“”《》]+|[#\-\s\"'“”《》]+$", "", text or "")
+    text = re.sub(r"\s+", " ", text).strip()
+    return text[:limit] or "新对话"
+
+
+def _is_error_generated_title(text):
+    # 中文注释：标题生成返回错误文本时只影响标题，不向前端保存 500 或异常内容。
+    text = re.sub(r"\s+", " ", (text or "").strip()).lower()
+    return (
+        text.startswith("!!!error")
+        or text.startswith("[!!!")
+        or "http 500" in text
+        or "invalid character" in text
+        or '"error"' in text
+    )
+
+
+def _consume_title_response(response):
+    if isinstance(response, str):
+        return response
+    return "".join(str(part) for part in response)
+
+
+def _title_message(prompt):
+    return {"role": "user", "content": [{"type": "text", "text": prompt}]}
+
+
+def _generate_conversation_title(agent, user_text):
+    """使用当前 LLM 生成标题；失败时回退到首条消息裁剪。"""
+    client = getattr(agent, "llmclient", None)
+    backend = getattr(client, "backend", None)
+    if backend is None or not hasattr(backend, "ask"):
+        return _title_from_user_text(user_text)
+
+    old_history = list(getattr(backend, "history", []) or [])
+    prompt = (
+        "请为下面这条用户消息生成一个中文会话标题。"
+        "要求：不超过14个汉字或28个字符，只输出标题，不要解释。\n\n"
+        f"用户消息：{user_text}"
+    )
+    try:
+        try:
+            # 中文注释：沿用 backend 当前 stream 配置，避免把 SSE 通道强行切成非流式 JSON 解析。
+            title = _consume_title_response(backend.ask(prompt))
+        except (AssertionError, TypeError):
+            # 中文注释：Native*Session.ask 只接受 Claude 结构消息；本地断言失败后再换形态，不先发错请求。
+            title = _consume_title_response(backend.ask(_title_message(prompt)))
+        if _is_error_generated_title(title):
+            return _title_from_user_text(user_text)
+        return _clean_generated_title(title)
+    except Exception:
+        return _title_from_user_text(user_text)
+    finally:
+        if hasattr(backend, "history"):
+            backend.history = old_history
 
 
 def _preview_from_text(text, limit=80):
@@ -646,6 +712,8 @@ class WebUITaskManager:
     def __init__(self, agent, store):
         self.agent = agent
         self.store = store
+        # 中文注释：标题生成器可在测试中注入；默认走当前 LLM，但不改变 GA backend 的流式配置。
+        self.title_generator = lambda prompt: _generate_conversation_title(self.agent, prompt)
         self.tasks = {}
         self.autonomous_enabled = False
         self.last_reply_time = 0
@@ -745,6 +813,13 @@ class WebUITaskManager:
             raise KeyError("conversation_not_found")
         if self.active_task() is not None:
             raise RuntimeError("task_running")
+
+        should_generate_title = len(detail["messages"]) == 0
+        if should_generate_title:
+            title = self.title_generator(prompt)
+            updated = self.store.update_conversation(request.conversation_id, title=title)
+            if updated is not None:
+                detail["summary"] = updated
 
         if self.active_conversation_id != request.conversation_id:
             self.activate_conversation(request.conversation_id)

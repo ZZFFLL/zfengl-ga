@@ -10,6 +10,7 @@ from frontends.webui_server import (
     GroupMoveRequest,
     SQLiteConversationStore,
     WebUITaskManager,
+    _generate_conversation_title,
     build_state,
     parse_execution_log,
     strip_summary_blocks,
@@ -61,6 +62,72 @@ class FakeAgent:
         output = queue.Queue()
         self.tasks.append((query, source, images or [], output))
         return output
+
+
+class StreamingTitleBackend:
+    def __init__(self):
+        self.history = ["keep"]
+        self.stream = True
+        self.ask_called = False
+        self.seen_stream = None
+        self.seen_message = None
+
+    def ask(self, message):
+        self.ask_called = True
+        self.seen_stream = self.stream
+        self.seen_message = message
+
+        def _gen():
+            yield "LLM 自动标题"
+
+        return _gen()
+
+
+class StreamingTitleAgent:
+    def __init__(self):
+        self.llmclient = FakeClient("title")
+        self.llmclient.backend = StreamingTitleBackend()
+
+
+class DictOnlyTitleBackend:
+    def __init__(self):
+        self.history = ["keep"]
+        self.stream = True
+        self.seen_message = None
+
+    def ask(self, message):
+        if not isinstance(message, dict):
+            raise AssertionError("dict message required")
+        self.seen_message = message
+
+        def _gen():
+            yield "结构化标题"
+
+        return _gen()
+
+
+class DictOnlyTitleAgent:
+    def __init__(self):
+        self.llmclient = FakeClient("title")
+        self.llmclient.backend = DictOnlyTitleBackend()
+
+
+class ErrorTextTitleBackend:
+    def __init__(self):
+        self.history = ["keep"]
+        self.stream = True
+
+    def ask(self, message):
+        def _gen():
+            yield '!!!Error: HTTP 500: {"error":{"message":"title failed"}}'
+
+        return _gen()
+
+
+class ErrorTextTitleAgent:
+    def __init__(self):
+        self.llmclient = FakeClient("title")
+        self.llmclient.backend = ErrorTextTitleBackend()
 
 
 class WebUILogParserTests(unittest.TestCase):
@@ -184,6 +251,40 @@ class WebUILogParserTests(unittest.TestCase):
         cleaned = strip_summary_blocks(text)
 
         self.assertEqual(cleaned, "")
+
+
+class WebUITitleGenerationTests(unittest.TestCase):
+    def test_generate_conversation_title_uses_llm_without_changing_stream_mode(self):
+        agent = StreamingTitleAgent()
+
+        title = _generate_conversation_title(agent, "帮我排查标题生成异常，并整理一下页面布局")
+
+        self.assertEqual(title, "LLM 自动标题")
+        self.assertTrue(agent.llmclient.backend.ask_called)
+        self.assertTrue(agent.llmclient.backend.seen_stream)
+        self.assertIsInstance(agent.llmclient.backend.seen_message, str)
+        self.assertTrue(agent.llmclient.backend.stream)
+        self.assertEqual(agent.llmclient.backend.history, ["keep"])
+
+    def test_generate_conversation_title_supports_dict_only_backend(self):
+        agent = DictOnlyTitleAgent()
+
+        title = _generate_conversation_title(agent, "帮我优化 GA WebUI")
+
+        self.assertEqual(title, "结构化标题")
+        self.assertEqual(agent.llmclient.backend.seen_message["role"], "user")
+        self.assertEqual(agent.llmclient.backend.seen_message["content"][0]["type"], "text")
+        self.assertTrue(agent.llmclient.backend.stream)
+        self.assertEqual(agent.llmclient.backend.history, ["keep"])
+
+    def test_generate_conversation_title_falls_back_when_backend_returns_error_text(self):
+        agent = ErrorTextTitleAgent()
+
+        title = _generate_conversation_title(agent, "帮我排查标题生成异常")
+
+        self.assertEqual(title, "帮我排查标题生成异常")
+        self.assertTrue(agent.llmclient.backend.stream)
+        self.assertEqual(agent.llmclient.backend.history, ["keep"])
 
 
 class SQLiteConversationStoreTests(unittest.TestCase):
@@ -328,6 +429,48 @@ class WebUITaskManagerTests(unittest.TestCase):
         self.assertEqual(events[1]["event"], "message_done")
         self.assertEqual(events[1]["content"], "最终答复")
 
+    def test_streaming_js_result_update_does_not_emit_message_delta(self):
+        conversation = self.store.create_conversation(initial_user_text="js result only")
+
+        task = self.manager.start_chat(
+            ChatStartRequest(
+                conversation_id=conversation["id"],
+                prompt="hello world",
+            )
+        )
+        task_id = task["task_id"]
+
+        output = self.agent.tasks[0][3]
+        output.put(
+            {
+                "next": (
+                    # 中文注释：真实流式闪入来自增量片段，片段里可能已经没有 Tool 头部。
+                    "JS 执行结果:\n"
+                    "{\n"
+                    '  "status": "error",\n'
+                    '  "msg": "没有可用的浏览器标签页，查L3记忆分析原因。"\n'
+                    "}\n"
+                ),
+                "source": "user",
+            }
+        )
+        output.put(
+            {
+                "done": (
+                    "**LLM Running (Turn 1) ...**\n"
+                    "<summary>\n检查浏览器状态\n</summary>\n"
+                    "最终答复"
+                ),
+                "source": "user",
+            }
+        )
+
+        events = list(self.manager.drain_task(task_id, timeout=0.01))
+
+        self.assertEqual(events[0]["event"], "execution_update")
+        self.assertEqual(events[1]["event"], "message_done")
+        self.assertEqual(events[1]["content"], "最终答复")
+
     def test_streaming_partial_summary_does_not_emit_message_delta(self):
         conversation = self.store.create_conversation(initial_user_text="partial summary")
 
@@ -356,6 +499,35 @@ class WebUITaskManagerTests(unittest.TestCase):
         self.assertEqual(events[0]["event"], "execution_update")
         self.assertEqual(events[1]["event"], "message_done")
         self.assertEqual(events[1]["content"], "最终答复")
+
+    def test_start_chat_generates_title_only_for_first_user_message(self):
+        generated_prompts = []
+        self.manager.title_generator = lambda prompt: generated_prompts.append(prompt) or "LLM 概括标题"
+        conversation = self.store.create_conversation()
+
+        task = self.manager.start_chat(
+            ChatStartRequest(
+                conversation_id=conversation["id"],
+                prompt="帮我整理今天的 WebUI 优化点",
+            )
+        )
+        detail = self.store.get_conversation_detail(conversation["id"])
+        self.assertEqual(detail["summary"]["title"], "LLM 概括标题")
+        self.assertEqual(generated_prompts, ["帮我整理今天的 WebUI 优化点"])
+
+        output = self.agent.tasks[-1][3]
+        output.put({"done": "第一轮答复", "source": "user"})
+        list(self.manager.drain_task(task["task_id"], timeout=0.01))
+
+        self.manager.start_chat(
+            ChatStartRequest(
+                conversation_id=conversation["id"],
+                prompt="继续补充动画细节",
+            )
+        )
+        detail = self.store.get_conversation_detail(conversation["id"])
+        self.assertEqual(detail["summary"]["title"], "LLM 概括标题")
+        self.assertEqual(generated_prompts, ["帮我整理今天的 WebUI 优化点"])
 
     def test_switching_conversation_resets_agent_before_next_send(self):
         first = self.store.create_conversation(initial_user_text="first")
