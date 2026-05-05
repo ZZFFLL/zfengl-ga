@@ -9,6 +9,7 @@ const moduleUrl = pathToFileURL(
 const {
   buildExecutionChipLabel,
   findLatestExecutionMessageId,
+  shouldShowPendingAssistant,
   resolveExecutionTurns,
 } = await import(moduleUrl);
 
@@ -41,6 +42,12 @@ test("buildExecutionChipLabel reflects running and completed states", () => {
   assert.equal(buildExecutionChipLabel(persistedTurns, true), "正在思考");
   assert.equal(buildExecutionChipLabel(persistedTurns, false), "已完成思考");
   assert.equal(buildExecutionChipLabel([], false), null);
+});
+
+test("shouldShowPendingAssistant stays visible while streaming even before turns arrive", () => {
+  assert.equal(shouldShowPendingAssistant(true, "", []), true);
+  assert.equal(shouldShowPendingAssistant(true, "最终答复", []), false);
+  assert.equal(shouldShowPendingAssistant(false, "", persistedTurns), false);
 });
 
 test("findLatestExecutionMessageId returns the latest assistant reply with execution turns", () => {

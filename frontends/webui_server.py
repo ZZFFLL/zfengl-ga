@@ -26,14 +26,6 @@ DEFAULT_GROUP_NAME = "未分组"
 _TURN_RE = re.compile(r"\**LLM Running \(Turn (\d+)\) \.\.\.\**")
 _SUMMARY_RE = re.compile(r"<summary>\s*(.*?)\s*</summary>", re.DOTALL)
 _SUMMARY_BLOCK_RE = re.compile(r"\n*<summary>\s*.*?\s*</summary>\n*", re.DOTALL)
-_TOOL_BLOCK_RE = re.compile(
-    r"(?:^|\n)🛠️ Tool:.*?(?=\n{2,}(?!``)|\Z)",
-    re.DOTALL,
-)
-_ACTION_BLOCK_RE = re.compile(
-    r"(?:^|\n)`````.*?\[Action\].*?`````\s*",
-    re.DOTALL,
-)
 _FINAL_INFO_BLOCK_RE = re.compile(
     r"\n*`{3,}\s*\n?\[Info\]\s*Final response to user\.\s*\n?`{3,}\s*$",
     re.IGNORECASE,
@@ -46,19 +38,124 @@ _FINAL_INFO_TRAIL_RE = re.compile(
     r"\n*\[Info\]\s*Final response to user\.\s*(?:`{3,}\s*)*\Z",
     re.IGNORECASE,
 )
+_TOOL_START_RE = re.compile(r"🛠️ Tool:\s*`(?P<tool>[^`]+)`\s*📥 args:\s*", re.DOTALL)
+
+
+def _consume_fenced_block(text):
+    """提取 markdown fenced block 正文，并返回剩余文本。"""
+    match = re.match(r"\s*(?P<fence>`{3,})(?P<info>[^\n]*)\n", text or "")
+    if not match:
+        return "", text
+    fence = match.group("fence")
+    start = match.end()
+    end_marker = f"\n{fence}"
+    end = (text or "").find(end_marker, start)
+    if end < 0:
+        return "", text
+    body = (text or "")[start:end].strip()
+    remainder = (text or "")[end + len(end_marker):]
+    return body, remainder
+
+
+def _strip_tool_trace_blocks(text):
+    """移除 GA 渲染给前端的工具调用块，避免正文被过程日志淹没。"""
+    source = text or ""
+    result_parts = []
+    cursor = 0
+    while True:
+        match = _TOOL_START_RE.search(source, cursor)
+        if match is None:
+            result_parts.append(source[cursor:])
+            break
+        result_parts.append(source[cursor:match.start()])
+        cursor = match.end()
+
+        # 中文注释：工具参数通常是第一个 fenced block。
+        _, remainder = _consume_fenced_block(source[cursor:])
+        if remainder != source[cursor:]:
+            cursor = len(source) - len(remainder)
+
+        # 中文注释：工具结果可能跟着 1 个或多个 fenced block，一并吞掉。
+        while True:
+            stripped = source[cursor:].lstrip()
+            cursor += len(source[cursor:]) - len(stripped)
+            _, next_remainder = _consume_fenced_block(stripped)
+            if next_remainder == stripped:
+                if stripped.startswith("`") and (
+                    "[Action]" in stripped
+                    or "[Status]" in stripped
+                    or "[Stdout]" in stripped
+                    or "[Stderr]" in stripped
+                ):
+                    cursor = len(source)
+                break
+            cursor += len(stripped) - len(next_remainder)
+
+        while cursor < len(source) and source[cursor] in "\r\n":
+            cursor += 1
+
+    return "".join(result_parts)
+
+
+def _parse_tool_calls(text):
+    """从单轮原始文本里提取工具调用、参数和结果。"""
+    tool_calls = []
+    for chunk in re.split(r"(?=🛠️ Tool:\s*`)", text or ""):
+        if not chunk.strip().startswith("🛠️ Tool:"):
+            continue
+        tool_match = _TOOL_START_RE.match(chunk.strip())
+        if not tool_match:
+            continue
+        tool_name = tool_match.group("tool").strip()
+        remainder = chunk.strip()[tool_match.end():]
+        args_text, remainder = _consume_fenced_block(remainder)
+        result_text = ""
+        if remainder.strip().startswith("`"):
+            result_text, remainder = _consume_fenced_block(remainder)
+        action_line = next(
+            (
+                line.replace("[Action]", "").strip()
+                for line in (result_text or "").splitlines()
+                if line.strip().startswith("[Action]")
+            ),
+            "",
+        )
+        status_line = next(
+            (
+                line.replace("[Status]", "").strip()
+                for line in (result_text or "").splitlines()
+                if line.strip().startswith("[Status]")
+            ),
+            "",
+        )
+        tool_calls.append(
+            {
+                "tool": tool_name,
+                "args": args_text,
+                "result": result_text.strip(),
+                "action": action_line,
+                "status": status_line,
+            }
+        )
+    return tool_calls
 
 
 def strip_summary_blocks(text):
     """移除聊天展示里不应直接显示的 summary 规划块。"""
     cleaned = _SUMMARY_BLOCK_RE.sub("\n", text or "")
+    cleaned = re.sub(r"\n*<summary>[\s\S]*\Z", "\n", cleaned)
     cleaned = _TURN_RE.sub("", cleaned)
-    cleaned = _TOOL_BLOCK_RE.sub("\n", cleaned)
-    cleaned = _ACTION_BLOCK_RE.sub("\n", cleaned)
+    cleaned = _strip_tool_trace_blocks(cleaned)
     cleaned = _FINAL_INFO_BLOCK_RE.sub("", cleaned)
     cleaned = _FINAL_INFO_TRAIL_RE.sub("", cleaned)
     cleaned = _FINAL_INFO_LINE_RE.sub("", cleaned)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     return cleaned.strip()
+
+
+def extract_visible_reply_text(text):
+    """提取真正应该渲染到聊天主区的最终答复正文。"""
+    return strip_summary_blocks(text)
 
 
 def parse_execution_log(text):
@@ -73,12 +170,20 @@ def parse_execution_log(text):
         summary_match = _SUMMARY_RE.search(content)
         title = f"LLM Running (Turn {turn})"
         summary = ""
+        tool_calls = _parse_tool_calls(content)
         if summary_match:
             summary = summary_match.group(1).strip()
             first_line = next((line.strip() for line in summary.splitlines() if line.strip()), "")
             if first_line:
                 title = first_line[:80]
-        turns.append({"turn": turn, "title": title, "content": summary})
+        turns.append(
+            {
+                "turn": turn,
+                "title": title,
+                "content": summary,
+                "tool_calls": tool_calls,
+            }
+        )
     return turns
 
 
@@ -679,13 +784,14 @@ class WebUITaskManager:
             if "next" in item:
                 task.current_response = item["next"]
                 task.execution_log = parse_execution_log(task.current_response)
-                cleaned = strip_summary_blocks(task.current_response)
-                # 中文注释：聊天区只吃清洗后的正文，执行摘要则单独通过 execution_update 事件发送。
-                yield {
-                    "event": "message_delta",
-                    "content": cleaned,
-                    "conversation_id": task.conversation_id,
-                }
+                cleaned = extract_visible_reply_text(task.current_response)
+                # 中文注释：message_delta 只传真正的聊天正文；若当前只有执行过程则不发正文事件。
+                if cleaned:
+                    yield {
+                        "event": "message_delta",
+                        "content": cleaned,
+                        "conversation_id": task.conversation_id,
+                    }
                 yield {
                     "event": "execution_update",
                     "execution_log": task.execution_log,
@@ -697,7 +803,7 @@ class WebUITaskManager:
                 task.completed_at = time.time()
                 self.last_reply_time = int(task.completed_at)
                 task.execution_log = parse_execution_log(task.current_response)
-                cleaned = strip_summary_blocks(task.current_response)
+                cleaned = extract_visible_reply_text(task.current_response)
                 self.store.add_message(
                     task.conversation_id,
                     "assistant",

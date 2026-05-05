@@ -25,6 +25,15 @@ export function buildExecutionChipLabel(turns: ExecutionTurn[], streaming: boole
   return streaming ? "正在思考" : "已完成思考";
 }
 
+// 中文注释：assistant 正在执行但正文尚未到达时，也要稳定显示占位提示。
+export function shouldShowPendingAssistant(
+  pending: boolean,
+  content: string,
+  _executionLog: ExecutionTurn[],
+) {
+  return pending && !content.trim();
+}
+
 // 中文注释：打开执行过程面板时，默认定位到最后一条带执行摘要的 assistant 回复。
 export function findLatestExecutionMessageId(messages: ExecutionMessageLike[]) {
   for (let index = messages.length - 1; index >= 0; index -= 1) {

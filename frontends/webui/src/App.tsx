@@ -56,6 +56,7 @@ import {
   buildExecutionChipLabel,
   findLatestExecutionMessageId,
   resolveExecutionTurns,
+  shouldShowPendingAssistant,
 } from "./execution-panel-state";
 
 const nowLabel = () => new Date().toLocaleString();
@@ -77,6 +78,7 @@ type UiMessage = {
   content: string;
   time: string;
   executionLog: ExecutionTurn[];
+  pending?: boolean;
 };
 
 type ContinueCompatResult = {
@@ -86,8 +88,7 @@ type ContinueCompatResult = {
 
 const FINAL_INFO_BLOCK_RE = /\n*`{3,}\s*\n?\[Info\]\s*Final response to user\.\s*\n?`{3,}\s*$/i;
 const FINAL_INFO_TRAIL_RE = /\n*\[Info\]\s*Final response to user\.\s*(?:`{3,}\s*)*$/i;
-const TOOL_BLOCK_RE = /(?:^|\n)🛠️ Tool:.*?(?=\n{2,}(?!`)|$)/gs;
-const ACTION_BLOCK_RE = /(?:^|\n)`````.*?\[Action\].*?`````\s*/gs;
+const TOOL_START_RE = /🛠️ Tool:\s*`([^`]+)`\s*📥 args:\s*/g;
 
 const graphemeSegmenter = (() => {
   const Segmenter = (Intl as typeof Intl & { Segmenter?: GraphemeSegmenterConstructor }).Segmenter;
@@ -127,12 +128,65 @@ function formatMessageTime(raw: string) {
 
 function sanitizeDisplayText(text: string) {
   let cleaned = text || "";
-  cleaned = cleaned.replace(TOOL_BLOCK_RE, "\n");
-  cleaned = cleaned.replace(ACTION_BLOCK_RE, "\n");
+  cleaned = stripToolTraceBlocks(cleaned);
   cleaned = cleaned.replace(FINAL_INFO_BLOCK_RE, "");
   cleaned = cleaned.replace(FINAL_INFO_TRAIL_RE, "");
   cleaned = cleaned.replace(/\n{3,}/g, "\n\n");
   return cleaned.trim();
+}
+
+function consumeFencedBlock(text: string) {
+  const match = /^\s*(`{3,})([^\n]*)\n/.exec(text);
+  if (!match) return { body: "", remainder: text };
+  const fence = match[1];
+  const start = match[0].length;
+  const endMarker = `\n${fence}`;
+  const end = text.indexOf(endMarker, start);
+  if (end < 0) return { body: "", remainder: text };
+  return {
+    body: text.slice(start, end).trim(),
+    remainder: text.slice(end + endMarker.length),
+  };
+}
+
+function stripToolTraceBlocks(text: string) {
+  const source = text || "";
+  const parts: string[] = [];
+  let cursor = 0;
+
+  while (cursor < source.length) {
+    TOOL_START_RE.lastIndex = cursor;
+    const match = TOOL_START_RE.exec(source);
+    if (!match) {
+      parts.push(source.slice(cursor));
+      break;
+    }
+    parts.push(source.slice(cursor, match.index));
+    cursor = TOOL_START_RE.lastIndex;
+
+    const argsBlock = consumeFencedBlock(source.slice(cursor));
+    if (argsBlock.remainder !== source.slice(cursor)) {
+      cursor = source.length - argsBlock.remainder.length;
+    }
+
+    while (cursor < source.length) {
+      const leading = source.slice(cursor);
+      const trimmed = leading.replace(/^\s+/, "");
+      const consumedWs = leading.length - trimmed.length;
+      cursor += consumedWs;
+      const block = consumeFencedBlock(source.slice(cursor));
+      if (block.remainder === source.slice(cursor)) {
+        break;
+      }
+      cursor = source.length - block.remainder.length;
+    }
+
+    while (cursor < source.length && /[\r\n]/.test(source[cursor])) {
+      cursor += 1;
+    }
+  }
+
+  return parts.join("");
 }
 
 function previewText(text: string) {
@@ -201,6 +255,52 @@ function MarkdownContent({
   );
 }
 
+function ExecutionToolCallCard({
+  toolCall,
+}: {
+  toolCall: ExecutionTurn["tool_calls"][number];
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <section className="rounded-[18px] border border-app-line/70 bg-white">
+      <button
+        type="button"
+        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+        onClick={() => setOpen((value) => !value)}
+      >
+        <div className="min-w-0">
+          <div className="truncate text-sm font-medium text-app-text">🛠️ {toolCall.tool}</div>
+          <div className="mt-1 truncate text-xs text-app-muted">
+            {toolCall.status || toolCall.action || "查看工具调用详情"}
+          </div>
+        </div>
+        <ChevronDown className={`h-4 w-4 shrink-0 text-app-muted transition ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open ? (
+        <div className="space-y-3 border-t border-app-line/70 px-4 py-4">
+          {toolCall.args ? (
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">Args</div>
+              <pre className="mt-2 overflow-x-auto rounded-2xl bg-slate-900 px-4 py-3 text-xs leading-6 text-slate-100">
+                <code>{toolCall.args}</code>
+              </pre>
+            </div>
+          ) : null}
+          {toolCall.result ? (
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">Result</div>
+              <pre className="mt-2 overflow-x-auto rounded-2xl bg-slate-900 px-4 py-3 text-xs leading-6 text-slate-100">
+                <code>{toolCall.result}</code>
+              </pre>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function ExecutionSummaryContent({
   turns,
 }: {
@@ -222,6 +322,19 @@ function ExecutionSummaryContent({
           <div className="mt-4 border-t border-app-line/70 pt-4 text-sm leading-7 text-app-muted">
             {turn.content ? <MarkdownContent content={turn.content} /> : "此轮没有 summary。"}
           </div>
+          {turn.tool_calls.length > 0 ? (
+            <div className="mt-4 space-y-3 border-t border-app-line/70 pt-4">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">
+                工具调用
+              </div>
+              {turn.tool_calls.map((toolCall, toolIndex) => (
+                <ExecutionToolCallCard
+                  key={`${turn.turn}-${toolCall.tool}-${toolIndex}`}
+                  toolCall={toolCall}
+                />
+              ))}
+            </div>
+          ) : null}
         </section>
       ))}
     </div>
@@ -267,6 +380,9 @@ function ChatMessageView({
 }) {
   const isUser = message.role === "user";
   const effectiveExecutionLog = resolveExecutionTurns(message, liveExecutionLog, streaming);
+  const isPendingAssistant =
+    message.role === "assistant" &&
+    shouldShowPendingAssistant(Boolean(message.pending), message.content, effectiveExecutionLog);
 
   return (
     <article className={`flex ${isUser ? "justify-end" : "justify-start"} ${streaming ? "smooth-message" : ""}`}>
@@ -288,7 +404,12 @@ function ChatMessageView({
           <div className={`mb-2 text-xs ${isUser ? "text-white/70" : "text-app-muted"}`}>
             {isUser ? "你" : message.role === "system" ? "System" : "GA"} · {message.time}
           </div>
-          {isUser ? (
+          {isPendingAssistant ? (
+            <div className="flex items-center gap-3 text-sm text-app-muted">
+              <span className="inline-flex h-2.5 w-2.5 rounded-full bg-app-primary animate-pulse" />
+              <span>任务执行中...</span>
+            </div>
+          ) : isUser ? (
             <div className="message-content text-sm leading-7">{message.content}</div>
           ) : (
             <MarkdownContent content={message.content} streaming={streaming} />
@@ -331,10 +452,6 @@ function ExecutionPanel({
             </button>
           </div>
           <div className="operation-scroll min-h-0 flex-1 overflow-y-auto px-5 py-5">
-            <div className="mb-4 rounded-[22px] border border-app-line bg-white px-4 py-4">
-              <div className="text-xs font-medium uppercase tracking-[0.18em] text-app-muted">Reply</div>
-              <div className="mt-2 text-sm leading-7 text-app-text">{previewText(message.content)}</div>
-            </div>
             <ExecutionSummaryContent turns={turns} />
           </div>
         </>
@@ -378,10 +495,6 @@ function ExecutionPanelDialog({
                 </button>
               </div>
               <div className="operation-scroll min-h-0 flex-1 overflow-y-auto px-5 py-5">
-                <div className="mb-4 rounded-[22px] border border-app-line bg-white px-4 py-4">
-                  <div className="text-xs font-medium uppercase tracking-[0.18em] text-app-muted">Reply</div>
-                  <div className="mt-2 text-sm leading-7 text-app-text">{previewText(message.content)}</div>
-                </div>
                 <ExecutionSummaryContent turns={turns} />
               </div>
             </div>
@@ -1152,14 +1265,17 @@ export default function App() {
   }
 
   function updateStreamingAssistant(content: string) {
+    if (!content.trim()) {
+      return;
+    }
     streamDisplayedRef.current = content;
     setMessages((items) => {
       const copy = [...items];
       const last = copy[copy.length - 1];
       if (last?.role === "assistant") {
-        copy[copy.length - 1] = { ...last, content };
+        copy[copy.length - 1] = { ...last, content, pending: false };
       } else {
-        copy.push({ id: id(), role: "assistant", content, time: nowLabel(), executionLog: [] });
+        copy.push({ id: id(), role: "assistant", content, time: nowLabel(), executionLog: [], pending: false });
       }
       return copy;
     });
@@ -1197,19 +1313,20 @@ export default function App() {
   }
 
   function queueStreamingAssistant(content: string, done = false) {
-    streamTargetRef.current = content;
+    const cleanedContent = sanitizeDisplayText(content);
+    streamTargetRef.current = cleanedContent;
     streamDoneRef.current = streamDoneRef.current || done;
     if (prefersReducedMotion()) {
       cancelStreamingFrame();
-      updateStreamingAssistant(content);
+      updateStreamingAssistant(cleanedContent);
       setStreamAnimating(false);
       return;
     }
-    if (streamDisplayedRef.current === content) {
+    if (streamDisplayedRef.current === cleanedContent) {
       setStreamAnimating(!streamDoneRef.current);
       return;
     }
-    if (done && content.startsWith(streamDisplayedRef.current)) {
+    if (done && cleanedContent.startsWith(streamDisplayedRef.current)) {
       streamLastStepAtRef.current = 0;
     }
     setStreamAnimating(true);
@@ -1368,7 +1485,15 @@ export default function App() {
       time: nowLabel(),
       executionLog: [],
     };
-    setMessages((items) => [...items, userMessage]);
+    const pendingAssistantMessage: UiMessage = {
+      id: id(),
+      role: "assistant",
+      content: "",
+      time: nowLabel(),
+      executionLog: [],
+      pending: true,
+    };
+    setMessages((items) => [...items, userMessage, pendingAssistantMessage]);
     scrollChatToBottom("smooth");
 
     try {
@@ -1393,7 +1518,7 @@ export default function App() {
               const copy = [...items];
               const last = copy[copy.length - 1];
               if (last?.role === "assistant") {
-                copy[copy.length - 1] = { ...last, executionLog: payload.execution_log };
+                copy[copy.length - 1] = { ...last, executionLog: payload.execution_log, pending: true };
               }
               return copy;
             });

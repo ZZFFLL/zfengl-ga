@@ -80,9 +80,44 @@ class WebUILogParserTests(unittest.TestCase):
         self.assertEqual(turns[0]["turn"], 1)
         self.assertEqual(turns[0]["title"], "Inspect files")
         self.assertEqual(turns[0]["content"], "Inspect files\nThen decide")
+        self.assertEqual(turns[0]["tool_calls"], [])
         self.assertEqual(turns[1]["turn"], 2)
         self.assertEqual(turns[1]["title"], "LLM Running (Turn 2)")
         self.assertEqual(turns[1]["content"], "")
+        self.assertEqual(turns[1]["tool_calls"], [])
+
+    def test_parse_execution_log_extracts_tool_calls_without_final_answer(self):
+        text = (
+            "**LLM Running (Turn 1) ...**\n"
+            "<summary>\n先检查目录内容\n</summary>\n"
+            "🛠️ Tool: `code_run`  📥 args:\n"
+            "````text\n"
+            "{\n"
+            '  "script": "ls -la temp/model_responses/ 2>/dev/null | tail -10",\n'
+            '  "type": "powershell"\n'
+            "}\n"
+            "````\n"
+            "`````\n"
+            "[Action] Running powershell in temp: ls -la temp/model_responses/ 2>/dev/null | tail -10\n"
+            "[Status] ❌ Exit Code: 1\n"
+            "[Stdout]\n"
+            "out-file : 未能找到路径“E:\\dev\\null”的一部分。\n"
+            "`````\n\n"
+            "你好！请问有什么需要帮忙的吗？"
+        )
+
+        turns = parse_execution_log(text)
+
+        self.assertEqual(turns[0]["content"], "先检查目录内容")
+        self.assertEqual(len(turns[0]["tool_calls"]), 1)
+        self.assertEqual(turns[0]["tool_calls"][0]["tool"], "code_run")
+        self.assertIn('"type": "powershell"', turns[0]["tool_calls"][0]["args"])
+        self.assertIn("[Status] ❌ Exit Code: 1", turns[0]["tool_calls"][0]["result"])
+        self.assertEqual(
+            turns[0]["tool_calls"][0]["action"],
+            "Running powershell in temp: ls -la temp/model_responses/ 2>/dev/null | tail -10",
+        )
+        self.assertEqual(turns[0]["tool_calls"][0]["status"], "❌ Exit Code: 1")
 
     def test_strip_summary_blocks_keeps_non_summary_content(self):
         text = (
@@ -133,6 +168,22 @@ class WebUILogParserTests(unittest.TestCase):
         cleaned = strip_summary_blocks(text)
 
         self.assertEqual(cleaned, "你好！请问有什么需要帮忙的吗？")
+
+    def test_strip_summary_blocks_drops_incomplete_streaming_tool_output(self):
+        text = (
+            "🛠️ Tool: `code_run`  📥 args:\n"
+            "````text\n"
+            "{\n"
+            '  "script": "Start-Sleep -Seconds 5; Write-Host \\"等待完成\\""\n'
+            "}\n"
+            "````\n"
+            "`````\n"
+            "[Action] Running powershell in temp: Start-Sleep -Seconds 5; Write-Host \"等待完成\"\n"
+        )
+
+        cleaned = strip_summary_blocks(text)
+
+        self.assertEqual(cleaned, "")
 
 
 class SQLiteConversationStoreTests(unittest.TestCase):
@@ -242,6 +293,69 @@ class WebUITaskManagerTests(unittest.TestCase):
         self.assertEqual(detail["messages"][1]["role"], "assistant")
         self.assertEqual(detail["messages"][1]["content"], "final")
         self.assertEqual(detail["execution_log"][0]["content"], "Plan the response")
+
+    def test_streaming_tool_only_update_does_not_emit_message_delta(self):
+        conversation = self.store.create_conversation(initial_user_text="tool only")
+
+        task = self.manager.start_chat(
+            ChatStartRequest(
+                conversation_id=conversation["id"],
+                prompt="hello world",
+            )
+        )
+        task_id = task["task_id"]
+
+        output = self.agent.tasks[0][3]
+        output.put(
+            {
+                "next": (
+                    "**LLM Running (Turn 1) ...**\n"
+                    "🛠️ Tool: `code_run`  📥 args:\n"
+                    "````text\n"
+                    '{"script": "Start-Sleep -Seconds 5; Write-Host \\"等待完成\\""}\n'
+                    "````\n"
+                    "`````\n"
+                    "[Action] Running powershell in temp: Start-Sleep -Seconds 5; Write-Host \"等待完成\"\n"
+                ),
+                "source": "user",
+            }
+        )
+        output.put({"done": "最终答复", "source": "user"})
+
+        events = list(self.manager.drain_task(task_id, timeout=0.01))
+
+        self.assertEqual(events[0]["event"], "execution_update")
+        self.assertEqual(events[1]["event"], "message_done")
+        self.assertEqual(events[1]["content"], "最终答复")
+
+    def test_streaming_partial_summary_does_not_emit_message_delta(self):
+        conversation = self.store.create_conversation(initial_user_text="partial summary")
+
+        task = self.manager.start_chat(
+            ChatStartRequest(
+                conversation_id=conversation["id"],
+                prompt="hello world",
+            )
+        )
+        task_id = task["task_id"]
+
+        output = self.agent.tasks[0][3]
+        output.put(
+            {
+                "next": (
+                    "**LLM Running (Turn 1) ...**\n"
+                    "<summary>\n用户想让我在chrome浏览器打开B站"
+                ),
+                "source": "user",
+            }
+        )
+        output.put({"done": "最终答复", "source": "user"})
+
+        events = list(self.manager.drain_task(task_id, timeout=0.01))
+
+        self.assertEqual(events[0]["event"], "execution_update")
+        self.assertEqual(events[1]["event"], "message_done")
+        self.assertEqual(events[1]["content"], "最终答复")
 
     def test_switching_conversation_resets_agent_before_next_send(self):
         first = self.store.create_conversation(initial_user_text="first")

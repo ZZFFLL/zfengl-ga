@@ -1,3 +1,11 @@
+export type ExecutionToolCall = {
+  tool: string;
+  args: string;
+  result: string;
+  action: string;
+  status: string;
+};
+
 export type LlmInfo = {
   index: number;
   name: string;
@@ -8,6 +16,7 @@ export type ExecutionTurn = {
   turn: number;
   title: string;
   content: string;
+  tool_calls: ExecutionToolCall[];
 };
 
 export type GroupSummary = {
