@@ -10,6 +10,18 @@ from llmcore import reload_mykeys, LLMSession, ToolClient, ClaudeSession, MixinS
 from agent_loop import agent_runner_loop
 from ga import GenericAgentHandler, smart_format, get_global_memory, format_error, consume_file
 
+# MemPalace bridge: lazy import, fails gracefully if not installed
+_get_palace_bridge = None
+def _palace_bridge():
+    global _get_palace_bridge
+    try:
+        if _get_palace_bridge is None:
+            from memory.palace_bridge import get_bridge
+            _get_palace_bridge = get_bridge
+        return _get_palace_bridge() if _get_palace_bridge else None
+    except Exception:
+        return None
+
 script_dir = os.path.dirname(os.path.abspath(__file__))
 def load_tool_schema(suffix=''):
     global TOOLS_SCHEMA
@@ -33,10 +45,24 @@ if not os.path.exists(cdp_cfg):
         open(cdp_cfg, 'w', encoding='utf-8').write(f"const TID = '__ljq_{hex(random.randint(0, 99999999))[2:8]}';")
     except Exception as e: print(f'[WARN] CDP config init failed: {e} — advanced web features (tmwebdriver) will be unavailable.')
 
-def get_system_prompt():
+def get_system_prompt(query=None):
     with open(os.path.join(script_dir, f'assets/sys_prompt{lang_suffix}.txt'), 'r', encoding='utf-8') as f: prompt = f.read()
     prompt += f"\nToday: {time.strftime('%Y-%m-%d %a')}\n"
     prompt += get_global_memory()
+    # MemPalace: inject relevant past conversation context at wakeup
+    if query:
+        try:
+            bridge = _palace_bridge()
+            if bridge:
+                results = bridge.search(query, n_results=3)
+                if results:
+                    prompt += "\n\n[MemPalace] 历史相关对话（逐字持久化）:\n"
+                    for r in results:
+                        meta = r.get("metadata", {})
+                        snippet = r["text"][:200].replace('\n', ' ')
+                        prompt += f"- [{meta.get('role','?')}] {snippet}\n"
+        except Exception:
+            pass
     return prompt
 
 class GeneraticAgent:
@@ -135,7 +161,7 @@ class GeneraticAgent:
             rquery = smart_format(raw_query.replace('\n', ' '), max_str_len=200)
             self.history.append(f"[USER]: {rquery}")
             
-            sys_prompt = get_system_prompt() + getattr(self.llmclient.backend, 'extra_sys_prompt', '')
+            sys_prompt = get_system_prompt(raw_query) + getattr(self.llmclient.backend, 'extra_sys_prompt', '')
             if self.peer_hint: sys_prompt += f"\n[Peer] 用户提及其他会话/后台任务状态时: temp/model_responses/ (只找近期修改的文件尾部)\n"
             handler = GenericAgentHandler(self, self.history, os.path.join(script_dir, 'temp'))
             if self.handler and 'key_info' in self.handler.working: 
@@ -161,6 +187,15 @@ class GeneraticAgent:
                 if '</file_content>' in full_resp: full_resp = re.sub(r'<file_content>\s*(.*?)\s*</file_content>', r'\n````\n<file_content>\n\1\n</file_content>\n````', full_resp, flags=re.DOTALL)                
                 display_queue.put({'done': full_resp, 'source': source})
                 self.history = handler.history_info
+                # MemPalace: store this turn verbatim for future retrieval
+                try:
+                    bridge = _palace_bridge()
+                    if bridge:
+                        sess = self.task_dir or time.strftime('%Y-%m-%d')
+                        if sess: sess = os.path.basename(sess) if self.task_dir else sess
+                        bridge.store_turn(sess, 'user', raw_query)
+                        bridge.store_turn(sess, 'assistant', full_resp)
+                except Exception: pass
             except Exception as e:
                 print(f"Backend Error: {format_error(e)}")
                 display_queue.put({'done': full_resp + f'\n```\n{format_error(e)}\n```', 'source': source})
