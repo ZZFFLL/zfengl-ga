@@ -370,6 +370,26 @@ class MemPalaceExperienceBridgeTests(unittest.TestCase):
         self.assertNotIn("solution", context)
         self.assertNotIn("新增经验抽取层", context)
 
+    def test_session_facts_context_skips_occurred_at_noise(self):
+        from memory.palace_bridge import PalaceBridge
+
+        bridge = PalaceBridge(palace_path="unused", kg_path="unused")
+
+        class FakeKG:
+            def timeline(self):
+                return [
+                    {"subject": "s1", "predicate": "occurred_at", "object": "2026-05-06 10:00:00"},
+                    {"subject": "s1", "predicate": "uses_tool", "object": "file_read"},
+                    {"subject": "user", "predicate": "prefers", "object": "用rg搜索文件"},
+                ]
+
+        bridge._kg = FakeKG()
+        context = bridge.get_session_facts_context(max_facts=8)
+
+        self.assertIn("user prefers 用rg搜索文件", context)
+        self.assertIn("s1 uses_tool file_read", context)
+        self.assertNotIn("occurred_at", context)
+
     def test_experience_context_prefers_recent_global_timeline_facts(self):
         from memory.palace_bridge import PalaceBridge
 

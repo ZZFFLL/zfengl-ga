@@ -49,6 +49,7 @@ EXPERIENCE_PREDICATES = {
     "verification",
     "lesson_learned",
 }
+PROMPT_KG_PREDICATES = {"prefers", "dislikes", "uses_tool", "decided"}
 
 
 class PalaceBridge:
@@ -407,9 +408,12 @@ class PalaceBridge:
 
         lines = ["[MemPalace KG] 实体关系图谱:"]
         seen = set()
+        selected_count = 0
         for f in facts:
             s, p, o = (f.get('subject','?'), f.get('predicate','?'),
                        f.get('object','?'))
+            if p not in PROMPT_KG_PREDICATES:
+                continue
             if p in EXPERIENCE_PREDICATES:
                 continue
             key = (s, p, o)
@@ -418,12 +422,13 @@ class PalaceBridge:
             seen.add(key)
             valid = f.get('valid_from', '')
             lines.append(f"- {s} {p} {o}" + (f" (since {valid})" if valid else ""))
-            if len(seen) >= max_facts:
+            selected_count += 1
+            if selected_count >= max_facts:
                 break
-        if not seen:
+        if not selected_count:
             return ""
         result = '\n'.join(lines)
-        print(f"[MemPalace] 🧠 KG context injected ({len(seen)} facts)")
+        print(f"[MemPalace] 🧠 KG context injected ({selected_count} facts)")
         return result
 
     def get_experience_context(self, session_id: str = None,
