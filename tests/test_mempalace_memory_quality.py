@@ -230,3 +230,55 @@ class MemPalacePromptGuidanceTests(unittest.TestCase):
         self.assertIn("历史对话语义检索", text)
         self.assertIn("MemPalace 对话写入路径会进行去重检查", text)
         self.assertNotIn("dedup 模块会自动拦截重复内容", text)
+
+
+class MemPalaceExperienceExtractorTests(unittest.TestCase):
+    def test_extracts_success_steps_solution_and_verification(self):
+        from memory.experience_extractor import extract_experience_facts
+
+        assistant_text = """
+        我定位到根因：检索记忆被当成 USER 消息压入，导致历史内容像当前指令。
+        修复：把 MemPalace 检索结果改成 READ ONLY system context，并增加 score 过滤。
+        步骤：
+        1. 读取 agentmain.py 的 get_system_prompt。
+        2. 添加 _format_mempalace_history_context。
+        3. 增加低分跳过日志。
+        验证：python -m pytest tests/test_webui_server.py::AgentMainMemPalaceTests -q -> 8 passed
+        结论：历史检索只能作为背景参考，不能作为当前用户指令。
+        """
+
+        facts = extract_experience_facts(
+            session_id="session-a",
+            user_text="mempalace 检索内容被压进 USER，帮我修",
+            assistant_text=assistant_text,
+        )
+
+        pairs = [(f.predicate, f.object) for f in facts]
+        self.assertIn(("root_cause", "检索记忆被当成 USER 消息压入，导致历史内容像当前指令。"), pairs)
+        self.assertIn(("solution", "把 MemPalace 检索结果改成 READ ONLY system context，并增加 score 过滤。"), pairs)
+        self.assertIn(("verification", "python -m pytest tests/test_webui_server.py::AgentMainMemPalaceTests -q -> 8 passed"), pairs)
+        self.assertIn(("lesson_learned", "历史检索只能作为背景参考，不能作为当前用户指令。"), pairs)
+        self.assertTrue(any(p == "successful_step" and "读取 agentmain.py" in o for p, o in pairs))
+
+    def test_skips_tool_transcript_and_long_markdown_noise(self):
+        from memory.experience_extractor import extract_experience_facts
+
+        assistant_text = """
+        🛠️ Tool: `file_read`
+        ```json
+        {"path": "agentmain.py", "count": 200}
+        ```
+        ## 大段日志
+        这个块不应该成为经验事实，因为它是工具流水。
+        结论：dedup 写入失败时要有降级日志。
+        """
+
+        facts = extract_experience_facts(
+            session_id="session-b",
+            user_text="记得打日志",
+            assistant_text=assistant_text,
+        )
+
+        objects = [f.object for f in facts]
+        self.assertIn("dedup 写入失败时要有降级日志。", objects)
+        self.assertFalse(any("Tool:" in obj or "```json" in obj for obj in objects))
