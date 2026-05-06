@@ -2,8 +2,11 @@ import os
 import queue
 import sqlite3
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 from frontends.webui_server import (
     ChatStartRequest,
@@ -128,6 +131,65 @@ class ErrorTextTitleAgent:
     def __init__(self):
         self.llmclient = FakeClient("title")
         self.llmclient.backend = ErrorTextTitleBackend()
+
+
+class AgentMainMemPalaceTests(unittest.TestCase):
+    def test_done_releases_running_before_mempalace_storage_finishes(self):
+        import agentmain
+        from unittest import mock
+
+        store_started = threading.Event()
+        release_store = threading.Event()
+
+        class BlockingBridge:
+            def store_turn(self, *_args, **_kwargs):
+                store_started.set()
+                release_store.wait(timeout=5)
+
+            def extract_conversation_facts(self, *_args, **_kwargs):
+                pass
+
+        def fake_runner_loop(*_args, **_kwargs):
+            yield "final answer"
+
+        agent = object.__new__(agentmain.GeneraticAgent)
+        agent.task_queue = queue.Queue()
+        agent.task_dir = None
+        agent.history = []
+        agent.handler = None
+        agent.is_running = False
+        agent.stop_sig = False
+        agent.inc_out = False
+        agent.verbose = False
+        agent.peer_hint = False
+        agent.llmclient = SimpleNamespace(
+            backend=SimpleNamespace(extra_sys_prompt="", history=[]),
+            last_tools="",
+        )
+
+        handler = SimpleNamespace(working={}, history_info=["final history"], code_stop_signal=[])
+
+        with mock.patch("agentmain.get_system_prompt", return_value=""), mock.patch(
+            "agentmain.GenericAgentHandler", return_value=handler
+        ), mock.patch("agentmain.agent_runner_loop", fake_runner_loop), mock.patch(
+            "agentmain._palace_bridge", return_value=BlockingBridge()
+        ):
+            worker = threading.Thread(target=agent.run, daemon=True)
+            worker.start()
+            output = agent.put_task("hello", source="user")
+
+            try:
+                done = output.get(timeout=2)
+                self.assertEqual(done["done"], "final answer")
+                self.assertTrue(store_started.wait(timeout=2))
+
+                deadline = time.time() + 0.5
+                while agent.is_running and time.time() < deadline:
+                    time.sleep(0.01)
+
+                self.assertFalse(agent.is_running)
+            finally:
+                release_store.set()
 
 
 class WebUILogParserTests(unittest.TestCase):

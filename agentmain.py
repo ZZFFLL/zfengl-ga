@@ -22,6 +22,26 @@ def _palace_bridge():
     except Exception:
         return None
 
+def _store_mempalace_turn(session_id, raw_query, full_resp):
+    try:
+        bridge = _palace_bridge()
+        if bridge:
+            bridge.store_turn(session_id, 'user', raw_query)
+            bridge.store_turn(session_id, 'assistant', full_resp)
+            bridge.extract_conversation_facts(session_id, raw_query, full_resp)
+    except Exception:
+        pass
+
+def _store_mempalace_turn_async(task_dir, raw_query, full_resp):
+    sess = task_dir or time.strftime('%Y-%m-%d')
+    if sess: sess = os.path.basename(sess) if task_dir else sess
+    threading.Thread(
+        target=_store_mempalace_turn,
+        args=(sess, raw_query, full_resp),
+        daemon=True,
+        name='MemPalaceStore',
+    ).start()
+
 script_dir = os.path.dirname(os.path.abspath(__file__))
 def load_tool_schema(suffix=''):
     global TOOLS_SCHEMA
@@ -191,16 +211,8 @@ class GeneraticAgent:
                 if '</file_content>' in full_resp: full_resp = re.sub(r'<file_content>\s*(.*?)\s*</file_content>', r'\n````\n<file_content>\n\1\n</file_content>\n````', full_resp, flags=re.DOTALL)                
                 display_queue.put({'done': full_resp, 'source': source})
                 self.history = handler.history_info
-                # MemPalace: store this turn verbatim for future retrieval
-                try:
-                    bridge = _palace_bridge()
-                    if bridge:
-                        sess = self.task_dir or time.strftime('%Y-%m-%d')
-                        if sess: sess = os.path.basename(sess) if self.task_dir else sess
-                        bridge.store_turn(sess, 'user', raw_query)
-                        bridge.store_turn(sess, 'assistant', full_resp)
-                        bridge.extract_conversation_facts(sess, raw_query, full_resp)
-                except Exception: pass
+                # MemPalace post-processing must not keep the chat task in running state.
+                _store_mempalace_turn_async(self.task_dir, raw_query, full_resp)
             except Exception as e:
                 print(f"Backend Error: {format_error(e)}")
                 display_queue.put({'done': full_resp + f'\n```\n{format_error(e)}\n```', 'source': source})
