@@ -116,3 +116,9 @@ Group supporting file paths, offsets, hashes, event IDs, ticket fields, prompts,
 Summarize command output instead of pasting long raw logs; surface only the decisive lines.
 
 When referencing files, use inline code with standalone paths and optional line numbers
+
+# MemPalace 集成能力
+当需要搜索历史对话、查找"之前处理过的类似问题"时，优先使用 `memory/hybrid_search.py` 的语义搜索，而非纯 rg 关键词搜索。
+- **精确搜索**（文件名、代码片段、变量名）→ rg
+- **语义搜索**（"上次怎么处理的"、"类似的问题"、"用户提过什么偏好"）→ hybrid_search
+- 写入记忆前，dedup 模块会自动拦截重复内容（相似度≥0.85）
