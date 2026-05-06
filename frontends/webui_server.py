@@ -208,6 +208,10 @@ def _render_ask_user_tool_call(tool_call):
 
 def render_message_content(content, execution_log=None, role=None):
     """统一生成消息主区正文，兼容历史空 assistant 消息的 ask_user 回填。"""
+    if role == "assistant":
+        ask_user_visible = _render_ask_user_visible_text(content)
+        if ask_user_visible:
+            return ask_user_visible
     cleaned = sanitize_message_content(content)
     if cleaned:
         return cleaned
@@ -245,10 +249,13 @@ def strip_summary_blocks(text):
 
 def extract_visible_reply_text(text):
     """提取真正应该渲染到聊天主区的最终答复正文。"""
+    ask_user_visible = _render_ask_user_visible_text(text)
+    if ask_user_visible:
+        return ask_user_visible
     cleaned = sanitize_message_content(text)
     if cleaned:
         return cleaned
-    return _render_ask_user_visible_text(text)
+    return ""
 
 
 def parse_execution_log(text):

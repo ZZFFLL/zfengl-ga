@@ -633,6 +633,57 @@ class WebUILogParserTests(unittest.TestCase):
         self.assertNotIn("Waiting for your answer", cleaned)
         self.assertNotIn("🛠️ Tool:", cleaned)
 
+    def test_extract_visible_reply_text_prefers_ask_user_projection_over_prefix_text(self):
+        text = (
+            '浏览器已连接，当前在163邮箱页面。\n\n"好看的"范围挺广，帮你确认下方向：\n'
+            "**LLM Running (Turn 2) ...**\n"
+            "🛠️ Tool: `ask_user`  📥 args:\n"
+            "````text\n"
+            "{\n"
+            '  "candidates": [\n'
+            '    "高清壁纸/风景摄影（Unsplash、Pexels）",\n'
+            '    "设计灵感/创意作品（Dribbble、Behance）",\n'
+            '    "科技资讯/数码评测",\n'
+            '    "短视频/娱乐内容",\n'
+            '    "其他（你来说）"\n'
+            "  ],\n"
+            '  "question": "想找什么类型的\\"好看\\"内容？"\n'
+            "}\n"
+            "````\n"
+            "`````\n"
+            "Waiting for your answer ...\n"
+            "`````"
+        )
+
+        cleaned = extract_visible_reply_text(text)
+
+        self.assertIn('想找什么类型的"好看"内容？', cleaned)
+        self.assertIn("1. 高清壁纸/风景摄影（Unsplash、Pexels）", cleaned)
+        self.assertIn("5. 其他（你来说）", cleaned)
+        self.assertNotIn("浏览器已连接，当前在163邮箱页面。", cleaned)
+        self.assertNotIn('"好看的"范围挺广，帮你确认下方向：', cleaned)
+
+    def test_extract_visible_reply_text_parses_ask_user_when_candidates_precede_question(self):
+        text = (
+            "**LLM Running (Turn 2) ...**\n"
+            "🛠️ Tool: `ask_user`  📥 args:\n"
+            "````text\n"
+            "{\n"
+            '  "candidates": ["A", "B"],\n'
+            '  "question": "请确认选项"\n'
+            "}\n"
+            "````\n"
+            "`````\n"
+            "Waiting for your answer ...\n"
+            "`````"
+        )
+
+        cleaned = extract_visible_reply_text(text)
+
+        self.assertIn("请确认选项", cleaned)
+        self.assertIn("1. A", cleaned)
+        self.assertIn("2. B", cleaned)
+
     def test_extract_visible_reply_text_strips_file_content_blocks_from_chat_body(self):
         text = (
             "好，开始实施剩余 3 项。\n"
@@ -1018,6 +1069,50 @@ class WebUITaskManagerTests(unittest.TestCase):
         self.assertEqual(events[2]["event"], "message_done")
         self.assertIn("2. 未安装", events[2]["content"])
         self.assertIn("3. 需要协助", events[2]["content"])
+
+    def test_streaming_ask_user_update_overrides_prefix_text_with_candidates(self):
+        conversation = self.store.create_conversation(initial_user_text="ask user")
+
+        task = self.manager.start_chat(
+            ChatStartRequest(
+                conversation_id=conversation["id"],
+                prompt="hello world",
+            )
+        )
+        task_id = task["task_id"]
+
+        output = self.agent.tasks[0][3]
+        output.put(
+            {
+                "next": (
+                    '浏览器已连接，当前在163邮箱页面。\n\n"好看的"范围挺广，帮你确认下方向：\n'
+                    "**LLM Running (Turn 2) ...**\n"
+                    "🛠️ Tool: `ask_user`  📥 args:\n"
+                    "````text\n"
+                    "{\n"
+                    '  "candidates": [\n'
+                    '    "高清壁纸/风景摄影（Unsplash、Pexels）",\n'
+                    '    "设计灵感/创意作品（Dribbble、Behance）",\n'
+                    '    "科技资讯/数码评测"\n'
+                    "  ],\n"
+                    '  "question": "想找什么类型的\\"好看\\"内容？"\n'
+                    "}\n"
+                    "````\n"
+                    "`````\n"
+                    "Waiting for your answer ...\n"
+                    "`````"
+                ),
+                "source": "user",
+            }
+        )
+        output.put({"done": "", "source": "user"})
+
+        events = list(self.manager.drain_task(task_id, timeout=0.01))
+
+        self.assertEqual(events[0]["event"], "message_delta")
+        self.assertIn('想找什么类型的"好看"内容？', events[0]["content"])
+        self.assertIn("1. 高清壁纸/风景摄影（Unsplash、Pexels）", events[0]["content"])
+        self.assertNotIn("浏览器已连接，当前在163邮箱页面。", events[0]["content"])
 
     def test_start_chat_generates_title_only_for_first_user_message(self):
         generated_prompts = []
