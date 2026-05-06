@@ -542,6 +542,251 @@ class WebUILogParserTests(unittest.TestCase):
         )
         self.assertEqual(turns[0]["tool_calls"][0]["status"], "❌ Exit Code: 1")
 
+    def test_tool_contract_code_run_process_stays_in_execution_panel(self):
+        text = (
+            "**LLM Running (Turn 1) ...**\n"
+            "<summary>\n运行脚本验证环境\n</summary>\n"
+            "🛠️ Tool: `code_run`  📥 args:\n"
+            "````text\n"
+            "{\n"
+            '  "type": "powershell",\n'
+            '  "script": "Write-Host ok"\n'
+            "}\n"
+            "````\n"
+            "`````\n"
+            "[Action] Running powershell in temp: Write-Host ok\n"
+            "[Status] ✅ Exit Code: 0\n"
+            "[Stdout]\n"
+            "ok\n"
+            "`````\n\n"
+            "环境验证完成。"
+        )
+
+        visible = extract_visible_reply_text(text)
+        turns = parse_execution_log(text)
+
+        self.assertEqual(visible, "环境验证完成。")
+        self.assertEqual(turns[0]["content"], "运行脚本验证环境")
+        self.assertEqual(turns[0]["tool_calls"][0]["tool"], "code_run")
+        self.assertIn('"script": "Write-Host ok"', turns[0]["tool_calls"][0]["args"])
+        self.assertIn("[Stdout]\nok", turns[0]["tool_calls"][0]["result"])
+        self.assertNotIn("🛠️ Tool:", visible)
+        self.assertNotIn("[Stdout]", visible)
+
+    def test_tool_contract_file_read_result_stays_in_execution_panel(self):
+        text = (
+            "**LLM Running (Turn 1) ...**\n"
+            "<summary>\n读取配置文件\n</summary>\n"
+            "🛠️ Tool: `file_read`  📥 args:\n"
+            "````text\n"
+            "{\n"
+            '  "path": "mykey.py",\n'
+            '  "start": 1,\n'
+            '  "count": 20\n'
+            "}\n"
+            "````\n"
+            "`````\n"
+            "[Action] Reading file: E:\\zfengl-ai-project\\GenericAgent\\mykey.py\n"
+            "由于设置了show_linenos，以下返回信息为：(行号|)内容 。\n"
+            "1|api_key = \"secret\"\n"
+            "`````\n\n"
+            "已读取配置，下一步检查模型设置。"
+        )
+
+        visible = extract_visible_reply_text(text)
+        turns = parse_execution_log(text)
+
+        self.assertEqual(visible, "已读取配置，下一步检查模型设置。")
+        self.assertEqual(turns[0]["tool_calls"][0]["tool"], "file_read")
+        self.assertIn("1|api_key", turns[0]["tool_calls"][0]["result"])
+        self.assertNotIn("api_key", visible)
+        self.assertNotIn("show_linenos", visible)
+
+    def test_tool_contract_file_patch_status_stays_in_execution_panel(self):
+        text = (
+            "**LLM Running (Turn 1) ...**\n"
+            "<summary>\n修改前端滚动逻辑\n</summary>\n"
+            "🛠️ Tool: `file_patch`  📥 args:\n"
+            "````text\n"
+            "{\n"
+            '  "path": "frontends/webui/src/App.tsx",\n'
+            '  "old_content": "scrollChatToBottom();",\n'
+            '  "new_content": "scrollChatToBottomIfPinned();"\n'
+            "}\n"
+            "````\n"
+            "`````\n"
+            "[Action] Patching file: E:\\zfengl-ai-project\\GenericAgent\\frontends\\webui\\src\\App.tsx\n"
+            "{'status': 'success', 'patched': 1}\n"
+            "`````\n\n"
+            "滚动逻辑已收敛。"
+        )
+
+        visible = extract_visible_reply_text(text)
+        turns = parse_execution_log(text)
+
+        self.assertEqual(visible, "滚动逻辑已收敛。")
+        self.assertEqual(turns[0]["tool_calls"][0]["tool"], "file_patch")
+        self.assertIn("patched", turns[0]["tool_calls"][0]["result"])
+        self.assertNotIn("old_content", visible)
+        self.assertNotIn("Patching file", visible)
+
+    def test_tool_contract_file_write_content_stays_out_of_chat_body(self):
+        text = (
+            "**LLM Running (Turn 1) ...**\n"
+            "<summary>\n写入新文件\n</summary>\n"
+            "<file_content>\n"
+            "SECRET = 'do-not-render'\n"
+            "</file_content>\n"
+            "🛠️ Tool: `file_write`  📥 args:\n"
+            "````text\n"
+            "{\n"
+            '  "path": "temp/generated.py",\n'
+            '  "mode": "overwrite"\n'
+            "}\n"
+            "````\n"
+            "`````\n"
+            "[Action] Overwriting file: generated.py\n"
+            "[Status] ✅ Overwrite 成功 (24 bytes)\n"
+            "`````\n\n"
+            "文件已写入。"
+        )
+
+        visible = extract_visible_reply_text(text)
+        turns = parse_execution_log(text)
+
+        self.assertEqual(visible, "文件已写入。")
+        self.assertEqual(turns[0]["tool_calls"][0]["tool"], "file_write")
+        self.assertIn("generated.py", turns[0]["tool_calls"][0]["result"])
+        self.assertNotIn("<file_content>", visible)
+        self.assertNotIn("do-not-render", visible)
+
+    def test_tool_contract_web_scan_html_stays_in_execution_panel(self):
+        text = (
+            "**LLM Running (Turn 1) ...**\n"
+            "<summary>\n扫描浏览器页面\n</summary>\n"
+            "🛠️ Tool: `web_scan`  📥 args:\n"
+            "````text\n"
+            "{\n"
+            '  "text_only": false\n'
+            "}\n"
+            "````\n"
+            "`````\n"
+            "[Info] {'tabs': [{'id': '1', 'title': 'Example'}]}\n"
+            "```html\n"
+            "<html><body><h1>页面正文</h1></body></html>\n"
+            "```\n"
+            "`````\n\n"
+            "页面扫描完成。"
+        )
+
+        visible = extract_visible_reply_text(text)
+        turns = parse_execution_log(text)
+
+        self.assertEqual(visible, "页面扫描完成。")
+        self.assertEqual(turns[0]["tool_calls"][0]["tool"], "web_scan")
+        self.assertIn("<h1>页面正文</h1>", turns[0]["tool_calls"][0]["result"])
+        self.assertNotIn("<html>", visible)
+        self.assertNotIn("tabs", visible)
+
+    def test_tool_contract_web_execute_js_result_stays_in_execution_panel(self):
+        text = (
+            "**LLM Running (Turn 1) ...**\n"
+            "<summary>\n执行浏览器脚本\n</summary>\n"
+            "🛠️ Tool: `web_execute_js`  📥 args:\n"
+            "````text\n"
+            "{\n"
+            '  "script": "return document.title",\n'
+            '  "switch_tab_id": "1"\n'
+            "}\n"
+            "````\n"
+            "`````\n"
+            "JS 执行结果:\n"
+            "{\n"
+            '  "status": "success",\n'
+            '  "js_return": "Inbox"\n'
+            "}\n"
+            "`````\n\n"
+            "脚本执行完成。"
+        )
+
+        visible = extract_visible_reply_text(text)
+        turns = parse_execution_log(text)
+
+        self.assertEqual(visible, "脚本执行完成。")
+        self.assertEqual(turns[0]["tool_calls"][0]["tool"], "web_execute_js")
+        self.assertIn('"js_return": "Inbox"', turns[0]["tool_calls"][0]["result"])
+        self.assertNotIn("JS 执行结果", visible)
+        self.assertNotIn("Inbox", visible)
+
+    def test_tool_contract_update_working_checkpoint_stays_in_execution_panel(self):
+        text = (
+            "**LLM Running (Turn 1) ...**\n"
+            "<summary>\n更新短期工作记忆\n</summary>\n"
+            "🛠️ Tool: `update_working_checkpoint`  📥 args:\n"
+            "````text\n"
+            "{\n"
+            '  "key_info": "用户要求只做后端契约测试",\n'
+            '  "related_sop": "webui"\n'
+            "}\n"
+            "````\n"
+            "`````\n"
+            "[Info] Updated key_info and related_sop.\n"
+            "`````\n\n"
+            "我会按这个约束继续。"
+        )
+
+        visible = extract_visible_reply_text(text)
+        turns = parse_execution_log(text)
+
+        self.assertEqual(visible, "我会按这个约束继续。")
+        self.assertEqual(turns[0]["tool_calls"][0]["tool"], "update_working_checkpoint")
+        self.assertIn("key_info", turns[0]["tool_calls"][0]["args"])
+        self.assertNotIn("key_info", visible)
+        self.assertNotIn("Updated key_info", visible)
+
+    def test_tool_contract_start_long_term_update_stays_in_execution_panel(self):
+        text = (
+            "**LLM Running (Turn 1) ...**\n"
+            "<summary>\n准备长期记忆沉淀\n</summary>\n"
+            "🛠️ Tool: `start_long_term_update`  📥 args:\n"
+            "````text\n"
+            "{}\n"
+            "````\n"
+            "`````\n"
+            "[Info] Start distilling good memory for long-term storage.\n"
+            "This is L0:\n"
+            "Memory SOP body\n"
+            "`````\n\n"
+            "任务已完成。"
+        )
+
+        visible = extract_visible_reply_text(text)
+        turns = parse_execution_log(text)
+
+        self.assertEqual(visible, "任务已完成。")
+        self.assertEqual(turns[0]["tool_calls"][0]["tool"], "start_long_term_update")
+        self.assertIn("Memory SOP body", turns[0]["tool_calls"][0]["result"])
+        self.assertNotIn("Memory SOP body", visible)
+        self.assertNotIn("Start distilling", visible)
+
+    def test_tool_contract_no_tool_final_answer_is_chat_body(self):
+        text = (
+            "**LLM Running (Turn 1) ...**\n"
+            "<summary>\n直接回答用户问题\n</summary>\n"
+            "这是直接回答用户的正文。\n"
+            "`````\n"
+            "[Info] Final response to user.\n"
+            "`````"
+        )
+
+        visible = extract_visible_reply_text(text)
+        turns = parse_execution_log(text)
+
+        self.assertEqual(visible, "这是直接回答用户的正文。")
+        self.assertEqual(turns[0]["content"], "直接回答用户问题")
+        self.assertEqual(turns[0]["tool_calls"], [])
+        self.assertNotIn("Final response to user", visible)
+
     def test_strip_summary_blocks_keeps_non_summary_content(self):
         text = (
             "Before\n"
