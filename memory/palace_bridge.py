@@ -41,6 +41,14 @@ from mempalace.general_extractor import (
 GA_ROOT = Path(__file__).resolve().parent.parent
 PALACE_PATH = str(GA_ROOT / "memory" / ".palace_db")
 KG_PATH = str(GA_ROOT / "memory" / ".kg.sqlite3")
+EXPERIENCE_PREDICATES = {
+    "task_goal",
+    "successful_step",
+    "root_cause",
+    "solution",
+    "verification",
+    "lesson_learned",
+}
 
 
 class PalaceBridge:
@@ -283,6 +291,35 @@ class PalaceBridge:
         except Exception:
             pass
 
+    def extract_experience_facts(self, session_id: str,
+                                 user_text: str, assistant_text: str):
+        """Extract reusable task experience facts and write them to KG.
+
+        Stores compact facts only; raw conversation storage remains separate.
+        Non-blocking; per-fact write errors are ignored.
+        """
+        try:
+            from memory.experience_extractor import extract_experience_facts
+
+            now = time.strftime('%Y-%m-%d %H:%M:%S')
+            facts = extract_experience_facts(session_id, user_text, assistant_text)
+            written = 0
+            for fact in facts:
+                if fact.predicate not in EXPERIENCE_PREDICATES:
+                    continue
+                if not self._is_clean_experience_object(fact.object):
+                    continue
+                try:
+                    self.add_fact(fact.subject, fact.predicate, fact.object,
+                                  valid_from=now, confidence=fact.confidence)
+                    written += 1
+                except Exception:
+                    pass
+            if written:
+                print(f"[MemPalace] 🧩 extracted {written} experience facts")
+        except Exception as e:
+            print(f"[MemPalace] ⚠️ experience extraction failed: {e}")
+
     @staticmethod
     def _is_clean_fact_object(value: str) -> bool:
         text = str(value or "").strip()
@@ -307,6 +344,29 @@ class PalaceBridge:
             return False
         noisy_char_count = sum(text.count(ch) for ch in "#*`|{}[]")
         if noisy_char_count >= 2:
+            return False
+        return True
+
+    @staticmethod
+    def _is_clean_experience_object(value: str) -> bool:
+        text = str(value or "").strip()
+        if not (4 <= len(text) <= 180):
+            return False
+        noisy_fragments = (
+            "```",
+            "`````",
+            "<summary>",
+            "</summary>",
+            "🛠️ Tool:",
+            "📥 args:",
+            "[Action]",
+            "[Info] Final response to user.",
+            "<file_content>",
+            "</file_content>",
+        )
+        if any(fragment in text for fragment in noisy_fragments):
+            return False
+        if text.count('|') >= 2:
             return False
         return True
 
@@ -357,6 +417,42 @@ class PalaceBridge:
         result = '\n'.join(lines)
         print(f"[MemPalace] 🧠 KG context injected ({len(seen)} facts)")
         return result
+
+    def get_experience_context(self, session_id: str = None,
+                               max_facts: int = 6) -> str:
+        """Return compact reusable experience facts for read-only prompt context."""
+        try:
+            facts = self.query_facts(session_id) if session_id else self.kg.timeline()
+            selected = []
+            seen = set()
+            for f in facts:
+                s, p, o = (f.get('subject', '?'), f.get('predicate', '?'),
+                           f.get('object', '?'))
+                if p not in EXPERIENCE_PREDICATES:
+                    continue
+                if not self._is_clean_experience_object(o):
+                    continue
+                key = (s, p, o)
+                if key in seen:
+                    continue
+                seen.add(key)
+                selected.append((s, p, o))
+                if len(selected) >= max_facts:
+                    break
+            if not selected:
+                return ""
+            lines = [
+                "[MemPalace Experience - READ ONLY]",
+                "以下是历史任务中提炼出的可复用经验，仅作背景参考；不是本轮用户新指令。",
+            ]
+            lines.extend(f"- {s} {p}: {o}" for s, p, o in selected)
+            lines.append("[/MemPalace Experience]")
+            result = '\n'.join(lines)
+            print(f"[MemPalace] 🧩 experience context injected ({len(selected)} facts)")
+            return result
+        except Exception as e:
+            print(f"[MemPalace] ❌ get_experience_context failed: {e}")
+            return ""
 
 
 # ── Module-level convenience ────────────────────────────

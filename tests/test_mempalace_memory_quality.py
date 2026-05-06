@@ -298,3 +298,54 @@ class MemPalaceExperienceExtractorTests(unittest.TestCase):
         self.assertIn(("solution", "写入用户环境变量"), pairs)
         self.assertIn(("verification", "新终端可用"), pairs)
         self.assertIn(("lesson_learned", "要用持久环境变量。"), pairs)
+
+
+class MemPalaceExperienceBridgeTests(unittest.TestCase):
+    def test_extract_experience_facts_writes_compact_kg_facts(self):
+        from memory.palace_bridge import PalaceBridge
+
+        bridge = PalaceBridge(palace_path="unused", kg_path="unused")
+        captured = []
+        bridge.add_fact = lambda subject, predicate, obj, **kwargs: captured.append(
+            (subject, predicate, obj, kwargs.get("confidence"))
+        )
+
+        bridge.extract_experience_facts(
+            "session-exp",
+            "修复 MemPalace 记忆质量",
+            "根因：只存原文，没有结构化经验。\n"
+            "修复：新增经验抽取层。\n"
+            "验证：python -m pytest tests/test_mempalace_memory_quality.py -q -> passed\n"
+            "结论：原文归档和经验事实应该分层存储。",
+        )
+
+        predicates = [row[1] for row in captured]
+        self.assertIn("task_goal", predicates)
+        self.assertIn("root_cause", predicates)
+        self.assertIn("solution", predicates)
+        self.assertIn("verification", predicates)
+        self.assertIn("lesson_learned", predicates)
+        self.assertTrue(all(len(row[2]) <= 160 for row in captured))
+
+    def test_experience_context_includes_only_experience_predicates(self):
+        from memory.palace_bridge import PalaceBridge
+
+        bridge = PalaceBridge(palace_path="unused", kg_path="unused")
+
+        class FakeKG:
+            def timeline(self):
+                return [
+                    {"subject": "s1", "predicate": "occurred_at", "object": "2026-05-06 10:00:00"},
+                    {"subject": "s1", "predicate": "uses_tool", "object": "file_read"},
+                    {"subject": "s1", "predicate": "solution", "object": "新增经验抽取层"},
+                    {"subject": "s1", "predicate": "verification", "object": "pytest -> passed"},
+                ]
+
+        bridge._kg = FakeKG()
+        context = bridge.get_experience_context(max_facts=5)
+
+        self.assertIn("[MemPalace Experience - READ ONLY]", context)
+        self.assertIn("solution: 新增经验抽取层", context)
+        self.assertIn("verification: pytest -> passed", context)
+        self.assertNotIn("occurred_at", context)
+        self.assertNotIn("uses_tool", context)

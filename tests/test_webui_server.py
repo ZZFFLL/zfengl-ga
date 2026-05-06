@@ -348,6 +348,61 @@ class AgentMainMemPalaceTests(unittest.TestCase):
         self.assertEqual(bridge.stored[1], ("session-1", "assistant", "hello assistant"))
         self.assertEqual(bridge.extracted, ("session-1", "hello user", "hello assistant"))
 
+    def test_mempalace_storage_extracts_experience_facts(self):
+        import agentmain
+        from unittest import mock
+
+        class FakeBridge:
+            def __init__(self):
+                self.stored = []
+                self.conversation_facts = None
+                self.experience_facts = None
+
+            def store_turn(self, session_id, role, content):
+                self.stored.append((session_id, role, content))
+                return f"{role}-id"
+
+            def extract_conversation_facts(self, session_id, raw_query, full_resp):
+                self.conversation_facts = (session_id, raw_query, full_resp)
+
+            def extract_experience_facts(self, session_id, raw_query, full_resp):
+                self.experience_facts = (session_id, raw_query, full_resp)
+
+        bridge = FakeBridge()
+        with mock.patch("agentmain._palace_bridge", return_value=bridge), mock.patch(
+            "memory.dedup.is_duplicate", return_value=False
+        ):
+            agentmain._store_mempalace_turn("session-1", "用户目标", "修复：做了一个小改动")
+
+        self.assertEqual(bridge.conversation_facts, ("session-1", "用户目标", "修复：做了一个小改动"))
+        self.assertEqual(bridge.experience_facts, ("session-1", "用户目标", "修复：做了一个小改动"))
+
+    def test_system_prompt_injects_read_only_experience_context(self):
+        import contextlib
+        import io
+        from unittest import mock
+
+        import agentmain
+
+        class FakeBridge:
+            def search(self, query, n_results=3):
+                return []
+
+            def get_session_facts_context(self, session_id=None, max_facts=8):
+                return ""
+
+            def get_experience_context(self, session_id=None, max_facts=5):
+                return "[MemPalace Experience - READ ONLY]\n- s1 solution: 新增经验抽取层\n[/MemPalace Experience]"
+
+        out = io.StringIO()
+        with mock.patch("agentmain._palace_bridge", return_value=FakeBridge()), mock.patch(
+            "agentmain.get_global_memory", return_value=""
+        ), contextlib.redirect_stdout(out):
+            prompt = agentmain.get_system_prompt("怎么优化记忆")
+
+        self.assertIn("[MemPalace Experience - READ ONLY]", prompt)
+        self.assertIn("solution: 新增经验抽取层", prompt)
+
     def test_store_turn_with_dedup_does_not_retry_storage_failure(self):
         import contextlib
         import io

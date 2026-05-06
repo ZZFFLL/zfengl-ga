@@ -42,6 +42,8 @@ def _store_mempalace_turn(session_id, raw_query, full_resp):
             _store_turn_with_dedup(bridge, session_id, 'user', raw_query)
             _store_turn_with_dedup(bridge, session_id, 'assistant', full_resp)
             bridge.extract_conversation_facts(session_id, raw_query, full_resp)
+            if hasattr(bridge, "extract_experience_facts"):
+                bridge.extract_experience_facts(session_id, raw_query, full_resp)
         else:
             print("[MemPalace] ⚠️ bridge unavailable, skipped turn storage")
     except Exception as e:
@@ -160,6 +162,10 @@ def get_system_prompt(query=None):
                 kg_ctx = bridge.get_session_facts_context(session_id=None, max_facts=8)
                 if kg_ctx:
                     prompt += "\n" + kg_ctx
+                if hasattr(bridge, "get_experience_context"):
+                    exp_ctx = bridge.get_experience_context(session_id=None, max_facts=5)
+                    if exp_ctx:
+                        prompt += "\n" + exp_ctx
         except Exception as e:
             print(f"[MemPalace] ❌ get_system_prompt context injection failed: {e}")
     return prompt
