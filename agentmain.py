@@ -84,6 +84,16 @@ MEMORY_CONTEXT_MIN_SCORE = 0.25
 MEMORY_CONTEXT_MAX_SNIPPET_CHARS = 200
 
 
+def _sanitize_mempalace_history_snippet(snippet):
+    return snippet.replace(
+        "[/MemPalace Retrieved Context]",
+        "(escaped MemPalace context boundary)",
+    ).replace(
+        "[MemPalace Retrieved Context - READ ONLY]",
+        "(escaped MemPalace context start)",
+    )
+
+
 def _format_mempalace_history_context(
     results,
     min_score=MEMORY_CONTEXT_MIN_SCORE,
@@ -106,6 +116,7 @@ def _format_mempalace_history_context(
         snippet = str(r.get("text") or "").strip()
         if not snippet:
             continue
+        snippet = _sanitize_mempalace_history_snippet(snippet)
         snippet = snippet[:max_snippet_chars].replace('\n', ' ')
         meta = r.get("metadata") or {}
         if not isinstance(meta, dict):
