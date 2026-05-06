@@ -124,3 +124,29 @@ class MemPalaceDedupTests(unittest.TestCase):
 
                 self.assertEqual(result, "doc-id")
                 self.assertEqual(stored, ["stored"])
+
+
+class MemPalaceFactQualityTests(unittest.TestCase):
+    def test_fact_object_quality_gate_rejects_markdown_noise(self):
+        from memory.palace_bridge import PalaceBridge
+
+        self.assertFalse(PalaceBridge._is_clean_fact_object("级）\n\n### ⭐⭐⭐ 高价值\n\n#### 1."))
+        self.assertFalse(PalaceBridge._is_clean_fact_object("人/项目 | entity_detector.py | 无 |"))
+        self.assertFalse(PalaceBridge._is_clean_fact_object("<file_content>secret</file_content>"))
+        self.assertTrue(PalaceBridge._is_clean_fact_object("用rg搜索文件"))
+
+    def test_extract_conversation_facts_does_not_store_noisy_user_preference(self):
+        from memory.palace_bridge import PalaceBridge
+
+        bridge = PalaceBridge(palace_path="unused", kg_path="unused")
+        captured = []
+        bridge.add_fact = lambda subject, predicate, obj, **kwargs: captured.append((subject, predicate, obj))
+
+        bridge.extract_conversation_facts(
+            "session-noise",
+            "这个表格里写了优先级 | 模块 | 说明 |，不是用户偏好。",
+            "assistant response",
+        )
+
+        self.assertNotIn(("user", "prefers", "级 | 模块 | 说明"), captured)
+        self.assertNotIn(("user", "prefers", "| 模块 | 说明 |，不是用户偏好。"), captured)

@@ -245,7 +245,7 @@ class PalaceBridge:
             pref_score, pref_kw = _score_markers(seg_clean, all_pref_markers)
             if pref_score > 0 and pref_kw:
                 snippet = self._extract_snippet(seg_clean, pref_kw[0])
-                if snippet:
+                if snippet and self._is_clean_fact_object(snippet):
                     try:
                         self.add_fact('user', 'prefers', snippet,
                                       valid_from=now,
@@ -257,7 +257,7 @@ class PalaceBridge:
             dec_score, dec_kw = _score_markers(seg_clean, DECISION_MARKERS)
             if dec_score >= 2 and dec_kw:
                 snippet = self._extract_snippet(seg_clean, dec_kw[0])
-                if snippet:
+                if snippet and self._is_clean_fact_object(snippet):
                     try:
                         self.add_fact(session_id, 'decided', snippet,
                                       valid_from=now,
@@ -269,7 +269,7 @@ class PalaceBridge:
             for pat, pred in self._ZH_PREF_PATTERNS:
                 for m in re.finditer(pat, seg_clean):
                     obj = m.group(1).strip() if m.lastindex else ''
-                    if 2 < len(obj) < 60:
+                    if 2 < len(obj) < 60 and self._is_clean_fact_object(obj):
                         try:
                             self.add_fact('user', pred, obj,
                                           valid_from=now, confidence=0.7)
@@ -282,6 +282,33 @@ class PalaceBridge:
                           confidence=1.0)
         except Exception:
             pass
+
+    @staticmethod
+    def _is_clean_fact_object(value: str) -> bool:
+        text = str(value or "").strip()
+        if not (2 <= len(text) <= 80):
+            return False
+        noisy_fragments = (
+            "```",
+            "###",
+            "####",
+            "|",
+            "<file_content>",
+            "</file_content>",
+            "Conversation History:",
+            "<tool_use>",
+            "</tool_use>",
+            "{",
+            "}",
+        )
+        if any(fragment in text for fragment in noisy_fragments):
+            return False
+        if "\n" in text:
+            return False
+        noisy_char_count = sum(text.count(ch) for ch in "#*`|{}[]")
+        if noisy_char_count >= 2:
+            return False
+        return True
 
     @staticmethod
     def _extract_snippet(text: str, keyword: str, window: int = 40) -> str:
