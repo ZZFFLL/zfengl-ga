@@ -46,3 +46,43 @@ def clean_noisy_triples(db_path=KG_PATH, dry_run=True):
         f"deleted={deleted} dry_run={dry_run}"
     )
     return {"matched": len(ids), "deleted": deleted, "ids": ids}
+
+
+def list_orphan_noisy_entities(db_path=KG_PATH, limit=None):
+    """Return noisy entities that are not referenced by any triple."""
+    con = _connect(db_path)
+    try:
+        rows = con.execute("select id, name from entities order by created_at, id").fetchall()
+        referenced = set()
+        for subject, obj in con.execute("select subject, object from triples").fetchall():
+            referenced.add(str(subject))
+            referenced.add(str(obj))
+    finally:
+        con.close()
+
+    noisy = [
+        {"id": row[0], "name": row[1]}
+        for row in rows
+        if str(row[1]) not in referenced and not PalaceBridge._is_clean_fact_object(row[1])
+    ]
+    return noisy[:limit] if limit is not None else noisy
+
+
+def clean_orphan_noisy_entities(db_path=KG_PATH, dry_run=True):
+    """Delete unreferenced noisy entities when dry_run is False."""
+    noisy = list_orphan_noisy_entities(db_path)
+    ids = [row["id"] for row in noisy]
+    deleted = 0
+    if ids and not dry_run:
+        con = _connect(db_path)
+        try:
+            con.executemany("delete from entities where id = ?", [(entity_id,) for entity_id in ids])
+            deleted = con.total_changes
+            con.commit()
+        finally:
+            con.close()
+    print(
+        f"[MemPalace] 🧹 KG orphan noisy entities matched={len(ids)} "
+        f"deleted={deleted} dry_run={dry_run}"
+    )
+    return {"matched": len(ids), "deleted": deleted, "ids": ids}

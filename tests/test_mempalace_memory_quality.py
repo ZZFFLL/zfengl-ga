@@ -450,3 +450,72 @@ class MemPalaceExperienceBridgeTests(unittest.TestCase):
         from memory.palace_bridge import PalaceBridge
 
         self.assertFalse(PalaceBridge._is_clean_experience_object("第一行\n第二行"))
+
+
+class MemPalaceEntityMaintenanceTests(unittest.TestCase):
+    def _create_temp_kg_with_entities(self):
+        tmp = tempfile.TemporaryDirectory()
+        db_path = Path(tmp.name) / "kg.sqlite3"
+        con = sqlite3.connect(str(db_path))
+        con.execute(
+            "create table entities ("
+            "id text primary key, name text not null, type text default 'unknown', "
+            "properties text default '{}', created_at text default CURRENT_TIMESTAMP)"
+        )
+        con.execute(
+            "create table triples ("
+            "id text primary key, subject text, predicate text, object text, "
+            "valid_from text, valid_to text, confidence real, source_closet text, "
+            "source_file text, extracted_at text)"
+        )
+        con.execute("insert into entities values ('noise','人/项目 | entity_detector.py | 无 |','unknown','{}',null)")
+        con.execute("insert into entities values ('good','用rg搜索文件','unknown','{}',null)")
+        con.execute("insert into entities values ('referenced-noise','级）\n\n### ⭐⭐⭐ 高价值','unknown','{}',null)")
+        con.execute(
+            "insert into triples values "
+            "('t1','user','prefers','用rg搜索文件',null,null,0.7,null,null,null)"
+        )
+        con.execute(
+            "insert into triples values "
+            "('t2','session','decided','级）\n\n### ⭐⭐⭐ 高价值',null,null,0.7,null,null,null)"
+        )
+        con.commit()
+        con.close()
+        return tmp, db_path
+
+    def test_clean_orphan_noisy_entities_dry_run_does_not_delete(self):
+        from memory.kg_maintenance import clean_orphan_noisy_entities
+
+        tmp, db_path = self._create_temp_kg_with_entities()
+        self.addCleanup(tmp.cleanup)
+
+        result = clean_orphan_noisy_entities(db_path, dry_run=True)
+        self.assertEqual(result["matched"], 1)
+        self.assertEqual(result["deleted"], 0)
+
+        con = sqlite3.connect(str(db_path))
+        try:
+            count = con.execute("select count(*) from entities").fetchone()[0]
+        finally:
+            con.close()
+        self.assertEqual(count, 3)
+
+    def test_clean_orphan_noisy_entities_deletes_only_unreferenced_noise(self):
+        from memory.kg_maintenance import clean_orphan_noisy_entities
+
+        tmp, db_path = self._create_temp_kg_with_entities()
+        self.addCleanup(tmp.cleanup)
+
+        result = clean_orphan_noisy_entities(db_path, dry_run=False)
+        self.assertEqual(result["matched"], 1)
+        self.assertEqual(result["deleted"], 1)
+
+        con = sqlite3.connect(str(db_path))
+        try:
+            rows = con.execute("select id, name from entities order by id").fetchall()
+        finally:
+            con.close()
+        self.assertEqual(rows, [
+            ("good", "用rg搜索文件"),
+            ("referenced-noise", "级）\n\n### ⭐⭐⭐ 高价值"),
+        ])
