@@ -366,6 +366,8 @@ class PalaceBridge:
         )
         if any(fragment in text for fragment in noisy_fragments):
             return False
+        if "\n" in text:
+            return False
         if text.count('|') >= 2:
             return False
         return True
@@ -405,15 +407,21 @@ class PalaceBridge:
 
         lines = ["[MemPalace KG] 实体关系图谱:"]
         seen = set()
-        for f in facts[:max_facts]:
+        for f in facts:
             s, p, o = (f.get('subject','?'), f.get('predicate','?'),
                        f.get('object','?'))
+            if p in EXPERIENCE_PREDICATES:
+                continue
             key = (s, p, o)
             if key in seen:
                 continue
             seen.add(key)
             valid = f.get('valid_from', '')
             lines.append(f"- {s} {p} {o}" + (f" (since {valid})" if valid else ""))
+            if len(seen) >= max_facts:
+                break
+        if not seen:
+            return ""
         result = '\n'.join(lines)
         print(f"[MemPalace] 🧠 KG context injected ({len(seen)} facts)")
         return result
@@ -423,6 +431,8 @@ class PalaceBridge:
         """Return compact reusable experience facts for read-only prompt context."""
         try:
             facts = self.query_facts(session_id) if session_id else self.kg.timeline()
+            if not session_id:
+                facts = sorted(facts, key=lambda f: f.get('valid_from', ''), reverse=True)
             selected = []
             seen = set()
             for f in facts:

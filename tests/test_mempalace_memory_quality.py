@@ -349,3 +349,56 @@ class MemPalaceExperienceBridgeTests(unittest.TestCase):
         self.assertIn("verification: pytest -> passed", context)
         self.assertNotIn("occurred_at", context)
         self.assertNotIn("uses_tool", context)
+
+    def test_session_facts_context_excludes_experience_predicates(self):
+        from memory.palace_bridge import PalaceBridge
+
+        bridge = PalaceBridge(palace_path="unused", kg_path="unused")
+
+        class FakeKG:
+            def timeline(self):
+                return [
+                    {"subject": "s1", "predicate": "uses_tool", "object": "file_read"},
+                    {"subject": "s1", "predicate": "solution", "object": "新增经验抽取层"},
+                ]
+
+        bridge._kg = FakeKG()
+        context = bridge.get_session_facts_context(max_facts=5)
+
+        self.assertIn("uses_tool", context)
+        self.assertIn("file_read", context)
+        self.assertNotIn("solution", context)
+        self.assertNotIn("新增经验抽取层", context)
+
+    def test_experience_context_prefers_recent_global_timeline_facts(self):
+        from memory.palace_bridge import PalaceBridge
+
+        bridge = PalaceBridge(palace_path="unused", kg_path="unused")
+
+        class FakeKG:
+            def timeline(self):
+                return [
+                    {
+                        "subject": "old-session",
+                        "predicate": "solution",
+                        "object": "旧经验事实",
+                        "valid_from": "2026-05-06 09:00:00",
+                    },
+                    {
+                        "subject": "new-session",
+                        "predicate": "solution",
+                        "object": "新经验事实",
+                        "valid_from": "2026-05-06 10:00:00",
+                    },
+                ]
+
+        bridge._kg = FakeKG()
+        context = bridge.get_experience_context(max_facts=1)
+
+        self.assertIn("新经验事实", context)
+        self.assertNotIn("旧经验事实", context)
+
+    def test_clean_experience_object_rejects_newlines(self):
+        from memory.palace_bridge import PalaceBridge
+
+        self.assertFalse(PalaceBridge._is_clean_experience_object("第一行\n第二行"))
