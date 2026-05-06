@@ -220,3 +220,13 @@ class MemPalaceKGMaintenanceTests(unittest.TestCase):
         finally:
             con.close()
         self.assertEqual(rows, [("good-1", "用rg搜索文件")])
+
+
+class MemPalacePromptGuidanceTests(unittest.TestCase):
+    def test_sys_prompt_describes_actual_mempalace_behavior(self):
+        text = Path("assets/sys_prompt.txt").read_text(encoding="utf-8")
+
+        self.assertIn("MemPalace 集成能力", text)
+        self.assertIn("历史对话语义检索", text)
+        self.assertIn("MemPalace 对话写入路径会进行去重检查", text)
+        self.assertNotIn("dedup 模块会自动拦截重复内容", text)
