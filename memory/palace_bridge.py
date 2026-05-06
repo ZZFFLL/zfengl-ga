@@ -79,6 +79,7 @@ class PalaceBridge:
             documents=[content],
             metadatas=[meta],
         )
+        print(f"[MemPalace] ✅ stored {role} turn (session={session_id}, id={doc_id}, len={len(content)})")
         return doc_id
 
     def search(self, query: str, n_results: int = 5,
@@ -94,7 +95,8 @@ class PalaceBridge:
                 n_results=n_results,
                 where=where,
             )
-        except Exception:
+        except Exception as e:
+            print(f"[MemPalace] ❌ search failed: {e}")
             return []
 
         out = []
@@ -110,6 +112,7 @@ class PalaceBridge:
                 "score": 1.0 - dists[i] if i < len(dists) else 0,
                 "metadata": metas[i] if i < len(metas) else {},
             })
+        print(f"[MemPalace] 🔍 search '{query[:60]}' → {len(out)} results")
         return out
 
     def recent_turns(self, session_id: str, n: int = 10) -> list:
@@ -135,7 +138,9 @@ class PalaceBridge:
             })
 
         items.sort(key=lambda x: x["metadata"].get("timestamp", 0), reverse=True)
-        return items[:n]
+        result = items[:n]
+        print(f"[MemPalace] 📖 recent_turns(session={session_id}) → {len(result)} turns")
+        return result
 
     # ── Knowledge Graph ──────────────────────────────────
 
@@ -152,15 +157,19 @@ class PalaceBridge:
         self.kg.add_triple(subject, predicate, obj,
                            valid_from=valid_from,
                            confidence=confidence)
+        print(f"[MemPalace] 📝 KG fact: {subject} → {predicate} → {obj} (conf={confidence})")
 
     def query_facts(self, entity_name: str, as_of: str = None) -> list:
         """Query all facts about an entity."""
-        return self.kg.query_entity(entity_name, as_of=as_of)
+        facts = self.kg.query_entity(entity_name, as_of=as_of)
+        print(f"[MemPalace] 📖 query_facts('{entity_name}') → {len(facts)} facts")
+        return facts
 
     def invalidate_fact(self, subject: str, predicate: str, obj: str,
                         ended: str):
         """Mark a fact as no longer valid."""
         self.kg.invalidate(subject, predicate, obj, ended=ended)
+        print(f"[MemPalace] 🗑️ KG invalidated: {subject} → {predicate} → {obj}")
 
     # ── Auto-extraction from conversation ─────────────────
 
@@ -225,7 +234,8 @@ class PalaceBridge:
                 facts = self.query_facts(session_id)
             else:
                 facts = self.kg.query_recent(max_facts * 2)
-        except Exception:
+        except Exception as e:
+            print(f"[MemPalace] ❌ get_session_facts_context failed: {e}")
             return ""
 
         if not facts:
@@ -242,7 +252,9 @@ class PalaceBridge:
             seen.add(key)
             valid = f.get('valid_from', '')
             lines.append(f"- {s} {p} {o}" + (f" (since {valid})" if valid else ""))
-        return '\n'.join(lines)
+        result = '\n'.join(lines)
+        print(f"[MemPalace] 🧠 KG context injected ({len(seen)} facts)")
+        return result
 
 
 # ── Module-level convenience ────────────────────────────

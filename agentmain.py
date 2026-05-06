@@ -19,7 +19,8 @@ def _palace_bridge():
             from memory.palace_bridge import get_bridge
             _get_palace_bridge = get_bridge
         return _get_palace_bridge() if _get_palace_bridge else None
-    except Exception:
+    except Exception as e:
+        print(f"[MemPalace] ⚠️ bridge import failed: {e}")
         return None
 
 def _store_mempalace_turn(session_id, raw_query, full_resp):
@@ -29,8 +30,10 @@ def _store_mempalace_turn(session_id, raw_query, full_resp):
             bridge.store_turn(session_id, 'user', raw_query)
             bridge.store_turn(session_id, 'assistant', full_resp)
             bridge.extract_conversation_facts(session_id, raw_query, full_resp)
-    except Exception:
-        pass
+        else:
+            print("[MemPalace] ⚠️ bridge unavailable, skipped turn storage")
+    except Exception as e:
+        print(f"[MemPalace] ❌ _store_mempalace_turn error: {e}")
 
 def _store_mempalace_turn_async(task_dir, raw_query, full_resp):
     sess = task_dir or time.strftime('%Y-%m-%d')
@@ -85,8 +88,8 @@ def get_system_prompt(query=None):
                 kg_ctx = bridge.get_session_facts_context(session_id=None, max_facts=8)
                 if kg_ctx:
                     prompt += "\n" + kg_ctx
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[MemPalace] ❌ get_system_prompt context injection failed: {e}")
     return prompt
 
 class GeneraticAgent:
