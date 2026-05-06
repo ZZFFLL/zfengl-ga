@@ -150,3 +150,73 @@ class MemPalaceFactQualityTests(unittest.TestCase):
 
         self.assertNotIn(("user", "prefers", "级 | 模块 | 说明"), captured)
         self.assertNotIn(("user", "prefers", "| 模块 | 说明 |，不是用户偏好。"), captured)
+
+
+class MemPalaceKGMaintenanceTests(unittest.TestCase):
+    def _create_temp_kg(self):
+        tmp = tempfile.TemporaryDirectory()
+        db_path = Path(tmp.name) / "kg.sqlite3"
+        con = sqlite3.connect(str(db_path))
+        con.execute(
+            "create table triples ("
+            "id text primary key, subject text, predicate text, object text, "
+            "valid_from text, valid_to text, confidence real, source_closet text, "
+            "source_file text, extracted_at text)"
+        )
+        con.execute(
+            "insert into triples values "
+            "('bad-1','user','prefers','级）\n\n### ⭐⭐⭐ 高价值\n\n#### 1.',null,null,0.7,null,null,null)"
+        )
+        con.execute(
+            "insert into triples values "
+            "('bad-2','user','dislikes','人/项目 | entity_detector.py | 无 |',null,null,0.7,null,null,null)"
+        )
+        con.execute(
+            "insert into triples values "
+            "('good-1','user','prefers','用rg搜索文件',null,null,0.7,null,null,null)"
+        )
+        con.commit()
+        con.close()
+        return tmp, db_path
+
+    def test_clean_noisy_triples_dry_run_does_not_delete(self):
+        from memory.kg_maintenance import clean_noisy_triples
+
+        tmp, db_path = self._create_temp_kg()
+        self.addCleanup(tmp.cleanup)
+
+        result = clean_noisy_triples(db_path, dry_run=True)
+        self.assertEqual(result["matched"], 2)
+        self.assertEqual(result["deleted"], 0)
+
+        con = sqlite3.connect(str(db_path))
+        try:
+            count = con.execute("select count(*) from triples").fetchone()[0]
+        finally:
+            con.close()
+        self.assertEqual(count, 3)
+
+    def test_list_noisy_triples_respects_zero_limit(self):
+        from memory.kg_maintenance import list_noisy_triples
+
+        tmp, db_path = self._create_temp_kg()
+        self.addCleanup(tmp.cleanup)
+
+        self.assertEqual(list_noisy_triples(db_path, limit=0), [])
+
+    def test_clean_noisy_triples_deletes_only_noisy_rows(self):
+        from memory.kg_maintenance import clean_noisy_triples
+
+        tmp, db_path = self._create_temp_kg()
+        self.addCleanup(tmp.cleanup)
+
+        result = clean_noisy_triples(db_path, dry_run=False)
+        self.assertEqual(result["matched"], 2)
+        self.assertEqual(result["deleted"], 2)
+
+        con = sqlite3.connect(str(db_path))
+        try:
+            rows = con.execute("select id, object from triples order by id").fetchall()
+        finally:
+            con.close()
+        self.assertEqual(rows, [("good-1", "用rg搜索文件")])
