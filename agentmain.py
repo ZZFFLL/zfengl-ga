@@ -23,12 +23,24 @@ def _palace_bridge():
         print(f"[MemPalace] ⚠️ bridge import failed: {e}")
         return None
 
+def _store_turn_with_dedup(bridge, session_id, role, content):
+    try:
+        from memory.dedup import is_duplicate
+        duplicate = is_duplicate(content, session_id=session_id, bridge=bridge)
+    except Exception as e:
+        print(f"[MemPalace] ⚠️ dedup guard failed for {role}, storing without dedup: {e}")
+        duplicate = False
+    if duplicate:
+        return None
+    return bridge.store_turn(session_id, role, content)
+
+
 def _store_mempalace_turn(session_id, raw_query, full_resp):
     try:
         bridge = _palace_bridge()
         if bridge:
-            bridge.store_turn(session_id, 'user', raw_query)
-            bridge.store_turn(session_id, 'assistant', full_resp)
+            _store_turn_with_dedup(bridge, session_id, 'user', raw_query)
+            _store_turn_with_dedup(bridge, session_id, 'assistant', full_resp)
             bridge.extract_conversation_facts(session_id, raw_query, full_resp)
         else:
             print("[MemPalace] ⚠️ bridge unavailable, skipped turn storage")

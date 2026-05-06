@@ -279,6 +279,63 @@ class AgentMainMemPalaceTests(unittest.TestCase):
         self.assertIn("injected 0 read-only history snippets", out.getvalue())
         self.assertIn("skipped 2 low-score snippets", out.getvalue())
 
+    def test_mempalace_storage_uses_dedup_guard(self):
+        import agentmain
+        from unittest import mock
+
+        class FakeBridge:
+            def __init__(self):
+                self.stored = []
+
+            def store_turn(self, session_id, role, content):
+                self.stored.append((session_id, role, content))
+                return f"{role}-id"
+
+            def extract_conversation_facts(self, session_id, raw_query, full_resp):
+                self.extracted = (session_id, raw_query, full_resp)
+
+        bridge = FakeBridge()
+        dedup_calls = []
+
+        def fake_is_duplicate(text, threshold=0.85, session_id=None, bridge=None, min_chars=20):
+            dedup_calls.append((text, session_id, bridge))
+            return False
+
+        with mock.patch("agentmain._palace_bridge", return_value=bridge), mock.patch(
+            "memory.dedup.is_duplicate", side_effect=fake_is_duplicate
+        ):
+            agentmain._store_mempalace_turn("session-1", "hello user", "hello assistant")
+
+        self.assertEqual(len(dedup_calls), 2)
+        self.assertIs(dedup_calls[0][2], bridge)
+        self.assertEqual(bridge.stored[0], ("session-1", "user", "hello user"))
+        self.assertEqual(bridge.stored[1], ("session-1", "assistant", "hello assistant"))
+        self.assertEqual(bridge.extracted, ("session-1", "hello user", "hello assistant"))
+
+    def test_store_turn_with_dedup_does_not_retry_storage_failure(self):
+        import contextlib
+        import io
+        import agentmain
+        from unittest import mock
+
+        class FailingBridge:
+            def __init__(self):
+                self.attempts = 0
+
+            def store_turn(self, session_id, role, content):
+                self.attempts += 1
+                raise RuntimeError("storage failed")
+
+        bridge = FailingBridge()
+        out = io.StringIO()
+
+        with mock.patch("memory.dedup.is_duplicate", return_value=False), contextlib.redirect_stdout(out):
+            with self.assertRaisesRegex(RuntimeError, "storage failed"):
+                agentmain._store_turn_with_dedup(bridge, "session-1", "user", "hello user")
+
+        self.assertEqual(bridge.attempts, 1)
+        self.assertNotIn("dedup guard failed", out.getvalue())
+
     def test_done_releases_running_before_mempalace_storage_finishes(self):
         import agentmain
         from unittest import mock
