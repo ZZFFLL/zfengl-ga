@@ -308,7 +308,7 @@ class PalaceBridge:
             if session_id:
                 facts = self.query_facts(session_id)
             else:
-                facts = self.kg.query_recent(max_facts * 2)
+                facts = self.kg.timeline()  # timeline() with no entity returns all facts chronologically
         except Exception as e:
             print(f"[MemPalace] ❌ get_session_facts_context failed: {e}")
             return ""
