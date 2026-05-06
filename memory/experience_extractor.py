@@ -17,12 +17,18 @@ class ExperienceFact:
     confidence: float = 0.75
 
 
-_PREFIX_PATTERNS = (
-    ("root_cause", re.compile(r"(?:^|[。；;，,\s])(?:我定位到)?根因[:：]\s*(.+)$")),
-    ("solution", re.compile(r"(?:^|[。；;，,\s])(?:修复|解决方案)[:：]\s*(.+)$")),
-    ("verification", re.compile(r"(?:^|[。；;，,\s])(?:验证|测试)[:：]\s*(.+)$")),
-    ("lesson_learned", re.compile(r"(?:^|[。；;，,\s])(?:结论|经验|教训)[:：]\s*(.+)$")),
-)
+_PREDICATE_BY_MARKER = {
+    "根因": "root_cause",
+    "修复": "solution",
+    "解决方案": "solution",
+    "验证": "verification",
+    "测试": "verification",
+    "结论": "lesson_learned",
+    "经验": "lesson_learned",
+    "教训": "lesson_learned",
+}
+
+_MARKER_PATTERN = re.compile(r"(?:^|[。；;，,\s])(?:我定位到)?(根因|修复|解决方案|验证|测试|结论|经验|教训)[:：]\s*")
 
 _STEP_PATTERN = re.compile(r"^\s*(?:[-*]\s+|\d+[.)、]\s*)(.+)$")
 
@@ -60,11 +66,8 @@ def extract_experience_facts(session_id: str, user_text: str, assistant_text: st
         if in_steps and not step_match:
             in_steps = False
 
-        for predicate, pattern in _PREFIX_PATTERNS:
-            match = pattern.search(stripped)
-            if match:
-                add(predicate, match.group(1))
-                break
+        for predicate, obj in _extract_marked_segments(stripped):
+            add(predicate, obj)
 
     return facts
 
@@ -92,11 +95,21 @@ def _normalize_object(text: str) -> str:
     return normalized
 
 
+def _extract_marked_segments(line: str) -> list[tuple[str, str]]:
+    matches = list(_MARKER_PATTERN.finditer(line))
+    segments: list[tuple[str, str]] = []
+    for index, match in enumerate(matches):
+        next_start = matches[index + 1].start() if index + 1 < len(matches) else len(line)
+        obj = line[match.end() : next_start].strip(" ；;，,")
+        segments.append((_PREDICATE_BY_MARKER[match.group(1)], obj))
+    return segments
+
+
 def _is_noise(text: str) -> bool:
     stripped = text.strip()
     if not stripped:
         return True
-    if stripped.startswith(("#", "{", "}", "[", "]")):
+    if stripped.startswith(("#", "{", "}")):
         return True
     if stripped.startswith(("🛠️ Tool:", "Tool:", "tool:")):
         return True

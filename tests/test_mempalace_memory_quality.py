@@ -282,3 +282,19 @@ class MemPalaceExperienceExtractorTests(unittest.TestCase):
         objects = [f.object for f in facts]
         self.assertIn("dedup 写入失败时要有降级日志。", objects)
         self.assertFalse(any("Tool:" in obj or "```json" in obj for obj in objects))
+
+    def test_splits_compact_inline_summary_markers(self):
+        from memory.experience_extractor import extract_experience_facts
+
+        facts = extract_experience_facts(
+            session_id="session-c",
+            user_text="[Windows] PowerShell PATH 修复",
+            assistant_text="根因：PATH 没有持久写入；修复：写入用户环境变量；验证：新终端可用；结论：要用持久环境变量。",
+        )
+
+        pairs = [(f.predicate, f.object) for f in facts]
+        self.assertIn(("task_goal", "[Windows] PowerShell PATH 修复"), pairs)
+        self.assertIn(("root_cause", "PATH 没有持久写入"), pairs)
+        self.assertIn(("solution", "写入用户环境变量"), pairs)
+        self.assertIn(("verification", "新终端可用"), pairs)
+        self.assertIn(("lesson_learned", "要用持久环境变量。"), pairs)
