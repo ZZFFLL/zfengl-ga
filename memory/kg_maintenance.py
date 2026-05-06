@@ -63,7 +63,7 @@ def list_orphan_noisy_entities(db_path=KG_PATH, limit=None):
     noisy = [
         {"id": row[0], "name": row[1]}
         for row in rows
-        if str(row[1]) not in referenced and not PalaceBridge._is_clean_fact_object(row[1])
+        if str(row[0]) not in referenced and not PalaceBridge._is_clean_fact_object(row[1])
     ]
     return noisy[:limit] if limit is not None else noisy
 

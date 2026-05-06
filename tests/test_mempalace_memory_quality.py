@@ -470,14 +470,14 @@ class MemPalaceEntityMaintenanceTests(unittest.TestCase):
         )
         con.execute("insert into entities values ('noise','人/项目 | entity_detector.py | 无 |','unknown','{}',null)")
         con.execute("insert into entities values ('good','用rg搜索文件','unknown','{}',null)")
-        con.execute("insert into entities values ('referenced-noise','级）\n\n### ⭐⭐⭐ 高价值','unknown','{}',null)")
+        con.execute("insert into entities values ('referenced-noise-id','级）\n\n### ⭐⭐⭐ 高价值','unknown','{}',null)")
         con.execute(
             "insert into triples values "
-            "('t1','user','prefers','用rg搜索文件',null,null,0.7,null,null,null)"
+            "('t1','user','prefers','good',null,null,0.7,null,null,null)"
         )
         con.execute(
             "insert into triples values "
-            "('t2','session','decided','级）\n\n### ⭐⭐⭐ 高价值',null,null,0.7,null,null,null)"
+            "('t2','session','decided','referenced-noise-id',null,null,0.7,null,null,null)"
         )
         con.commit()
         con.close()
@@ -517,5 +517,5 @@ class MemPalaceEntityMaintenanceTests(unittest.TestCase):
             con.close()
         self.assertEqual(rows, [
             ("good", "用rg搜索文件"),
-            ("referenced-noise", "级）\n\n### ⭐⭐⭐ 高价值"),
+            ("referenced-noise-id", "级）\n\n### ⭐⭐⭐ 高价值"),
         ])
