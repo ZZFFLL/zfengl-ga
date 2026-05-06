@@ -28,6 +28,13 @@ from pathlib import Path
 
 from mempalace.knowledge_graph import KnowledgeGraph
 from mempalace.palace import get_collection
+from mempalace.general_extractor import (
+    _extract_prose,
+    _split_into_segments,
+    _score_markers,
+    PREFERENCE_MARKERS,
+    DECISION_MARKERS,
+)
 
 # ── Config ──────────────────────────────────────────────
 # Palace storage lives alongside GA's memory/ directory
@@ -178,16 +185,19 @@ class PalaceBridge:
         (r'\b(web_scan|web_execute_js|file_read|file_patch|file_write|code_run|'
          r'web_search|ask_user|apply_patch|start_long_term)\b', 'uses_tool'),
     ]
-    _PREF_PATTERNS = [
-        (r'(?:不要|禁止|别|严禁|Never)\s*(\S+(?:\s+\S+){0,5})', 'dislikes'),
-        (r'(?:优先|总是|Always|prefer)\s*(\S+(?:\s+\S+){0,5})', 'prefers'),
+    # Chinese preference markers (supplement to PREFERENCE_MARKERS)
+    # Use [ \t] instead of \s to prevent cross-line greedy matching
+    _ZH_PREF_PATTERNS = [
+        (r'(?:不要|禁止|别|严禁|不准)[ \t]*(\S+(?:[ \t]+\S+){0,5})', 'dislikes'),
+        (r'(?:喜欢|偏好|习惯|常用|总是)[ \t]*(\S+(?:[ \t]+\S+){0,5})', 'prefers'),
     ]
 
     def extract_conversation_facts(self, session_id: str,
                                    user_text: str, assistant_text: str):
         """Extract lightweight entity facts from a conversation turn.
-        
-        Detects: tool usage, user preferences, task topics.
+
+        Pipeline: prose降噪 → segment切分 → marker评分 → 噪声过滤 → 写入KG
+        Detects: tool usage, user preferences, decisions.
         Stores facts as (session, predicate, object) triples.
         Non-blocking; errors are silently ignored.
         """
@@ -195,7 +205,7 @@ class PalaceBridge:
         now = time.strftime('%Y-%m-%d %H:%M:%S')
         combined = f"{user_text}\n{assistant_text}"
 
-        # Tool usage
+        # 1. Tool usage (on full combined text, keep existing logic)
         for pat, pred in self._TOOL_PATTERNS:
             for m in re.finditer(pat, combined, re.IGNORECASE):
                 tool = m.group(1).lower()
@@ -205,23 +215,88 @@ class PalaceBridge:
                 except Exception:
                     pass
 
-        # User preferences (only from user text)
-        for pat, pred in self._PREF_PATTERNS:
-            for m in re.finditer(pat, user_text, re.IGNORECASE):
-                obj = m.group(1).strip().lower()
-                if len(obj) > 2 and len(obj) < 60:
+        # 2. Preference & Decision extraction (user text only)
+        prose = _extract_prose(user_text)
+        if len(prose.strip()) < 20:
+            return  # Too short for meaningful extraction
+
+        # Normalize single newlines to double for better segment splitting
+        prose = re.sub(r'(?<!\n)\n(?!\n)', '\n\n', prose)
+
+        segments = _split_into_segments(prose)
+
+        # Combine EN + ZH preference markers
+        all_pref_markers = list(PREFERENCE_MARKERS) + [
+            p for p, _ in self._ZH_PREF_PATTERNS
+        ]
+
+        for seg in segments:
+            seg_clean = seg.strip()
+            # Skip too-short or noisy segments
+            if len(seg_clean) < 15:
+                continue
+            # Noise filter: skip markdown-heavy or code-heavy segments
+            if seg_clean.count('#') > 3 or seg_clean.count('```') > 0:
+                continue
+            if seg_clean.count('`') > 6:
+                continue
+
+            # Score against EN preference markers
+            pref_score, pref_kw = _score_markers(seg_clean, all_pref_markers)
+            if pref_score > 0 and pref_kw:
+                snippet = self._extract_snippet(seg_clean, pref_kw[0])
+                if snippet:
                     try:
-                        self.add_fact('user', pred, obj,
-                                      valid_from=now, confidence=0.7)
+                        self.add_fact('user', 'prefers', snippet,
+                                      valid_from=now,
+                                      confidence=min(0.9, 0.5 + pref_score * 0.1))
                     except Exception:
                         pass
 
-        # Session metadata
+            # Score against EN decision markers
+            dec_score, dec_kw = _score_markers(seg_clean, DECISION_MARKERS)
+            if dec_score >= 2 and dec_kw:
+                snippet = self._extract_snippet(seg_clean, dec_kw[0])
+                if snippet:
+                    try:
+                        self.add_fact(session_id, 'decided', snippet,
+                                      valid_from=now,
+                                      confidence=min(0.9, 0.5 + dec_score * 0.1))
+                    except Exception:
+                        pass
+
+            # Chinese preference patterns (regex fallback)
+            for pat, pred in self._ZH_PREF_PATTERNS:
+                for m in re.finditer(pat, seg_clean):
+                    obj = m.group(1).strip() if m.lastindex else ''
+                    if 2 < len(obj) < 60:
+                        try:
+                            self.add_fact('user', pred, obj,
+                                          valid_from=now, confidence=0.7)
+                        except Exception:
+                            pass
+
+        # 3. Session metadata
         try:
             self.add_fact(session_id, 'occurred_at', now,
                           confidence=1.0)
         except Exception:
             pass
+
+    @staticmethod
+    def _extract_snippet(text: str, keyword: str, window: int = 40) -> str:
+        """Extract a short snippet around a keyword match (single-line only)."""
+        # Only work within the line containing the keyword
+        for line in text.split('\n'):
+            idx = line.lower().find(keyword.lower())
+            if idx >= 0:
+                start = max(0, idx - window // 3)
+                end = min(len(line), idx + len(keyword) + window)
+                snippet = line[start:end].strip()
+                if len(snippet) > 80:
+                    snippet = snippet[:80].rsplit(' ', 1)[0]
+                return snippet if len(snippet) > 5 else ''
+        return ''
 
     def get_session_facts_context(self, session_id: str = None,
                                   max_facts: int = 10) -> str:
