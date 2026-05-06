@@ -204,6 +204,81 @@ class AgentMainMemPalaceTests(unittest.TestCase):
         self.assertIn("injected 1 read-only history snippets", out.getvalue())
         self.assertIn("skipped 1 low-score snippets", out.getvalue())
 
+    def test_system_prompt_keeps_kg_context_when_mempalace_results_are_bad(self):
+        import contextlib
+        import io
+        from unittest import mock
+
+        import agentmain
+
+        class FakeBridge:
+            def __init__(self):
+                self.calls = 0
+
+            def search(self, query, n_results=3):
+                self.calls += 1
+                if self.calls == 1:
+                    return None
+                return [
+                    None,
+                    "bad row",
+                    {"score": 0.91, "metadata": {"role": "user"}},
+                    {"text": None, "score": 0.9},
+                    {"text": "可用旧对话", "score": 0.9, "metadata": None},
+                ]
+
+            def get_session_facts_context(self, session_id=None, max_facts=8):
+                return "[MemPalace KG Context]\nentity link"
+
+        bridge = FakeBridge()
+        out = io.StringIO()
+        with mock.patch("agentmain._palace_bridge", return_value=bridge), mock.patch(
+            "agentmain.get_global_memory", return_value=""
+        ), contextlib.redirect_stdout(out):
+            first_prompt = agentmain.get_system_prompt("本轮问题")
+            second_prompt = agentmain.get_system_prompt("本轮问题")
+
+        self.assertIn("[MemPalace KG Context]", first_prompt)
+        self.assertIn("[MemPalace KG Context]", second_prompt)
+        self.assertIn("可用旧对话", second_prompt)
+        self.assertNotIn("get_system_prompt context injection failed", out.getvalue())
+
+    def test_system_prompt_logs_zero_injected_when_all_history_is_low_score(self):
+        import contextlib
+        import io
+        from unittest import mock
+
+        import agentmain
+
+        class FakeBridge:
+            def search(self, query, n_results=3):
+                return [
+                    {
+                        "text": "弱相关旧对话一",
+                        "score": 0.05,
+                        "metadata": {"role": "user", "session_id": "weak-a"},
+                    },
+                    {
+                        "text": "弱相关旧对话二",
+                        "score": 0.24,
+                        "metadata": {"role": "assistant", "session_id": "weak-b"},
+                    },
+                ]
+
+            def get_session_facts_context(self, session_id=None, max_facts=8):
+                return ""
+
+        out = io.StringIO()
+        with mock.patch("agentmain._palace_bridge", return_value=FakeBridge()), mock.patch(
+            "agentmain.get_global_memory", return_value=""
+        ), contextlib.redirect_stdout(out):
+            prompt = agentmain.get_system_prompt("本轮问题")
+
+        self.assertNotIn("弱相关旧对话一", prompt)
+        self.assertNotIn("弱相关旧对话二", prompt)
+        self.assertIn("injected 0 read-only history snippets", out.getvalue())
+        self.assertIn("skipped 2 low-score snippets", out.getvalue())
+
     def test_done_releases_running_before_mempalace_storage_finishes(self):
         import agentmain
         from unittest import mock
