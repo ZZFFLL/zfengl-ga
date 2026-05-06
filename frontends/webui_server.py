@@ -26,6 +26,11 @@ DEFAULT_GROUP_NAME = "未分组"
 _TURN_RE = re.compile(r"\**LLM Running \(Turn (\d+)\) \.\.\.\**")
 _SUMMARY_RE = re.compile(r"<summary>\s*(.*?)\s*</summary>", re.DOTALL)
 _SUMMARY_BLOCK_RE = re.compile(r"\n*<summary>\s*.*?\s*</summary>\n*", re.DOTALL)
+_FILE_CONTENT_BLOCK_RE = re.compile(r"\n*<file_content(?:\s[^>]*)?>\s*.*?\s*</file_content>\n*", re.DOTALL)
+_FILE_CONTENT_FENCED_BLOCK_RE = re.compile(
+    r"\n*`{3,}[^\n]*\n\s*<file_content(?:\s[^>]*)?>\s*.*?\s*</file_content>\s*\n`{3,}\n*",
+    re.DOTALL,
+)
 _FINAL_INFO_BLOCK_RE = re.compile(
     r"\n*`{3,}\s*\n?\[Info\]\s*Final response to user\.\s*\n?`{3,}\s*$",
     re.IGNORECASE,
@@ -40,6 +45,12 @@ _FINAL_INFO_TRAIL_RE = re.compile(
 )
 _TOOL_START_RE = re.compile(r"🛠️ Tool:\s*`(?P<tool>[^`]+)`\s*📥 args:\s*", re.DOTALL)
 _JS_RESULT_RE = re.compile(r"\n*JS\s*执行结果\s*:\s*[\s\S]*\Z")
+_WAITING_FOR_ANSWER_RE = re.compile(r"Waiting for your answer \.\.\.\s*", re.IGNORECASE)
+_INCOMPLETE_FILE_CONTENT_FENCE_RE = re.compile(
+    r"\n*`{3,}[^\n]*\n\s*<file_content(?:\s[^>]*)?>[\s\S]*\Z",
+    re.DOTALL,
+)
+_INCOMPLETE_FILE_CONTENT_RE = re.compile(r"\n*<file_content(?:\s[^>]*)?>[\s\S]*\Z", re.DOTALL)
 
 
 def _consume_fenced_block(text):
@@ -101,6 +112,8 @@ def _strip_tool_trace_blocks(text):
 def _strip_process_only_tail(text):
     """清理增量流里孤立出现的工具结果尾巴，避免过程日志闪进聊天正文。"""
     cleaned = _JS_RESULT_RE.sub("", text or "")
+    cleaned = _INCOMPLETE_FILE_CONTENT_FENCE_RE.sub("", cleaned)
+    cleaned = _INCOMPLETE_FILE_CONTENT_RE.sub("", cleaned)
     return cleaned
 
 
@@ -147,12 +160,81 @@ def _parse_tool_calls(text):
     return tool_calls
 
 
+def _render_ask_user_visible_text(text):
+    """将 ask_user 工具调用投影为聊天正文，避免正文区域完全为空。"""
+    for tool_call in _parse_tool_calls(text):
+        visible = _render_ask_user_tool_call(tool_call)
+        if visible:
+            return visible
+    return ""
+
+
+def _render_ask_user_tool_call(tool_call):
+    if (tool_call or {}).get("tool") != "ask_user":
+        return ""
+    args_text = (tool_call or {}).get("args") or ""
+    try:
+        payload = json.loads(args_text or "{}")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        payload = {}
+    question = str(payload.get("question") or "").strip()
+    candidates = payload.get("candidates") or []
+
+    if not question:
+        match = re.search(r'"question"\s*:\s*"([\s\S]*?)"(?:\s*,\s*"candidates"|\s*\}\s*$)', args_text)
+        if match:
+            question = match.group(1)
+    question = question.replace('\\"', '"').replace("\\n", "\n").strip()
+
+    candidate_lines = [str(item).strip() for item in candidates if str(item).strip()]
+    if not candidate_lines:
+        array_match = re.search(r'"candidates"\s*:\s*\[([\s\S]*?)\]', args_text)
+        if array_match:
+            candidate_lines = [
+                item.replace('\\"', '"').strip()
+                for item in re.findall(r'"((?:\\.|[^"])*)"', array_match.group(1))
+                if item.replace('\\"', '"').strip()
+            ]
+    lines = []
+    if question:
+        lines.append(question)
+    if candidate_lines:
+        if lines:
+            lines.append("")
+        for index, item in enumerate(candidate_lines, start=1):
+            lines.append(f"{index}. {item}")
+    return "\n".join(lines).strip()
+
+
+def render_message_content(content, execution_log=None, role=None):
+    """统一生成消息主区正文，兼容历史空 assistant 消息的 ask_user 回填。"""
+    cleaned = sanitize_message_content(content)
+    if cleaned:
+        return cleaned
+    if role == "assistant":
+        for turn in execution_log or []:
+            for tool_call in turn.get("tool_calls") or []:
+                visible = _render_ask_user_tool_call(tool_call)
+                if visible:
+                    return visible
+    return ""
+
+
+def sanitize_message_content(content):
+    cleaned = strip_summary_blocks(content)
+    if cleaned:
+        return _WAITING_FOR_ANSWER_RE.sub("", cleaned).strip()
+    return ""
+
+
 def strip_summary_blocks(text):
     """移除聊天展示里不应直接显示的 summary 规划块。"""
     cleaned = _SUMMARY_BLOCK_RE.sub("\n", text or "")
     cleaned = re.sub(r"\n*<summary>[\s\S]*\Z", "\n", cleaned)
     cleaned = _TURN_RE.sub("", cleaned)
     cleaned = _strip_tool_trace_blocks(cleaned)
+    cleaned = _FILE_CONTENT_FENCED_BLOCK_RE.sub("\n", cleaned)
+    cleaned = _FILE_CONTENT_BLOCK_RE.sub("\n", cleaned)
     cleaned = _strip_process_only_tail(cleaned)
     cleaned = _FINAL_INFO_BLOCK_RE.sub("", cleaned)
     cleaned = _FINAL_INFO_TRAIL_RE.sub("", cleaned)
@@ -163,7 +245,10 @@ def strip_summary_blocks(text):
 
 def extract_visible_reply_text(text):
     """提取真正应该渲染到聊天主区的最终答复正文。"""
-    return strip_summary_blocks(text)
+    cleaned = sanitize_message_content(text)
+    if cleaned:
+        return cleaned
+    return _render_ask_user_visible_text(text)
 
 
 def parse_execution_log(text):
@@ -210,7 +295,40 @@ def _title_from_user_text(text, limit=28):
     return text[:limit]
 
 
+def _normalize_conversation_title(text, fallback="新对话", limit=28, first_user_text="", preview_text=""):
+    raw = text or ""
+    summary_first_line = ""
+    had_summary_only = False
+    summary_match = _SUMMARY_RE.search(raw)
+    if summary_match:
+        summary_text = summary_match.group(1).strip()
+        first_line = next((line.strip() for line in summary_text.splitlines() if line.strip()), "")
+        summary_first_line = first_line
+        remainder = _SUMMARY_BLOCK_RE.sub("\n", raw).strip()
+        had_summary_only = not bool(remainder)
+        raw = remainder or first_line or raw
+    text = strip_summary_blocks(raw)
+    text = re.sub(r"(?i)LLM Running \(Turn \d+\)\s*\.\.\.", "", text or "")
+    text = text.replace("<summary>", " ").replace("</summary>", " ")
+    text = re.sub(r"\s+", " ", text).strip()
+    if text:
+        if had_summary_only:
+            if first_user_text:
+                return _title_from_user_text(first_user_text, limit=limit)
+            if preview_text:
+                return _title_from_user_text(preview_text, limit=limit)
+        return text[:limit]
+    if first_user_text:
+        return _title_from_user_text(first_user_text, limit=limit)
+    if preview_text:
+        return _title_from_user_text(preview_text, limit=limit)
+    if summary_first_line:
+        return summary_first_line[:limit]
+    return fallback
+
+
 def _clean_generated_title(text, limit=28):
+    text = _normalize_conversation_title(text, fallback="新对话", limit=limit)
     text = re.sub(r"^[#\-\s\"'“”《》]+|[#\-\s\"'“”《》]+$", "", text or "")
     text = re.sub(r"\s+", " ", text).strip()
     return text[:limit] or "新对话"
@@ -392,9 +510,44 @@ class SQLiteConversationStore:
                 conn.execute(
                     "ALTER TABLE messages ADD COLUMN execution_log TEXT NOT NULL DEFAULT '[]'"
                 )
+            self._normalize_legacy_conversation_titles(conn)
             conn.commit()
         finally:
             conn.close()
+
+    def _normalize_legacy_conversation_titles(self, conn):
+        rows = conn.execute(
+            """
+            SELECT id, title, preview
+            FROM conversations
+            WHERE deleted_at IS NULL
+            """
+        ).fetchall()
+        for row in rows:
+            raw_title = row["title"] or ""
+            if "<summary>" not in raw_title.lower() and "llm running" not in raw_title.lower():
+                continue
+            first_user_row = conn.execute(
+                """
+                SELECT content
+                FROM messages
+                WHERE conversation_id = ? AND role = 'user'
+                ORDER BY created_at ASC, rowid ASC
+                LIMIT 1
+                """,
+                (row["id"],),
+            ).fetchone()
+            first_user_text = (first_user_row["content"] if first_user_row else "") or ""
+            cleaned_title = _normalize_conversation_title(
+                raw_title,
+                first_user_text=first_user_text,
+                preview_text=row["preview"] or "",
+            )
+            if cleaned_title != raw_title:
+                conn.execute(
+                    "UPDATE conversations SET title = ?, updated_at = ? WHERE id = ?",
+                    (cleaned_title, _now_iso(), row["id"]),
+                )
 
     def create_group(self, name):
         now = _now_iso()
@@ -497,6 +650,10 @@ class SQLiteConversationStore:
             """
         )
         for row in items:
+            row["title"] = _normalize_conversation_title(
+                row.get("title", ""),
+                preview_text=row.get("preview", ""),
+            )
             row["pinned"] = bool(row["pinned"])
             row["archived"] = bool(row["archived"])
         return items
@@ -513,6 +670,21 @@ class SQLiteConversationStore:
         )
         if row is None:
             return None
+        first_user = self._fetchone(
+            """
+            SELECT content
+            FROM messages
+            WHERE conversation_id = ? AND role = 'user'
+            ORDER BY created_at ASC, rowid ASC
+            LIMIT 1
+            """,
+            (conversation_id,),
+        )
+        row["title"] = _normalize_conversation_title(
+            row.get("title", ""),
+            first_user_text=(first_user or {}).get("content", ""),
+            preview_text=row.get("preview", ""),
+        )
         row["pinned"] = bool(row["pinned"])
         row["archived"] = bool(row["archived"])
         return row
@@ -535,6 +707,11 @@ class SQLiteConversationStore:
                 row["execution_log"] = json.loads(row.get("execution_log") or "[]")
             except json.JSONDecodeError:
                 row["execution_log"] = []
+            row["content"] = render_message_content(
+                row.get("content", ""),
+                execution_log=row.get("execution_log") or [],
+                role=row.get("role"),
+            )
         return {
             "summary": summary,
             "messages": rows,
@@ -552,7 +729,22 @@ class SQLiteConversationStore:
         summary = self.get_conversation_summary(conversation_id)
         if summary is None:
             return None
-        title = (title or "").strip() or summary["title"]
+        first_user = self._fetchone(
+            """
+            SELECT content
+            FROM messages
+            WHERE conversation_id = ? AND role = 'user'
+            ORDER BY created_at ASC, rowid ASC
+            LIMIT 1
+            """,
+            (conversation_id,),
+        )
+        title = _normalize_conversation_title(
+            title or "",
+            fallback=summary["title"],
+            first_user_text=(first_user or {}).get("content", ""),
+            preview_text=summary.get("preview", ""),
+        )
         with self._lock:
             conn = self._connect()
             try:

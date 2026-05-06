@@ -15,6 +15,7 @@ from frontends.webui_server import (
     WebUITaskManager,
     _generate_conversation_title,
     build_state,
+    extract_visible_reply_text,
     parse_execution_log,
     strip_summary_blocks,
 )
@@ -607,6 +608,64 @@ class WebUILogParserTests(unittest.TestCase):
 
         self.assertEqual(cleaned, "")
 
+    def test_extract_visible_reply_text_projects_ask_user_into_chat_body(self):
+        text = (
+            "**LLM Running (Turn 7) ...**\n"
+            "🛠️ Tool: `ask_user`  📥 args:\n"
+            "````text\n"
+            "{\n"
+            '  "question": "浏览器自动化工具似乎无效：\\n\\n1. 是否已安装 tmwd_cdp_bridge 扩展？\\n2. 是否已打开浏览器并导航到某个网页？\\n3. 是否需要我帮忙安装扩展？",\n'
+            '  "candidates": ["已安装扩展", "未安装扩展", "需要你帮我安装"]\n'
+            "}\n"
+            "````\n"
+            "`````\n"
+            "Waiting for your answer ...\n"
+            "`````"
+        )
+
+        cleaned = extract_visible_reply_text(text)
+
+        self.assertIn("浏览器自动化工具似乎无效", cleaned)
+        self.assertIn("1. 是否已安装 tmwd_cdp_bridge 扩展？", cleaned)
+        self.assertIn("1. 已安装扩展", cleaned)
+        self.assertIn("2. 未安装扩展", cleaned)
+        self.assertIn("3. 需要你帮我安装", cleaned)
+        self.assertNotIn("Waiting for your answer", cleaned)
+        self.assertNotIn("🛠️ Tool:", cleaned)
+
+    def test_extract_visible_reply_text_strips_file_content_blocks_from_chat_body(self):
+        text = (
+            "好，开始实施剩余 3 项。\n"
+            "````\n"
+            "<file_content>\n"
+            "\"\"\" hybrid_search.py - Semantic + keyword hybrid search for GA.\n"
+            "\"\"\"\n"
+            "\n"
+            "from memory.palace_bridge import get_bridge\n"
+            "</file_content>\n"
+            "````\n"
+            "已完成写入，接下来继续修改 sys_prompt。"
+        )
+
+        cleaned = extract_visible_reply_text(text)
+
+        self.assertIn("好，开始实施剩余 3 项。", cleaned)
+        self.assertIn("已完成写入，接下来继续修改 sys_prompt。", cleaned)
+        self.assertNotIn("<file_content>", cleaned)
+        self.assertNotIn("hybrid_search.py - Semantic + keyword hybrid search for GA.", cleaned)
+
+    def test_extract_visible_reply_text_drops_incomplete_streaming_file_content_tail(self):
+        text = (
+            "好，开始实施剩余 3 项。\n"
+            "````\n"
+            "<file_content>\n"
+            "\"\"\" hybrid_search.py - Semantic + keyword hybrid search for GA.\n"
+        )
+
+        cleaned = extract_visible_reply_text(text)
+
+        self.assertEqual(cleaned, "好，开始实施剩余 3 项。")
+
 
 class WebUITitleGenerationTests(unittest.TestCase):
     def test_generate_conversation_title_uses_llm_without_changing_stream_mode(self):
@@ -640,6 +699,29 @@ class WebUITitleGenerationTests(unittest.TestCase):
         self.assertEqual(title, "帮我排查标题生成异常")
         self.assertTrue(agent.llmclient.backend.stream)
         self.assertEqual(agent.llmclient.backend.history, ["keep"])
+
+    def test_generate_conversation_title_strips_summary_markup(self):
+        class SummaryTitleBackend:
+            def __init__(self):
+                self.history = ["keep"]
+                self.stream = True
+
+            def ask(self, _message):
+                def _gen():
+                    yield "<summary>用户请求为消息生成中文标题。</summary>\n长沙明天天气查询"
+
+                return _gen()
+
+        class SummaryTitleAgent:
+            def __init__(self):
+                self.llmclient = FakeClient("title")
+                self.llmclient.backend = SummaryTitleBackend()
+
+        agent = SummaryTitleAgent()
+
+        title = _generate_conversation_title(agent, "长沙明天的天气怎么样")
+
+        self.assertEqual(title, "长沙明天天气查询")
 
 
 class SQLiteConversationStoreTests(unittest.TestCase):
@@ -680,6 +762,29 @@ class SQLiteConversationStoreTests(unittest.TestCase):
 
         conversations = self.store.list_conversations()
         self.assertEqual(conversations, [])
+
+    def test_get_conversation_summary_sanitizes_legacy_dirty_title(self):
+        conversation = self.store.create_conversation(initial_user_text="标题探针")
+        self.store.update_conversation(
+            conversation["id"],
+            title="<summary>用户请求为消息生成中文标题。</summary>\n长沙明天天气查询",
+        )
+
+        summary = self.store.get_conversation_summary(conversation["id"])
+
+        self.assertEqual(summary["title"], "长沙明天天气查询")
+
+    def test_get_conversation_summary_falls_back_to_first_user_text_for_summary_only_title(self):
+        conversation = self.store.create_conversation(initial_user_text="长沙明天的天气怎么样")
+        self.store.add_message(conversation["id"], "user", "长沙明天的天气怎么样", "ui")
+        self.store.update_conversation(
+            conversation["id"],
+            title="<summary>用户请求为消息生成中文标题。</summary>",
+        )
+
+        summary = self.store.get_conversation_summary(conversation["id"])
+
+        self.assertEqual(summary["title"], "长沙明天的天气怎么样")
 
 
 class WebUITaskManagerTests(unittest.TestCase):
@@ -855,6 +960,65 @@ class WebUITaskManagerTests(unittest.TestCase):
         self.assertEqual(events[1]["event"], "message_done")
         self.assertEqual(events[1]["content"], "最终答复")
 
+    def test_streaming_ask_user_update_emits_visible_question_in_message_body(self):
+        conversation = self.store.create_conversation(initial_user_text="ask user")
+
+        task = self.manager.start_chat(
+            ChatStartRequest(
+                conversation_id=conversation["id"],
+                prompt="hello world",
+            )
+        )
+        task_id = task["task_id"]
+
+        output = self.agent.tasks[0][3]
+        output.put(
+            {
+                "next": (
+                    "**LLM Running (Turn 7) ...**\n"
+                    "🛠️ Tool: `ask_user`  📥 args:\n"
+                    "````text\n"
+                    "{\n"
+                    '  "question": "浏览器自动化工具似乎无效。\\n1. 是否已安装扩展？\\n2. 是否已打开目标网页？",\n'
+                    '  "candidates": ["已安装", "未安装", "需要协助"]\n'
+                    "}\n"
+                    "````\n"
+                    "`````\n"
+                    "Waiting for your answer ...\n"
+                    "`````"
+                ),
+                "source": "user",
+            }
+        )
+        output.put(
+            {
+                "done": (
+                    "**LLM Running (Turn 7) ...**\n"
+                    "🛠️ Tool: `ask_user`  📥 args:\n"
+                    "````text\n"
+                    "{\n"
+                    '  "question": "浏览器自动化工具似乎无效。\\n1. 是否已安装扩展？\\n2. 是否已打开目标网页？",\n'
+                    '  "candidates": ["已安装", "未安装", "需要协助"]\n'
+                    "}\n"
+                    "````\n"
+                    "`````\n"
+                    "Waiting for your answer ...\n"
+                    "`````"
+                ),
+                "source": "user",
+            }
+        )
+
+        events = list(self.manager.drain_task(task_id, timeout=0.01))
+
+        self.assertEqual(events[0]["event"], "message_delta")
+        self.assertIn("浏览器自动化工具似乎无效", events[0]["content"])
+        self.assertIn("1. 已安装", events[0]["content"])
+        self.assertEqual(events[1]["event"], "execution_update")
+        self.assertEqual(events[2]["event"], "message_done")
+        self.assertIn("2. 未安装", events[2]["content"])
+        self.assertIn("3. 需要协助", events[2]["content"])
+
     def test_start_chat_generates_title_only_for_first_user_message(self):
         generated_prompts = []
         self.manager.title_generator = lambda prompt: generated_prompts.append(prompt) or "LLM 概括标题"
@@ -964,6 +1128,34 @@ class WebUITaskManagerTests(unittest.TestCase):
         self.assertEqual(detail["messages"][0]["execution_log"], [])
         self.assertEqual(detail["messages"][1]["execution_log"], execution_log)
         self.assertEqual(detail["execution_log"], execution_log)
+
+    def test_conversation_detail_backfills_ask_user_content_from_execution_log(self):
+        conversation = self.store.create_conversation(initial_user_text="ask user")
+        execution_log = [
+            {
+                "turn": 1,
+                "title": "需要用户确认",
+                "content": "需要用户确认",
+                "tool_calls": [
+                    {
+                        "tool": "ask_user",
+                        "args": '{\n  "question": "请确认下一步：\\n1. 是否继续？",\n  "candidates": ["继续", "暂停"]\n}',
+                        "result": "Waiting for your answer ...",
+                        "action": "",
+                        "status": "",
+                    }
+                ],
+            }
+        ]
+        self.store.add_message(conversation["id"], "user", "用 ask_user 提问", "ui")
+        self.store.add_message(conversation["id"], "assistant", "", "ga", execution_log=execution_log)
+
+        detail = self.manager.get_conversation(conversation["id"])
+
+        self.assertEqual(len(detail["messages"]), 2)
+        self.assertIn("请确认下一步", detail["messages"][1]["content"])
+        self.assertIn("1. 继续", detail["messages"][1]["content"])
+        self.assertIn("2. 暂停", detail["messages"][1]["content"])
 
     def test_controls_delegate_to_agent(self):
         self.manager.switch_llm(1)

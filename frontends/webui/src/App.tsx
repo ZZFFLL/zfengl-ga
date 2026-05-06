@@ -62,6 +62,7 @@ import {
   resolveExecutionTurns,
   shouldShowPendingAssistant,
 } from "./execution-panel-state";
+import { isNearScrollBottom } from "./chat-scroll-state";
 import {
   buildBulkDeleteLabel,
   pruneSelectedConversations,
@@ -1282,6 +1283,7 @@ export default function App() {
   const streamDoneRef = useRef(false);
   const streamAnimationFrameRef = useRef<number | null>(null);
   const streamLastStepAtRef = useRef(0);
+  const autoScrollPinnedRef = useRef(true);
 
   const running = Boolean(state?.running);
   const activeConversationId = activeConversation?.summary.id ?? state?.active_conversation_id ?? null;
@@ -1343,12 +1345,33 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!autoScrollPinnedRef.current) return;
     scrollChatToBottom(streamAnimating ? "auto" : "smooth");
   }, [messages, streamAnimating]);
+
+  useEffect(() => {
+    const target = chatScrollRef.current;
+    if (!target) return;
+
+    const updateAutoScrollPinned = () => {
+      autoScrollPinnedRef.current = isNearScrollBottom(
+        target.scrollTop,
+        target.clientHeight,
+        target.scrollHeight,
+      );
+    };
+
+    updateAutoScrollPinned();
+    target.addEventListener("scroll", updateAutoScrollPinned, { passive: true });
+    return () => {
+      target.removeEventListener("scroll", updateAutoScrollPinned);
+    };
+  }, [activeConversationId, hasThread]);
 
   function scrollChatToBottom(behavior: ScrollBehavior = "auto") {
     const target = chatScrollRef.current;
     if (!target) return;
+    autoScrollPinnedRef.current = true;
     window.requestAnimationFrame(() => {
       target.scrollTo({ top: target.scrollHeight, behavior });
     });
@@ -1401,7 +1424,9 @@ export default function App() {
     streamLastStepAtRef.current = timestamp;
     const nextContent = nextSmoothContent(displayed, target, streamDoneRef.current);
     updateStreamingAssistant(nextContent);
-    scrollChatToBottom("auto");
+    if (autoScrollPinnedRef.current) {
+      scrollChatToBottom("auto");
+    }
     if (nextContent.length < target.length) {
       streamAnimationFrameRef.current = window.requestAnimationFrame(stepStreamingAssistant);
     } else {
@@ -1448,6 +1473,7 @@ export default function App() {
     }
     // 中文注释：这里先切 UI 与中间层 active 会话，不在切换动作里主动触发 GA 重放。
     setError("");
+    autoScrollPinnedRef.current = true;
     const detail = await activateConversation(conversationId);
     setActiveConversation(detail);
     setMessages(toUiMessages(detail));
@@ -1462,6 +1488,7 @@ export default function App() {
 
   const handleCreateConversation = async (titleHint = "") => {
     setError("");
+    autoScrollPinnedRef.current = true;
     const conversation = await createConversation(titleHint);
     const detail = await fetchConversation(conversation.id);
     setActiveConversation(detail);
@@ -1497,6 +1524,7 @@ export default function App() {
     syncConversationList(nextState);
     const nextActiveId = nextState.active_conversation_id;
     if (nextActiveId) {
+      autoScrollPinnedRef.current = true;
       const detail = await fetchConversation(nextActiveId);
       setActiveConversation(detail);
       setMessages(toUiMessages(detail));
@@ -1525,6 +1553,7 @@ export default function App() {
     syncConversationList(nextState);
     const nextActiveId = nextState.active_conversation_id;
     if (nextActiveId) {
+      autoScrollPinnedRef.current = true;
       const detail = await fetchConversation(nextActiveId);
       const nextMessages = toUiMessages(detail);
       setActiveConversation(detail);
