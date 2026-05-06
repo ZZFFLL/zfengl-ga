@@ -398,6 +398,34 @@ class MemPalaceExperienceBridgeTests(unittest.TestCase):
         self.assertIn("新经验事实", context)
         self.assertNotIn("旧经验事实", context)
 
+    def test_experience_context_tolerates_undated_timeline_facts(self):
+        from memory.palace_bridge import PalaceBridge
+
+        bridge = PalaceBridge(palace_path="unused", kg_path="unused")
+
+        class FakeKG:
+            def timeline(self):
+                return [
+                    {
+                        "subject": "undated-session",
+                        "predicate": "solution",
+                        "object": "无日期经验事实",
+                        "valid_from": None,
+                    },
+                    {
+                        "subject": "dated-session",
+                        "predicate": "solution",
+                        "object": "有日期经验事实",
+                        "valid_from": "2026-05-06 10:00:00",
+                    },
+                ]
+
+        bridge._kg = FakeKG()
+        context = bridge.get_experience_context(max_facts=1)
+
+        self.assertIn("有日期经验事实", context)
+        self.assertNotIn("无日期经验事实", context)
+
     def test_clean_experience_object_rejects_newlines(self):
         from memory.palace_bridge import PalaceBridge
 

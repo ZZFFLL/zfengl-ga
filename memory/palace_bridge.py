@@ -432,7 +432,7 @@ class PalaceBridge:
         try:
             facts = self.query_facts(session_id) if session_id else self.kg.timeline()
             if not session_id:
-                facts = sorted(facts, key=lambda f: f.get('valid_from', ''), reverse=True)
+                facts = sorted(facts, key=lambda f: f.get('valid_from') or '', reverse=True)
             selected = []
             seen = set()
             for f in facts:
