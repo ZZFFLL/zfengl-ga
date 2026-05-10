@@ -4,6 +4,7 @@ import {
   Menu,
   MessageSquareText,
   MoreHorizontal,
+  PanelRight,
   PauseCircle,
   PlayCircle,
   RefreshCcw,
@@ -25,6 +26,9 @@ export function TopBar({
   onReinject,
   onAutonomous,
   onOpenContinue,
+  contextOpen,
+  onOpenContext,
+  onToggleContext,
 }: {
   state: RuntimeState | null;
   running: boolean;
@@ -37,6 +41,9 @@ export function TopBar({
   onReinject: () => void;
   onAutonomous: (enabled: boolean) => void;
   onOpenContinue: () => void;
+  contextOpen: boolean;
+  onOpenContext: () => void;
+  onToggleContext: () => void;
 }) {
   const topMenuItems: MenuProps["items"] = [
     {
@@ -82,6 +89,9 @@ export function TopBar({
 
   return (
     <header className="ga-topbar shrink-0">
+      {/*
+        中文注释：桌面端做右侧面板折叠，移动端只负责打开抽屉，避免把两套交互状态混在一起。
+      */}
       <div className="flex min-h-[52px] items-center gap-2.5 px-3 py-2 md:px-5">
         <Tooltip title="打开会话侧栏">
           <Button
@@ -121,6 +131,26 @@ export function TopBar({
               onChange={(value) => onSwitchLlm(Number(value))}
             />
           </div>
+
+          <Tooltip title={contextOpen ? "收起上下文面板" : "打开上下文面板"}>
+            <Button
+              type="text"
+              className="hidden xl:inline-flex"
+              aria-label={contextOpen ? "收起上下文面板" : "打开上下文面板"}
+              icon={<PanelRight className="h-5 w-5" aria-hidden="true" />}
+              onClick={onToggleContext}
+            />
+          </Tooltip>
+
+          <Tooltip title="打开上下文面板">
+            <Button
+              type="text"
+              className="xl:hidden"
+              aria-label="打开上下文面板"
+              icon={<PanelRight className="h-5 w-5" aria-hidden="true" />}
+              onClick={onOpenContext}
+            />
+          </Tooltip>
 
           <StatusBadge state={state} />
 

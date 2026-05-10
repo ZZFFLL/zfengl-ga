@@ -1,5 +1,5 @@
 import { CSSProperties, FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
-import { App as AntApp, ConfigProvider, Input } from "antd";
+import { App as AntApp, ConfigProvider, Drawer, Input, Layout, Splitter } from "antd";
 import {
   abortTask,
   activateConversation,
@@ -37,6 +37,7 @@ import { ChatHome } from "./components/chat/ChatHome";
 import { ChatMessageView } from "./components/chat/ChatMessageView";
 import { StatusBadge } from "./components/app/StatusBadge";
 import { Composer } from "./components/composer/Composer";
+import { WorkbenchContextPanel } from "./components/context/WorkbenchContextPanel";
 import { ConversationSidebar } from "./components/sidebar/ConversationSidebar";
 import { ContinueCompatDialog } from "./components/dialogs/ContinueCompatDialog";
 import type { ContinueCompatResult } from "./components/dialogs/ContinueCompatDialog";
@@ -45,10 +46,12 @@ import { TopBar } from "./components/shell/TopBar";
 import { sanitizeDisplayText } from "./domain/message-text";
 import { formatMessageTime, nowLabel } from "./domain/time";
 import { nextSmoothContent, prefersReducedMotion, streamStepInterval } from "./domain/streaming-text";
+import { chooseWorkbenchContextTab } from "./state/workbench-context-state";
 import { gaTheme } from "./theme";
 
 const id = () => Math.random().toString(36).slice(2);
 const DEFAULT_CONTINUE_COMMAND = "/continue 1";
+type WorkbenchContextTab = "activity" | "status";
 
 function toUiMessages(detail: ConversationDetail | null) {
   if (!detail) return [];
@@ -72,6 +75,9 @@ function GenericAgentWebUI() {
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [contextOpen, setContextOpen] = useState(true);
+  const [contextDrawerOpen, setContextDrawerOpen] = useState(false);
+  const [contextTab, setContextTab] = useState<WorkbenchContextTab>("status");
   const [continueDialogOpen, setContinueDialogOpen] = useState(false);
   const [continueCommand, setContinueCommand] = useState(DEFAULT_CONTINUE_COMMAND);
   const [continueLoading, setContinueLoading] = useState(false);
@@ -94,6 +100,8 @@ function GenericAgentWebUI() {
   const activeConversationId = activeConversation?.summary.id ?? state?.active_conversation_id ?? null;
   const lastReplyTime = state?.last_reply_time || 0;
   const hasThread = messages.length > 0;
+  const contextTurns = turns.length > 0 ? turns : activeConversation?.execution_log ?? [];
+  const resolvedContextTab = chooseWorkbenchContextTab(contextTab, contextTurns, running);
   const recentConversationIds = conversations
     .filter((conversation) => !conversation.group_id && !conversation.pinned)
     .map((conversation) => conversation.id);
@@ -616,15 +624,21 @@ function GenericAgentWebUI() {
   }
 
   return (
-    <div
+    <Layout
       style={
         {
           "--sidebar-width": sidebarCollapsed ? "76px" : "280px",
         } as CSSProperties
       }
-      className="ga-shell grid h-screen h-dvh min-h-0 overflow-hidden bg-app-bg text-app-text xl:grid-cols-[var(--sidebar-width)_minmax(0,1fr)] xl:transition-[grid-template-columns] xl:duration-300 xl:ease-out"
+      className="ga-shell ga-workbench-shell h-screen h-dvh min-h-0 overflow-hidden bg-app-bg text-app-text"
     >
-      <div className="hidden xl:block">
+      <Layout.Sider
+        width={sidebarCollapsed ? 76 : 280}
+        collapsedWidth={76}
+        collapsed={sidebarCollapsed}
+        trigger={null}
+        className="ga-workbench-sider hidden xl:block"
+      >
         <ConversationSidebar
           state={state}
           conversations={conversations}
@@ -653,14 +667,17 @@ function GenericAgentWebUI() {
           onRenameGroup={(group) => void handleRenameGroup(group)}
           onDeleteGroup={(group) => void handleDeleteGroup(group)}
         />
-      </div>
+      </Layout.Sider>
 
-      <main className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+      <Layout className="min-h-0 min-w-0 overflow-hidden bg-transparent">
         <TopBar
           state={state}
           running={running}
           conversationTitle={activeConversation?.summary.title || "新对话"}
+          contextOpen={contextOpen}
           onOpenSidebar={() => setSidebarOpen(true)}
+          onOpenContext={() => setContextDrawerOpen(true)}
+          onToggleContext={() => setContextOpen((current) => !current)}
           onCreateConversation={() => void handleCreateConversation()}
           onSwitchLlm={(index) =>
             void switchLlm(index).then((next) => {
@@ -684,54 +701,74 @@ function GenericAgentWebUI() {
           }}
         />
 
-        {error ? (
-          <div className="shrink-0 border-b border-app-line bg-app-danger/10 px-6 py-3 text-sm text-app-danger">
-            {error}
-          </div>
-        ) : null}
+        <Layout.Content className="min-h-0 min-w-0 overflow-hidden">
+          <Splitter className="ga-workbench-splitter h-full min-h-0">
+            <Splitter.Panel min={0}>
+              <main className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
+                {error ? (
+                  <div className="shrink-0 border-b border-app-line bg-app-danger/10 px-6 py-3 text-sm text-app-danger">
+                    {error}
+                  </div>
+                ) : null}
 
-        <section ref={chatScrollRef} className="operation-scroll min-h-0 flex-1 overflow-y-auto">
-          {!hasThread ? (
-            <ChatHome
-              state={state}
-              draft={draft}
-              running={running}
-              onDraftChange={setDraft}
-              onKeyDown={handleKeyDown}
-              onSubmit={(event) => void handleSubmit(event)}
-            />
-          ) : (
-            <div className="mx-auto flex min-h-full w-full max-w-[920px] flex-col px-6 pb-10 pt-8">
-              <div className="space-y-5">
-                {messages.map((message, index) => {
-                  const isStreamingAssistant =
-                    streamAnimating && message.role === "assistant" && index === messages.length - 1;
-                  return (
-                    <ChatMessageView
-                      key={message.id}
-                      message={message}
-                      streaming={isStreamingAssistant}
-                      liveExecutionLog={isStreamingAssistant ? turns : []}
+                <section ref={chatScrollRef} className="operation-scroll min-h-0 flex-1 overflow-y-auto">
+                  {!hasThread ? (
+                    <ChatHome
+                      state={state}
+                      draft={draft}
+                      running={running}
+                      onDraftChange={setDraft}
+                      onKeyDown={handleKeyDown}
+                      onSubmit={(event) => void handleSubmit(event)}
                     />
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </section>
+                  ) : (
+                    <div className="mx-auto flex min-h-full w-full max-w-[920px] flex-col px-6 pb-10 pt-8">
+                      <div className="space-y-5">
+                        {messages.map((message, index) => {
+                          const isStreamingAssistant =
+                            streamAnimating && message.role === "assistant" && index === messages.length - 1;
+                          return (
+                            <ChatMessageView
+                              key={message.id}
+                              message={message}
+                              streaming={isStreamingAssistant}
+                              liveExecutionLog={isStreamingAssistant ? turns : []}
+                            />
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </section>
 
-        {hasThread ? (
-          <Composer
-            state={state}
-            draft={draft}
-            running={running}
-            onDraftChange={setDraft}
-            onKeyDown={handleKeyDown}
-            onSubmit={(event) => void handleSubmit(event)}
-            onAbort={() => void abortTask().then(refreshState)}
-          />
-        ) : null}
-      </main>
+                {hasThread ? (
+                  <Composer
+                    state={state}
+                    draft={draft}
+                    running={running}
+                    onDraftChange={setDraft}
+                    onKeyDown={handleKeyDown}
+                    onSubmit={(event) => void handleSubmit(event)}
+                    onAbort={() => void abortTask().then(refreshState)}
+                  />
+                ) : null}
+              </main>
+            </Splitter.Panel>
+
+            {contextOpen ? (
+              <Splitter.Panel min={280} max={420} defaultSize={340} collapsible={{ start: true }}>
+                <WorkbenchContextPanel
+                  state={state}
+                  turns={contextTurns}
+                  activeTab={resolvedContextTab}
+                  onTabChange={setContextTab}
+                  onClose={() => setContextOpen(false)}
+                />
+              </Splitter.Panel>
+            ) : null}
+          </Splitter>
+        </Layout.Content>
+      </Layout>
 
       <SidebarDialog open={sidebarOpen} onOpenChange={setSidebarOpen}>
         <ConversationSidebar
@@ -763,6 +800,24 @@ function GenericAgentWebUI() {
         />
       </SidebarDialog>
 
+      <Drawer
+        open={contextDrawerOpen}
+        placement="right"
+        width={360}
+        title={null}
+        closable={false}
+        className="ga-context-drawer xl:hidden"
+        onClose={() => setContextDrawerOpen(false)}
+      >
+        <WorkbenchContextPanel
+          state={state}
+          turns={contextTurns}
+          activeTab={resolvedContextTab}
+          onTabChange={setContextTab}
+          onClose={() => setContextDrawerOpen(false)}
+        />
+      </Drawer>
+
       <ContinueCompatDialog
         open={continueDialogOpen}
         command={continueCommand}
@@ -777,7 +832,7 @@ function GenericAgentWebUI() {
       <div id="last-reply-time" className="hidden">
         {lastReplyTime}
       </div>
-    </div>
+    </Layout>
   );
 }
 

@@ -1,0 +1,34 @@
+.ga-workbench-shell {
+  width: 100%;
+}
+
+.ga-workbench-sider.ant-layout-sider {
+  background: transparent;
+}
+
+.ga-workbench-sider .ant-layout-sider-children {
+  height: 100%;
+}
+
+.ga-workbench-splitter {
+  background: transparent;
+}
+
+.ga-workbench-splitter .ant-splitter-panel {
+  min-height: 0;
+}
+
+.ga-context-drawer .ant-drawer-body {
+  height: 100%;
+  padding: 0;
+}
+
+.ga-context-drawer .ant-drawer-content {
+  background: #f8fafb;
+}
+
+@media (max-width: 1279px) {
+  .ga-workbench-splitter .ant-splitter-bar {
+    display: none;
+  }
+}
