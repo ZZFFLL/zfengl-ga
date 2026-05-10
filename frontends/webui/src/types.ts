@@ -53,6 +53,15 @@ export type ConversationMessage = {
   created_at: string;
 };
 
+export type UiMessage = {
+  id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  time: string;
+  executionLog: ExecutionTurn[];
+  pending?: boolean;
+};
+
 export type ConversationDetail = {
   summary: ConversationSummary;
   messages: ConversationMessage[];
