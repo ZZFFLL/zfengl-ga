@@ -159,6 +159,10 @@ test("chooseWorkbenchContextTab falls back to status without execution turns", (
   assert.equal(chooseWorkbenchContextTab("activity", [], false), "status");
 });
 
+test("chooseWorkbenchContextTab sanitizes an invalid requested tab when idle", () => {
+  assert.equal(chooseWorkbenchContextTab("stale", [completedTurn], false), "status");
+});
+
 test("countToolCalls sums all turn tool calls", () => {
   assert.equal(countToolCalls([activeTurn, completedTurn]), 2);
 });
@@ -209,7 +213,7 @@ Create `frontends/webui/src/state/workbench-context-state.ts`:
 ```ts
 import type { ExecutionTurn, RuntimeState } from "../types";
 
-export type WorkbenchContextTab = "activity" | "status";
+type WorkbenchContextTab = "activity" | "status";
 
 export function chooseWorkbenchContextTab(
   requestedTab: WorkbenchContextTab,
@@ -217,8 +221,9 @@ export function chooseWorkbenchContextTab(
   running: boolean,
 ): WorkbenchContextTab {
   if (running && turns.length > 0) return "activity";
-  if (requestedTab === "activity" && turns.length === 0) return "status";
-  return requestedTab;
+  if (turns.length === 0) return "status";
+  if (requestedTab === "activity" || requestedTab === "status") return requestedTab;
+  return "status";
 }
 
 export function countToolCalls(turns: ExecutionTurn[]): number {
@@ -282,7 +287,7 @@ Create `frontends/webui/src/components/context/ContextPanelHeader.tsx`:
 ```tsx
 import { Button, Segmented, Tooltip } from "antd";
 import { PanelRightClose } from "lucide-react";
-import type { WorkbenchContextTab } from "../../state/workbench-context-state";
+type WorkbenchContextTab = "activity" | "status";
 
 export function ContextPanelHeader({
   activeTab,
@@ -469,7 +474,7 @@ Create `frontends/webui/src/components/context/WorkbenchContextPanel.tsx`:
 
 ```tsx
 import type { ExecutionTurn, RuntimeState } from "../../types";
-import type { WorkbenchContextTab } from "../../state/workbench-context-state";
+type WorkbenchContextTab = "activity" | "status";
 import { ContextPanelHeader } from "./ContextPanelHeader";
 import { ExecutionActivityPanel } from "./ExecutionActivityPanel";
 import { RuntimeSummaryPanel } from "./RuntimeSummaryPanel";
@@ -723,15 +728,14 @@ Modify imports in `frontends/webui/src/App.tsx`:
 ```tsx
 import { App as AntApp, ConfigProvider, Drawer, Input, Layout, Splitter } from "antd";
 import { WorkbenchContextPanel } from "./components/context/WorkbenchContextPanel";
-import {
-  chooseWorkbenchContextTab,
-  type WorkbenchContextTab,
-} from "./state/workbench-context-state";
+import { chooseWorkbenchContextTab } from "./state/workbench-context-state";
 ```
 
 Add state near existing sidebar state:
 
 ```tsx
+  type WorkbenchContextTab = "activity" | "status";
+
   const [contextOpen, setContextOpen] = useState(true);
   const [contextDrawerOpen, setContextDrawerOpen] = useState(false);
   const [contextTab, setContextTab] = useState<WorkbenchContextTab>("status");
@@ -1411,6 +1415,6 @@ Open-slot scan:
 
 Type consistency:
 
-- New `WorkbenchContextTab` is defined in Task 1 and used by Tasks 2 and 3.
+- The `activity` / `status` union is defined locally in the files that need it and used consistently by Tasks 2 and 3.
 - Context panel uses existing `RuntimeState` and `ExecutionTurn` only.
 - No task references subagent, run, artifact, or checkpoint APIs.

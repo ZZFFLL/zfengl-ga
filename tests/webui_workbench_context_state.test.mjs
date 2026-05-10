@@ -66,6 +66,10 @@ test("chooseWorkbenchContextTab falls back to status without turns", () => {
   assert.equal(chooseWorkbenchContextTab("activity", [], false), "status");
 });
 
+test("chooseWorkbenchContextTab sanitizes an invalid requested tab when idle", () => {
+  assert.equal(chooseWorkbenchContextTab("stale", [completedTurn], false), "status");
+});
+
 test("countToolCalls sums all turn tool call counts", () => {
   assert.equal(countToolCalls([activeTurn, completedTurn]), 2);
 });

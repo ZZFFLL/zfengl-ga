@@ -1,6 +1,6 @@
 import type { ExecutionTurn, RuntimeState } from "../types";
 
-export type WorkbenchContextTab = "activity" | "status";
+type WorkbenchContextTab = "activity" | "status";
 
 export function chooseWorkbenchContextTab(
   requestedTab: WorkbenchContextTab,
@@ -9,15 +9,16 @@ export function chooseWorkbenchContextTab(
 ): WorkbenchContextTab {
   if (running && turns.length > 0) return "activity";
   if (turns.length === 0) return "status";
-  return requestedTab;
+  if (requestedTab === "activity" || requestedTab === "status") return requestedTab;
+  return "status";
 }
 
 export function countToolCalls(turns: ExecutionTurn[]) {
-  return turns.reduce((total, turn) => total + turn.tool_calls.length, 0);
+  return turns.reduce((total, turn) => total + (turn.tool_calls?.length ?? 0), 0);
 }
 
 export function buildTurnMeta(turn: ExecutionTurn) {
-  const toolCount = turn.tool_calls.length;
+  const toolCount = turn.tool_calls?.length ?? 0;
 
   return {
     title: turn.title || `Turn ${turn.turn}`,
