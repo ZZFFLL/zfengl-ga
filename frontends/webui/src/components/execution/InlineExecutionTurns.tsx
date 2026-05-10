@@ -27,7 +27,7 @@ export function InlineExecutionTurns({
           </Tag>
           <span className="truncate">{label}</span>
         </div>
-        <span className="shrink-0 text-xs font-medium text-app-muted">{turns.length} 轮</span>
+        <span className="shrink-0 text-xs text-app-muted">{turns.length} 轮</span>
       </div>
       <div className="mt-3 space-y-2">
         {turns.map((turn, index) => {
