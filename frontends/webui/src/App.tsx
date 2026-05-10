@@ -23,8 +23,6 @@ import {
   Trash2,
   Wrench,
 } from "lucide-react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import {
   abortTask,
   activateConversation,
@@ -64,6 +62,7 @@ import {
   pruneSelectedConversations,
   toggleSelectedConversation,
 } from "./state/sidebar-selection";
+import { MarkdownContent } from "./components/chat/MarkdownContent";
 import { buildGroups } from "./domain/conversation-groups";
 import { previewText, sanitizeDisplayText } from "./domain/message-text";
 import { formatMessageTime, nowLabel } from "./domain/time";
@@ -113,23 +112,6 @@ function StatusBadge({ state }: { state: RuntimeState | null }) {
       <Circle className="h-3 w-3 fill-current" aria-hidden="true" />
       {label}
     </span>
-  );
-}
-
-function MarkdownContent({
-  content,
-  streaming = false,
-}: {
-  content: string;
-  streaming?: boolean;
-}) {
-  return (
-    <div className="markdown-content text-sm leading-7">
-      <div>
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-      </div>
-      {streaming && <span className="streaming-cursor" aria-hidden="true" />}
-    </div>
   );
 }
 
