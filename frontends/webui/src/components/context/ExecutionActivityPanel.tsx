@@ -43,8 +43,11 @@ export function ExecutionActivityPanel({
           return {
             key: `${turn.turn}-${index}`,
             dot: (
-              <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#e7f5f2] text-[#0f766e]">
-                <CircleDot className="h-3.5 w-3.5" />
+              <span
+                className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#e7f5f2] text-[#0f766e]"
+                aria-hidden="true"
+              >
+                <CircleDot className="h-3.5 w-3.5" aria-hidden="true" />
               </span>
             ),
             children: (
@@ -56,7 +59,7 @@ export function ExecutionActivityPanel({
                   </Tag>
                 </div>
                 <div className="mt-2 flex items-center gap-2 text-xs text-app-muted">
-                  <Wrench className="h-3.5 w-3.5" />
+                  <Wrench className="h-3.5 w-3.5" aria-hidden="true" />
                   <span>{meta.toolCallLabel}</span>
                 </div>
               </div>

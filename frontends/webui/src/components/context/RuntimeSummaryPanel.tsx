@@ -9,12 +9,10 @@ function SummaryRow({
   icon,
   label,
   value,
-  trailing,
 }: {
   icon: ReactNode;
   label: string;
   value: string;
-  trailing?: ReactNode;
 }) {
   return (
     <div className="ga-context-summary-row">
@@ -25,7 +23,6 @@ function SummaryRow({
         <div className="text-xs text-app-muted">{label}</div>
         <div className="truncate text-sm font-medium text-app-text">{value}</div>
       </div>
-      {trailing}
     </div>
   );
 }
@@ -40,32 +37,30 @@ export function RuntimeSummaryPanel({ state }: { state: RuntimeState | null }) {
           <div className="text-sm font-semibold text-app-text">运行状态</div>
           <div className="text-xs text-app-muted">当前会话前端状态摘要</div>
         </div>
-        <Badge status={state?.running ? "processing" : "default"} text={summary.runningLabel} />
+        <Tag bordered={false} color={state?.running ? "processing" : "default"} className="m-0 shrink-0">
+          <Badge status={state?.running ? "processing" : "default"} text={summary.runningLabel} />
+        </Tag>
       </div>
       <div className="space-y-2">
         <SummaryRow
-          icon={<Power className="h-4 w-4" />}
+          icon={<Power className="h-4 w-4" aria-hidden="true" />}
           label="配置"
           value={summary.configuredLabel}
-          trailing={<Tag bordered={false}>{summary.configuredLabel}</Tag>}
         />
         <SummaryRow
-          icon={<Bot className="h-4 w-4" />}
+          icon={<Bot className="h-4 w-4" aria-hidden="true" />}
           label="模型"
           value={summary.modelLabel}
-          trailing={<Tag bordered={false}>{summary.modelLabel}</Tag>}
         />
         <SummaryRow
-          icon={<BrainCircuit className="h-4 w-4" />}
+          icon={<BrainCircuit className="h-4 w-4" aria-hidden="true" />}
           label="自主行动"
           value={summary.autonomousLabel}
-          trailing={<Tag bordered={false}>{summary.autonomousLabel}</Tag>}
         />
         <SummaryRow
-          icon={<Activity className="h-4 w-4" />}
+          icon={<Activity className="h-4 w-4" aria-hidden="true" />}
           label="任务"
           value={summary.runningLabel}
-          trailing={<Tag bordered={false}>{summary.runningLabel}</Tag>}
         />
       </div>
     </section>
