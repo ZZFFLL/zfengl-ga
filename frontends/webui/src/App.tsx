@@ -2,7 +2,6 @@ import { CSSProperties, FormEvent, KeyboardEvent, useEffect, useRef, useState } 
 import { App as AntApp, Button, ConfigProvider, Drawer, Dropdown, Input, Modal, Select, Tag, Tooltip } from "antd";
 import type { MenuProps } from "antd";
 import {
-  ChevronDown,
   Circle,
   Folder,
   FolderPlus,
@@ -21,7 +20,6 @@ import {
   Sparkles,
   Square,
   Trash2,
-  Wrench,
 } from "lucide-react";
 import {
   abortTask,
@@ -51,7 +49,6 @@ import type {
   StreamEvent,
 } from "./types";
 import {
-  buildExecutionChipLabel,
   resolveExecutionChipRunning,
   resolveExecutionTurns,
   shouldShowPendingAssistant,
@@ -63,6 +60,7 @@ import {
   toggleSelectedConversation,
 } from "./state/sidebar-selection";
 import { MarkdownContent } from "./components/chat/MarkdownContent";
+import { InlineExecutionTurns } from "./components/execution/InlineExecutionTurns";
 import { buildGroups } from "./domain/conversation-groups";
 import { previewText, sanitizeDisplayText } from "./domain/message-text";
 import { formatMessageTime, nowLabel } from "./domain/time";
@@ -112,182 +110,6 @@ function StatusBadge({ state }: { state: RuntimeState | null }) {
       <Circle className="h-3 w-3 fill-current" aria-hidden="true" />
       {label}
     </span>
-  );
-}
-
-function ExecutionToolCallCard({
-  toolCall,
-  resultMode = "full",
-}: {
-  toolCall: ExecutionTurn["tool_calls"][number];
-  resultMode?: "preview" | "full";
-}) {
-  const [open, setOpen] = useState(false);
-  const showingPreview = resultMode === "preview" && Boolean(toolCall.result_preview);
-  const resultText = showingPreview ? toolCall.result_preview : toolCall.result || toolCall.result_preview;
-  const resultLabel = showingPreview
-    ? toolCall.result_length
-      ? `Result preview · 完整 ${toolCall.result_length} 字符`
-      : "Result preview"
-    : toolCall.result_length
-      ? `Result · ${toolCall.result_length} 字符`
-      : "Result";
-
-  return (
-    <section className="rounded-xl border border-app-line bg-app-surface">
-      <button
-        type="button"
-        className="flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left"
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-      >
-        <div className="min-w-0">
-          <div className="flex min-w-0 items-center gap-2 text-sm font-medium text-app-text">
-            <Wrench className="h-4 w-4 shrink-0 text-app-primary" aria-hidden="true" />
-            <span className="truncate">{toolCall.tool}</span>
-          </div>
-          <div className="mt-1 truncate text-xs text-app-muted">
-            {toolCall.status || toolCall.action || "查看工具调用详情"}
-          </div>
-        </div>
-        <ChevronDown className={`h-4 w-4 shrink-0 text-app-muted transition ${open ? "rotate-180" : ""}`} />
-      </button>
-      {open ? (
-        <div className="space-y-3 border-t border-app-line/70 px-4 py-4">
-          {toolCall.args ? (
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">Args</div>
-              <pre className="mt-2 overflow-x-auto rounded-lg bg-app-codeBg px-3.5 py-3 text-xs leading-6 text-app-codeText">
-                <code>{toolCall.args}</code>
-              </pre>
-            </div>
-          ) : null}
-          {resultText ? (
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">
-                {resultLabel}
-              </div>
-              <pre className="mt-2 overflow-x-auto rounded-lg bg-app-codeBg px-3.5 py-3 text-xs leading-6 text-app-codeText">
-                <code>{resultText}</code>
-              </pre>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-    </section>
-  );
-}
-
-function InlineExecutionTurn({
-  turn,
-  defaultOpen,
-}: {
-  turn: ExecutionTurn;
-  defaultOpen: boolean;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  const [manualOpen, setManualOpen] = useState(false);
-  const toolCalls = turn.tool_calls ?? [];
-  const summary = turn.summary || turn.content;
-  const active = turn.state === "active";
-
-  useEffect(() => {
-    if (!manualOpen) {
-      setOpen(defaultOpen);
-    }
-  }, [defaultOpen, manualOpen]);
-
-  return (
-    <section
-      className={`ga-run-rail rounded-xl border bg-white ${
-        active ? "border-app-primary/45 shadow-soft" : "border-app-line"
-      }`}
-    >
-      <button
-        type="button"
-        className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left"
-        onClick={() => {
-          setManualOpen(true);
-          setOpen((value) => !value);
-        }}
-        aria-expanded={open}
-      >
-        <div className="min-w-0">
-          <div className="flex min-w-0 items-center gap-2 text-sm font-semibold text-app-text">
-            <span
-              className={`relative z-[1] inline-flex h-3 w-3 shrink-0 rounded-full ring-4 ${
-                active
-                  ? "animate-pulse bg-app-primary ring-app-primarySoft"
-                  : "bg-app-success ring-[#e9f6ef]"
-              }`}
-              aria-hidden="true"
-            />
-            <span className="shrink-0">Turn {turn.turn}</span>
-            <span className="truncate text-app-muted">{turn.title || "执行步骤"}</span>
-          </div>
-          <div className="mt-1 text-xs text-app-muted">
-            {active ? "执行中" : "已完成"} · {toolCalls.length} 个工具调用
-          </div>
-        </div>
-        <ChevronDown className={`mt-0.5 h-4 w-4 shrink-0 text-app-muted transition ${open ? "rotate-180" : ""}`} />
-      </button>
-      {open ? (
-        <div className="border-t border-app-line/70 px-4 py-4">
-          <div className="text-sm leading-7 text-app-muted">
-            {summary ? <MarkdownContent content={summary} /> : "此轮没有 summary。"}
-          </div>
-          {toolCalls.length > 0 ? (
-            <div className="mt-4 space-y-3 border-t border-app-line/70 pt-4">
-              {toolCalls.map((toolCall, toolIndex) => (
-                <ExecutionToolCallCard
-                  key={`${turn.turn}-${toolCall.tool}-${toolIndex}`}
-                  toolCall={toolCall}
-                  resultMode="preview"
-                />
-              ))}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-    </section>
-  );
-}
-
-function InlineExecutionTurns({
-  turns,
-  streaming,
-}: {
-  turns: ExecutionTurn[];
-  streaming: boolean;
-}) {
-  const label = buildExecutionChipLabel(turns, streaming);
-  if (!label) return null;
-
-  return (
-    <section className="mb-5 border-b border-app-line pb-4">
-      <div className="flex min-w-0 items-center gap-2 text-sm font-semibold text-app-text">
-        <Tag
-          bordered={false}
-          color={streaming ? "processing" : "success"}
-          className="m-0 ga-execution-status-tag"
-        >
-          {streaming ? "执行中" : "已完成"}
-        </Tag>
-        <span className="truncate">{label}</span>
-      </div>
-      <div className="mt-3 space-y-2">
-        {turns.map((turn, index) => {
-          const defaultOpen = turn.state === "active";
-          return (
-            <InlineExecutionTurn
-              key={`${turn.turn}-${index}`}
-              turn={turn}
-              defaultOpen={defaultOpen}
-            />
-          );
-        })}
-      </div>
-    </section>
   );
 }
 
