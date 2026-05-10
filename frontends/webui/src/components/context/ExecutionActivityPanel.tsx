@@ -43,10 +43,7 @@ export function ExecutionActivityPanel({
           return {
             key: `${turn.turn}-${index}`,
             dot: (
-              <span
-                className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#e7f5f2] text-[#0f766e]"
-                aria-hidden="true"
-              >
+              <span className="ga-context-timeline-dot" aria-hidden="true">
                 <CircleDot className="h-3.5 w-3.5" aria-hidden="true" />
               </span>
             ),

@@ -33,7 +33,7 @@ export function ContextPanelHeader({
             type="text"
             size="small"
             className="inline-flex items-center justify-center"
-            icon={<PanelRightClose className="h-4 w-4" />}
+            icon={<PanelRightClose className="h-4 w-4" aria-hidden="true" />}
             onClick={onClose}
             aria-label="收起上下文面板"
           />
