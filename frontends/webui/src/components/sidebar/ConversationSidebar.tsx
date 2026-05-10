@@ -61,10 +61,10 @@ export function ConversationSidebar({
   );
   const selectedRecentSet = new Set(selectedRecentIds);
   const conversationRowClass = (conversationId: string) =>
-    `group flex min-h-[42px] w-full items-center gap-2 rounded-xl border px-2.5 py-2 text-left transition ${
+    `ga-sidebar-row group flex min-h-[40px] w-full items-center gap-2 border px-2.5 py-2 text-left transition ${
       activeConversationId === conversationId
-        ? "ga-sidebar-active border-app-line text-app-textStrong"
-        : "border-transparent text-app-text hover:border-app-line hover:bg-white/64"
+        ? "is-active border-app-line text-app-textStrong"
+        : "border-transparent text-app-text"
     }`;
 
   if (collapsed) {
@@ -94,7 +94,7 @@ export function ConversationSidebar({
   return (
     <aside className="ga-sidebar flex h-full min-h-0 flex-col">
       <div className="px-4 pb-3 pt-4">
-        <div className="flex items-center gap-3">
+        <div className="ga-sidebar-brand flex items-center gap-3">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-app-primary ring-1 ring-app-line">
             <Sparkles className="h-5 w-5" />
           </div>
@@ -129,7 +129,7 @@ export function ConversationSidebar({
           {pinned.length > 0 ? (
             <section>
               <div className="sidebar-section-title mb-1.5">
-                置顶对话
+                置顶对话 · {pinned.length}
               </div>
               <div className="sidebar-list">
                 {pinned.map((conversation) => (
@@ -182,9 +182,10 @@ export function ConversationSidebar({
             {grouped.map((group) => (
               <div key={group.id} className="mb-3">
                 <div className="mb-1 flex items-center justify-between px-2">
-                  <div className="flex items-center gap-2 text-[13px] font-medium text-app-text/90">
-                    <Folder className="h-3.5 w-3.5 text-app-muted" />
-                    {group.name}
+                  <div className="flex min-w-0 items-center gap-2 text-[13px] font-medium text-app-text/90">
+                    <Folder className="h-3.5 w-3.5 shrink-0 text-app-muted" />
+                    <span className="truncate">{group.name}</span>
+                    <span className="ga-sidebar-meta shrink-0">{group.conversations.length}</span>
                   </div>
                   <Dropdown
                     menu={{
@@ -252,7 +253,7 @@ export function ConversationSidebar({
             ))}
 
             <div className="mb-1.5 flex items-center justify-between gap-2 px-2">
-              <div className="sidebar-section-title px-0">最近对话</div>
+              <div className="sidebar-section-title px-0">最近对话 · {ungrouped.length}</div>
               {ungrouped.length > 0 ? (
                 <div className="flex items-center gap-1">
                   {selectingRecent ? (

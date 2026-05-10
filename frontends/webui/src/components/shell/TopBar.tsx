@@ -108,6 +108,8 @@ export function TopBar({
             <div className="truncate text-[15px] font-semibold text-app-textStrong">{conversationTitle}</div>
             <div className="mt-0.5 flex min-w-0 items-center gap-2 text-xs text-app-muted">
               <span className="truncate">{running ? "任务执行中" : state?.configured ? "准备就绪" : "未配置"}</span>
+              <span aria-hidden="true">/</span>
+              <span className="truncate">{state?.current_llm?.name ?? "未选择模型"}</span>
             </div>
           </div>
         </div>
