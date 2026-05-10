@@ -814,7 +814,8 @@ function GenericAgentWebUI() {
         title={null}
         closable={false}
         aria-label="工作上下文"
-        className="ga-context-drawer xl:hidden"
+        rootClassName="ga-context-drawer-root xl:hidden"
+        className="ga-context-drawer"
         onClose={() => setContextDrawerOpen(false)}
       >
         <WorkbenchContextPanel

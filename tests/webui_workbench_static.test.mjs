@@ -16,6 +16,8 @@ test("App wires the workbench context shell surfaces", async () => {
   assert.match(appSource, /\bSplitter\b/);
   assert.match(appSource, /ga-workbench-main-panel/);
   assert.match(appSource, /ga-workbench-context-panel/);
+  assert.match(appSource, /rootClassName="ga-context-drawer-root xl:hidden"/);
+  assert.match(appSource, /className="ga-context-drawer"/);
   assert.match(appSource, /aria-label="工作上下文"/);
   assert.doesNotMatch(
     appSource,
