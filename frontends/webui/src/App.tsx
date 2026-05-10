@@ -64,20 +64,14 @@ import {
   pruneSelectedConversations,
   toggleSelectedConversation,
 } from "./state/sidebar-selection";
+import { buildGroups } from "./domain/conversation-groups";
+import { previewText, sanitizeDisplayText } from "./domain/message-text";
+import { formatMessageTime, nowLabel } from "./domain/time";
+import { nextSmoothContent, prefersReducedMotion, streamStepInterval } from "./domain/streaming-text";
 import { gaTheme } from "./theme";
 
-const nowLabel = () => new Date().toLocaleString();
 const id = () => Math.random().toString(36).slice(2);
-const STREAM_STEP_INTERVAL_MS = 40;
-const STREAM_DONE_CATCHUP_INTERVAL_MS = 8;
 const DEFAULT_CONTINUE_COMMAND = "/continue 1";
-
-type GraphemeSegment = { segment: string };
-type GraphemeSegmenter = { segment(input: string): Iterable<GraphemeSegment> };
-type GraphemeSegmenterConstructor = new (
-  locales?: string | string[],
-  options?: { granularity: "grapheme" },
-) => GraphemeSegmenter;
 
 type UiMessage = {
   id: string;
@@ -93,114 +87,6 @@ type ContinueCompatResult = {
   history: Array<{ role: "user" | "assistant"; content: string }>;
 };
 
-const FINAL_INFO_BLOCK_RE = /\n*`{3,}\s*\n?\[Info\]\s*Final response to user\.\s*\n?`{3,}\s*$/i;
-const FINAL_INFO_TRAIL_RE = /\n*\[Info\]\s*Final response to user\.\s*(?:`{3,}\s*)*$/i;
-const TOOL_START_RE = /🛠️ Tool:\s*`([^`]+)`\s*📥 args:\s*/g;
-
-const graphemeSegmenter = (() => {
-  const Segmenter = (Intl as typeof Intl & { Segmenter?: GraphemeSegmenterConstructor }).Segmenter;
-  return Segmenter ? new Segmenter(undefined, { granularity: "grapheme" }) : null;
-})();
-
-function splitGraphemes(text: string) {
-  if (!text) return [];
-  if (graphemeSegmenter) {
-    return Array.from(graphemeSegmenter.segment(text), (item) => item.segment);
-  }
-  return Array.from(text);
-}
-
-function streamStepInterval(remainingChars: number, done: boolean) {
-  if (!done) return STREAM_STEP_INTERVAL_MS;
-  if (remainingChars > 480) return 0;
-  if (remainingChars > 160) return 2;
-  return STREAM_DONE_CATCHUP_INTERVAL_MS;
-}
-
-function nextSmoothContent(displayed: string, target: string, done = false) {
-  const remaining = splitGraphemes(target.slice(displayed.length));
-  if (remaining.length === 0) return target;
-  const step = done ? Math.min(28, remaining.length) : Math.min(3, remaining.length);
-  return displayed + remaining.slice(0, step).join("");
-}
-
-function prefersReducedMotion() {
-  return Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
-}
-
-function formatMessageTime(raw: string) {
-  if (!raw) return nowLabel();
-  return raw;
-}
-
-function sanitizeDisplayText(text: string) {
-  let cleaned = text || "";
-  cleaned = stripToolTraceBlocks(cleaned);
-  cleaned = cleaned.replace(FINAL_INFO_BLOCK_RE, "");
-  cleaned = cleaned.replace(FINAL_INFO_TRAIL_RE, "");
-  cleaned = cleaned.replace(/\n{3,}/g, "\n\n");
-  return cleaned.trim();
-}
-
-function consumeFencedBlock(text: string) {
-  const match = /^\s*(`{3,})([^\n]*)\n/.exec(text);
-  if (!match) return { body: "", remainder: text };
-  const fence = match[1];
-  const start = match[0].length;
-  const endMarker = `\n${fence}`;
-  const end = text.indexOf(endMarker, start);
-  if (end < 0) return { body: "", remainder: text };
-  return {
-    body: text.slice(start, end).trim(),
-    remainder: text.slice(end + endMarker.length),
-  };
-}
-
-function stripToolTraceBlocks(text: string) {
-  const source = text || "";
-  const parts: string[] = [];
-  let cursor = 0;
-
-  while (cursor < source.length) {
-    TOOL_START_RE.lastIndex = cursor;
-    const match = TOOL_START_RE.exec(source);
-    if (!match) {
-      parts.push(source.slice(cursor));
-      break;
-    }
-    parts.push(source.slice(cursor, match.index));
-    cursor = TOOL_START_RE.lastIndex;
-
-    const argsBlock = consumeFencedBlock(source.slice(cursor));
-    if (argsBlock.remainder !== source.slice(cursor)) {
-      cursor = source.length - argsBlock.remainder.length;
-    }
-
-    while (cursor < source.length) {
-      const leading = source.slice(cursor);
-      const trimmed = leading.replace(/^\s+/, "");
-      const consumedWs = leading.length - trimmed.length;
-      cursor += consumedWs;
-      const block = consumeFencedBlock(source.slice(cursor));
-      if (block.remainder === source.slice(cursor)) {
-        break;
-      }
-      cursor = source.length - block.remainder.length;
-    }
-
-    while (cursor < source.length && /[\r\n]/.test(source[cursor])) {
-      cursor += 1;
-    }
-  }
-
-  return parts.join("");
-}
-
-function previewText(text: string) {
-  const cleaned = sanitizeDisplayText(text || "");
-  return cleaned.replace(/\s+/g, " ").trim() || "暂无消息";
-}
-
 function toUiMessages(detail: ConversationDetail | null) {
   if (!detail) return [];
   return detail.messages.map((message) => ({
@@ -209,21 +95,6 @@ function toUiMessages(detail: ConversationDetail | null) {
     content: sanitizeDisplayText(message.content),
     time: formatMessageTime(message.created_at),
     executionLog: message.execution_log ?? [],
-  }));
-}
-
-function buildGroups(groups: GroupSummary[], conversations: ConversationSummary[]) {
-  const groupMap = new Map<string, ConversationSummary[]>();
-  for (const conversation of conversations) {
-    if (!conversation.group_id) continue;
-    if (!groupMap.has(conversation.group_id)) {
-      groupMap.set(conversation.group_id, []);
-    }
-    groupMap.get(conversation.group_id)?.push(conversation);
-  }
-  return groups.map((group) => ({
-    ...group,
-    conversations: groupMap.get(group.id) ?? [],
   }));
 }
 
