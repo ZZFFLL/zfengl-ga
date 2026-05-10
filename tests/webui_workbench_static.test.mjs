@@ -19,6 +19,11 @@ test("App wires the workbench context shell surfaces", async () => {
   assert.match(appSource, /rootClassName="ga-context-drawer-root xl:hidden"/);
   assert.match(appSource, /className="ga-context-drawer"/);
   assert.match(appSource, /aria-label="工作上下文"/);
+  assert.match(appSource, /CONTEXT_DRAWER_DESKTOP_QUERY\s*=\s*"\(min-width: 1280px\)"/);
+  assert.match(appSource, /window\.matchMedia\(CONTEXT_DRAWER_DESKTOP_QUERY\)/);
+  assert.match(appSource, /open=\{contextDrawerOpen && !contextDrawerDesktop\}/);
+  assert.match(appSource, /width="min\(92vw, 360px\)"/);
+  assert.match(appSource, /setContextDrawerOpen\(false\)/);
   assert.doesNotMatch(
     appSource,
     /turns\.length > 0 \? turns : activeConversation\?\.execution_log \?\? \[\]/,

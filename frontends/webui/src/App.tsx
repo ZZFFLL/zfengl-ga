@@ -51,6 +51,7 @@ import { gaTheme } from "./theme";
 
 const id = () => Math.random().toString(36).slice(2);
 const DEFAULT_CONTINUE_COMMAND = "/continue 1";
+const CONTEXT_DRAWER_DESKTOP_QUERY = "(min-width: 1280px)";
 type WorkbenchContextTab = "activity" | "status";
 
 function toUiMessages(detail: ConversationDetail | null) {
@@ -77,6 +78,7 @@ function GenericAgentWebUI() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(true);
   const [contextDrawerOpen, setContextDrawerOpen] = useState(false);
+  const [contextDrawerDesktop, setContextDrawerDesktop] = useState(false);
   const [contextTab, setContextTab] = useState<WorkbenchContextTab>("status");
   const [continueDialogOpen, setContinueDialogOpen] = useState(false);
   const [continueCommand, setContinueCommand] = useState(DEFAULT_CONTINUE_COMMAND);
@@ -145,6 +147,20 @@ function GenericAgentWebUI() {
       cancelStreamingFrame();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const media = window.matchMedia(CONTEXT_DRAWER_DESKTOP_QUERY);
+    const syncContextDrawerViewport = () => {
+      setContextDrawerDesktop(media.matches);
+      if (media.matches) {
+        setContextDrawerOpen(false);
+      }
+    };
+
+    syncContextDrawerViewport();
+    media.addEventListener("change", syncContextDrawerViewport);
+    return () => media.removeEventListener("change", syncContextDrawerViewport);
   }, []);
 
   useEffect(() => {
@@ -808,9 +824,9 @@ function GenericAgentWebUI() {
       </SidebarDialog>
 
       <Drawer
-        open={contextDrawerOpen}
+        open={contextDrawerOpen && !contextDrawerDesktop}
         placement="right"
-        width={360}
+        width="min(92vw, 360px)"
         title={null}
         closable={false}
         aria-label="工作上下文"
