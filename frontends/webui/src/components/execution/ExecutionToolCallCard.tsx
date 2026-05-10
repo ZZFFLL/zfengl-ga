@@ -22,7 +22,7 @@ export function ExecutionToolCallCard({
       : "Result";
 
   return (
-    <section className="rounded-xl border border-app-line bg-app-surface">
+    <section className="rounded-[10px] border border-app-line bg-app-surface">
       <button
         type="button"
         className="flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left"

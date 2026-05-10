@@ -43,6 +43,11 @@ test("buildExecutionChipLabel reflects running and completed states", () => {
   assert.equal(buildExecutionChipLabel([], false), null);
 });
 
+test("execution labels stay compact for completed and active turns", () => {
+  assert.equal(buildExecutionChipLabel([{ turn: 1, title: "", content: "" }], false), "执行过程 · 1 轮");
+  assert.equal(buildExecutionChipLabel([{ turn: 2, title: "Tool pass", content: "", state: "active" }], true), "正在执行 · Tool pass");
+});
+
 test("resolveExecutionChipRunning stays active for tool-only pending updates", () => {
   assert.equal(resolveExecutionChipRunning(true, false), true);
   assert.equal(resolveExecutionChipRunning(false, true), true);
