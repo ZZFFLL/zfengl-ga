@@ -31,4 +31,14 @@
   .ga-workbench-splitter .ant-splitter-bar {
     display: none;
   }
+
+  .ga-workbench-main-panel {
+    flex: 1 1 100% !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .ga-workbench-context-panel {
+    display: none !important;
+  }
 }

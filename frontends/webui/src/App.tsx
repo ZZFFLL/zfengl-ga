@@ -703,7 +703,7 @@ function GenericAgentWebUI() {
 
         <Layout.Content className="min-h-0 min-w-0 overflow-hidden">
           <Splitter className="ga-workbench-splitter h-full min-h-0">
-            <Splitter.Panel min={0}>
+            <Splitter.Panel min={0} className="ga-workbench-main-panel">
               <main className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
                 {error ? (
                   <div className="shrink-0 border-b border-app-line bg-app-danger/10 px-6 py-3 text-sm text-app-danger">
@@ -756,7 +756,13 @@ function GenericAgentWebUI() {
             </Splitter.Panel>
 
             {contextOpen ? (
-              <Splitter.Panel min={280} max={420} defaultSize={340} collapsible={{ start: true }}>
+              <Splitter.Panel
+                min={280}
+                max={420}
+                defaultSize={340}
+                collapsible={{ start: true }}
+                className="ga-workbench-context-panel"
+              >
                 <WorkbenchContextPanel
                   state={state}
                   turns={contextTurns}
@@ -806,6 +812,7 @@ function GenericAgentWebUI() {
         width={360}
         title={null}
         closable={false}
+        aria-label="工作上下文"
         className="ga-context-drawer xl:hidden"
         onClose={() => setContextDrawerOpen(false)}
       >

@@ -14,6 +14,9 @@ test("App wires the workbench context shell surfaces", async () => {
   assert.match(appSource, /\bchooseWorkbenchContextTab\b/);
   assert.match(appSource, /\bDrawer\b/);
   assert.match(appSource, /\bSplitter\b/);
+  assert.match(appSource, /ga-workbench-main-panel/);
+  assert.match(appSource, /ga-workbench-context-panel/);
+  assert.match(appSource, /aria-label="工作上下文"/);
 });
 
 test("workbench does not add subagent or inspector API surfaces", async () => {
@@ -34,4 +37,12 @@ test("TopBar exposes the context entry points", async () => {
 
   assert.match(topBarSource, /\bonOpenContext\b/);
   assert.match(topBarSource, /上下文/);
+});
+
+test("workbench hides inline context panel below desktop breakpoint", async () => {
+  const workbenchCss = await readSource("frontends/webui/src/styles/workbench.css");
+
+  assert.match(workbenchCss, /@media\s*\(max-width:\s*1279px\)/);
+  assert.match(workbenchCss, /\.ga-workbench-context-panel\s*\{[^}]*display:\s*none\s*!important;/s);
+  assert.match(workbenchCss, /\.ga-workbench-main-panel\s*\{[^}]*width:\s*100%\s*!important;/s);
 });
