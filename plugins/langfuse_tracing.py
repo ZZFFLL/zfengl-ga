@@ -19,14 +19,31 @@ if _lf:
     import llmcore, agent_loop
     _tls = threading.local()
 
+    def _get_model_from_config():
+        """Fallback: get model name from llmcore config when SSE doesn't provide it."""
+        try:
+            keys = llmcore._load_mykeys()
+            # Try common config names in priority order
+            for k in ['native_oai_config_mimo', 'native_oai_config', 'native_oai_config2', 'native_oai_config3']:
+                cfg = keys.get(k, {})
+                if isinstance(cfg, dict) and cfg.get('model'):
+                    return cfg['model']
+        except Exception:
+            pass
+        return None
+
     _orig_log = llmcore._write_llm_log
     def _patched_log(label, content):
         try:
+            model_name = getattr(_tls, 'model', None) or _get_model_from_config()
             if label == 'Prompt':
-                _tls.gen = _lf.start_observation(name='llm.chat', as_type='generation', input=content[:20000])
+                _tls.gen = _lf.start_observation(name='llm.chat', as_type='generation',
+                    input=content[:20000], model=model_name)
                 _tls.usage = None
             elif label == 'Response' and getattr(_tls, 'gen', None) is not None:
-                _tls.gen.update(output=content[:20000], usage_details=getattr(_tls, 'usage', None))
+                _tls.gen.update(output=content[:20000],
+                    usage_details=getattr(_tls, 'usage', None),
+                    model=model_name)
                 _tls.gen.end(); _tls.gen = None
         except Exception: pass
         return _orig_log(label, content)
@@ -56,13 +73,16 @@ if _lf:
                 if us.get('output_tokens'): u['output'] = us['output_tokens']
                 cr = (us.get('input_tokens_details') or {}).get('cached_tokens')
                 if cr: u['cache_read_input_tokens'] = cr
-            else:
-                us = evt.get('usage')
-                if us:
-                    if us.get('prompt_tokens'): u['input'] = us['prompt_tokens']
-                    if us.get('completion_tokens'): u['output'] = us['completion_tokens']
-                    cr = (us.get('prompt_tokens_details') or {}).get('cached_tokens')
-                    if cr: u['cache_read_input_tokens'] = cr
+            # Extract model from any SSE event
+            m = evt.get('model') or (evt.get('message') or {}).get('model') or (evt.get('response') or {}).get('model') or (evt.get('delta') or {}).get('model')
+            if m: _tls.model = m
+            # OpenAI-compatible usage fallback (MiniMax etc.)
+            us = evt.get('usage')
+            if us:
+                if us.get('prompt_tokens'): u['input'] = us['prompt_tokens']
+                if us.get('completion_tokens'): u['output'] = us['completion_tokens']
+                cr = (us.get('prompt_tokens_details') or {}).get('cached_tokens')
+                if cr: u['cache_read_input_tokens'] = cr
         return u or None
 
     def _wrap_parser(orig):
