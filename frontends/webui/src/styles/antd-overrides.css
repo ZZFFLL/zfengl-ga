@@ -1,0 +1,39 @@
+.ant-app {
+  height: 100%;
+}
+
+.ga-model-select .ant-select-selector {
+  padding-inline: 4px !important;
+}
+
+.ga-dropdown .ant-dropdown-menu {
+  min-width: 220px;
+  border: 1px solid #d9e0e8;
+  box-shadow: 0 16px 36px rgba(17, 24, 39, 0.12);
+}
+
+.ga-dropdown {
+  z-index: 1300 !important;
+}
+
+.ga-dropdown .ant-dropdown-menu-item,
+.ga-dropdown .ant-dropdown-menu-submenu-title {
+  min-height: 36px;
+}
+
+.ga-modal .ant-modal-content {
+  border: 1px solid #d9e0e8;
+  box-shadow: 0 18px 48px rgba(17, 24, 39, 0.16);
+}
+
+.ga-modal .ant-modal-header {
+  margin-bottom: 0;
+}
+
+.ga-sidebar-drawer .ant-drawer-content {
+  background: #edf1f5;
+}
+
+.ga-sidebar-drawer .ant-drawer-body {
+  height: 100%;
+}

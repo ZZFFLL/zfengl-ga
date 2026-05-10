@@ -1,0 +1,58 @@
+.ga-execution-status-tag.ant-tag-success {
+  color: #126c4d;
+  background: #e9f6ef;
+}
+
+.ga-execution-status-tag.ant-tag-processing {
+  color: #0b6f86;
+  background: #e7f7fb;
+}
+
+.ga-run-rail {
+  position: relative;
+}
+
+.ga-run-rail::before {
+  content: "";
+  position: absolute;
+  left: 0.66rem;
+  top: 2.6rem;
+  bottom: 1rem;
+  width: 1px;
+  background: #d9e0e8;
+  pointer-events: none;
+}
+
+.operation-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #c5cddd transparent;
+}
+
+.thought-chip {
+  position: relative;
+  overflow: hidden;
+}
+
+.thought-chip.is-thinking::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(81, 109, 210, 0.06) 25%,
+    rgba(81, 109, 210, 0.22) 50%,
+    rgba(81, 109, 210, 0.06) 75%,
+    transparent 100%
+  );
+  opacity: 0.8;
+  transform: translateX(-72%);
+  animation: stream-sheen 1.45s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.thought-chip > * {
+  position: relative;
+  z-index: 1;
+}

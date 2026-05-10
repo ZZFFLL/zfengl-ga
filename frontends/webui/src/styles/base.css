@@ -1,0 +1,36 @@
+:root {
+  color: #1d2430;
+  background: #f4f6f8;
+  font-family:
+    "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui,
+    -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100%;
+  background: #f4f6f8;
+}
+
+button,
+select,
+textarea,
+input {
+  font: inherit;
+}
+
+button:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+input:focus-visible {
+  outline: 3px solid rgba(85, 113, 186, 0.22);
+  outline-offset: 2px;
+}
