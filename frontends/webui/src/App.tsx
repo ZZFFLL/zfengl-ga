@@ -1,24 +1,16 @@
 import { CSSProperties, FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
-import { App as AntApp, Button, ConfigProvider, Drawer, Dropdown, Input, Modal, Select, Tag, Tooltip } from "antd";
+import { App as AntApp, Button, ConfigProvider, Dropdown, Input } from "antd";
 import type { MenuProps } from "antd";
 import {
-  Circle,
   Folder,
   FolderPlus,
-  Menu,
   MessageSquareText,
   MoreHorizontal,
   PanelLeft,
-  PauseCircle,
   Pin,
   PinOff,
-  PlayCircle,
   Plus,
-  RefreshCcw,
-  RotateCcw,
-  Send,
   Sparkles,
-  Square,
   Trash2,
 } from "lucide-react";
 import {
@@ -57,6 +49,12 @@ import {
 } from "./state/sidebar-selection";
 import { ChatHome } from "./components/chat/ChatHome";
 import { ChatMessageView } from "./components/chat/ChatMessageView";
+import { StatusBadge } from "./components/app/StatusBadge";
+import { Composer } from "./components/composer/Composer";
+import { ContinueCompatDialog } from "./components/dialogs/ContinueCompatDialog";
+import type { ContinueCompatResult } from "./components/dialogs/ContinueCompatDialog";
+import { SidebarDialog } from "./components/dialogs/SidebarDialog";
+import { TopBar } from "./components/shell/TopBar";
 import { buildGroups } from "./domain/conversation-groups";
 import { previewText, sanitizeDisplayText } from "./domain/message-text";
 import { formatMessageTime, nowLabel } from "./domain/time";
@@ -65,11 +63,6 @@ import { gaTheme } from "./theme";
 
 const id = () => Math.random().toString(36).slice(2);
 const DEFAULT_CONTINUE_COMMAND = "/continue 1";
-
-type ContinueCompatResult = {
-  message: string;
-  history: Array<{ role: "user" | "assistant"; content: string }>;
-};
 
 function toUiMessages(detail: ConversationDetail | null) {
   if (!detail) return [];
@@ -80,318 +73,6 @@ function toUiMessages(detail: ConversationDetail | null) {
     time: formatMessageTime(message.created_at),
     executionLog: message.execution_log ?? [],
   }));
-}
-
-function statusTone(state: RuntimeState | null) {
-  if (!state?.configured) return "bg-app-warning/10 text-app-warning";
-  if (state.running) return "bg-app-success/10 text-app-success";
-  return "bg-app-primarySoft text-app-primary";
-}
-
-function StatusBadge({ state }: { state: RuntimeState | null }) {
-  const label = !state?.configured ? "未配置" : state.running ? "运行中" : "空闲";
-  return (
-    <span
-      className={`inline-flex min-h-9 items-center gap-2 rounded-full px-3 text-sm font-medium ${statusTone(state)}`}
-    >
-      <Circle className="h-3 w-3 fill-current" aria-hidden="true" />
-      {label}
-    </span>
-  );
-}
-
-function Composer({
-  state,
-  draft,
-  running,
-  onDraftChange,
-  onKeyDown,
-  onSubmit,
-  onAbort,
-}: {
-  state: RuntimeState | null;
-  draft: string;
-  running: boolean;
-  onDraftChange: (value: string) => void;
-  onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
-  onSubmit: (event?: FormEvent) => void;
-  onAbort: () => void;
-}) {
-  return (
-    <form className="shrink-0 border-t border-app-line bg-white/86 px-3 py-3 backdrop-blur md:px-4 md:py-4" onSubmit={onSubmit}>
-      <div className="ga-composer-surface mx-auto max-w-[900px] rounded-xl px-4 py-3">
-        <textarea
-          id="chat-composer-draft"
-          name="chat-composer-draft"
-          className="min-h-[64px] w-full resize-none border-0 bg-transparent text-[15px] leading-7 text-app-text placeholder:text-app-muted focus:outline-none"
-          placeholder={running ? "任务运行中..." : "继续补充问题，Shift+Enter 换行"}
-          value={draft}
-          disabled={running || !state?.configured}
-          onChange={(event) => onDraftChange(event.target.value)}
-          onKeyDown={onKeyDown}
-          rows={2}
-        />
-        <div className="mt-3 flex items-center justify-between gap-3">
-          <div className="text-xs text-app-muted">Shift+Enter 换行，Enter 发送。</div>
-          <div className="flex items-center gap-2">
-            {running ? (
-              <Button
-                icon={<Square className="h-4 w-4" aria-hidden="true" />}
-                onClick={onAbort}
-              >
-                停止
-              </Button>
-            ) : null}
-            <Button
-              type="primary"
-              htmlType="submit"
-              shape="circle"
-              disabled={!draft.trim() || running || !state?.configured}
-              aria-label="发送"
-              icon={<Send className="h-4 w-4" aria-hidden="true" />}
-            >
-            </Button>
-          </div>
-        </div>
-      </div>
-    </form>
-  );
-}
-
-function TopBar({
-  state,
-  running,
-  conversationTitle,
-  onOpenSidebar,
-  onCreateConversation,
-  onSwitchLlm,
-  onAbort,
-  onRefresh,
-  onReinject,
-  onAutonomous,
-  onOpenContinue,
-}: {
-  state: RuntimeState | null;
-  running: boolean;
-  conversationTitle: string;
-  onOpenSidebar: () => void;
-  onCreateConversation: () => void;
-  onSwitchLlm: (index: number) => void;
-  onAbort: () => void;
-  onRefresh: () => void;
-  onReinject: () => void;
-  onAutonomous: (enabled: boolean) => void;
-  onOpenContinue: () => void;
-}) {
-  const topMenuItems: MenuProps["items"] = [
-    {
-      key: "new",
-      label: "新建空白会话",
-      icon: <RotateCcw className="h-4 w-4" aria-hidden="true" />,
-      disabled: !state?.configured || running,
-      onClick: onCreateConversation,
-    },
-    {
-      key: "refresh",
-      label: "刷新状态",
-      icon: <RefreshCcw className="h-4 w-4" aria-hidden="true" />,
-      onClick: onRefresh,
-    },
-    {
-      key: "reinject",
-      label: "重新注入 System Prompt",
-      icon: <RefreshCcw className="h-4 w-4" aria-hidden="true" />,
-      disabled: !state?.configured || running,
-      onClick: onReinject,
-    },
-    {
-      key: "autonomous",
-      label: state?.autonomous_enabled ? "关闭自主行动" : "开启自主行动",
-      icon: state?.autonomous_enabled ? (
-        <PauseCircle className="h-4 w-4" aria-hidden="true" />
-      ) : (
-        <PlayCircle className="h-4 w-4" aria-hidden="true" />
-      ),
-      disabled: !state?.configured || running,
-      onClick: () => onAutonomous(!state?.autonomous_enabled),
-    },
-    { type: "divider" },
-    {
-      key: "continue",
-      label: "恢复旧会话（兼容）",
-      icon: <MessageSquareText className="h-4 w-4" aria-hidden="true" />,
-      disabled: running,
-      onClick: onOpenContinue,
-    },
-  ];
-
-  return (
-    <header className="ga-topbar shrink-0">
-      <div className="flex min-h-[52px] items-center gap-2.5 px-3 py-2 md:px-5">
-        <Tooltip title="打开会话侧栏">
-          <Button
-            type="text"
-            className="xl:hidden"
-            aria-label="打开会话侧栏"
-            icon={<Menu className="h-5 w-5" aria-hidden="true" />}
-            onClick={onOpenSidebar}
-          />
-        </Tooltip>
-
-        <div className="min-w-0 flex items-center gap-3">
-          <div className="min-w-0">
-            <div className="truncate text-[15px] font-semibold text-app-textStrong">{conversationTitle}</div>
-            <div className="mt-0.5 flex min-w-0 items-center gap-2 text-xs text-app-muted">
-              <span className="truncate">{running ? "任务执行中" : state?.configured ? "准备就绪" : "未配置"}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="ml-auto flex min-w-0 items-center gap-2">
-          <div className="hidden min-h-9 min-w-0 items-center gap-2 rounded-xl border border-app-line bg-white px-2 py-1 shadow-[0_1px_0_rgba(31,41,55,0.03)] sm:flex">
-            <span className="shrink-0 text-[11px] font-semibold uppercase text-app-muted">
-              Model
-            </span>
-            <Select
-              aria-label="选择当前模型"
-              className="ga-model-select min-w-[168px]"
-              size="small"
-              variant="borderless"
-              value={state?.current_llm?.index ?? 0}
-              disabled={!state?.configured || running}
-              options={(state?.llms ?? []).map((llm) => ({
-                value: llm.index,
-                label: llm.current ? `${llm.name} · 当前` : llm.name,
-              }))}
-              onChange={(value) => onSwitchLlm(Number(value))}
-            />
-          </div>
-
-          <StatusBadge state={state} />
-
-          {running ? (
-            <Button
-              type="primary"
-              icon={<Square className="h-4 w-4" aria-hidden="true" />}
-              onClick={onAbort}
-            >
-              停止任务
-            </Button>
-          ) : null}
-
-          <Dropdown
-            menu={{ items: topMenuItems }}
-            trigger={["click"]}
-            placement="bottomRight"
-            overlayClassName="ga-dropdown"
-          >
-            <Button
-              type="text"
-              aria-label="更多 GA 操作"
-              icon={<MoreHorizontal className="h-5 w-5" aria-hidden="true" />}
-            />
-          </Dropdown>
-        </div>
-      </div>
-    </header>
-  );
-}
-
-function ContinueCompatDialog({
-  open,
-  command,
-  loading,
-  error,
-  result,
-  onOpenChange,
-  onCommandChange,
-  onSubmit,
-}: {
-  open: boolean;
-  command: string;
-  loading: boolean;
-  error: string;
-  result: ContinueCompatResult | null;
-  onOpenChange: (open: boolean) => void;
-  onCommandChange: (value: string) => void;
-  onSubmit: (event?: FormEvent) => void;
-}) {
-  return (
-    <Modal
-      open={open}
-      title="恢复旧会话（兼容入口）"
-      width={720}
-      centered
-      destroyOnClose={false}
-      onCancel={() => onOpenChange(false)}
-      footer={null}
-      className="ga-modal"
-    >
-      <p className="mt-1 text-sm leading-7 text-app-muted">
-        这里保留 `/continue` 兼容能力，但不会把旧日志体系改成新会话真相源。
-      </p>
-
-      <form className="mt-6 space-y-4" onSubmit={onSubmit}>
-        <div className="rounded-2xl border border-app-line bg-app-surface px-4 py-4">
-          <label className="mb-2 block text-sm font-medium text-app-text" htmlFor="continue-command">
-            兼容命令
-          </label>
-          <Input
-            id="continue-command"
-            value={command}
-            onChange={(event) => onCommandChange(event.target.value)}
-            placeholder={DEFAULT_CONTINUE_COMMAND}
-          />
-          <p className="mt-2 text-xs leading-6 text-app-muted">示例：`/continue 1`。接口仍走现有后端兼容逻辑。</p>
-        </div>
-
-        {error ? (
-          <div className="rounded-2xl border border-app-danger/20 bg-app-danger/10 px-4 py-3 text-sm text-app-danger">
-            {error}
-          </div>
-        ) : null}
-
-        {result ? (
-          <div className="space-y-4">
-            <section className="rounded-2xl border border-app-line bg-app-surface px-4 py-4">
-              <div className="text-sm font-semibold text-app-text">执行结果</div>
-              <div className="mt-3 whitespace-pre-wrap text-sm leading-7 text-app-text">{result.message}</div>
-            </section>
-
-            <section className="rounded-2xl border border-app-line bg-app-surface px-4 py-4">
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-sm font-semibold text-app-text">兼容历史预览</div>
-                <Tag bordered={false}>{result.history.length}</Tag>
-              </div>
-              <div className="mt-3 max-h-[280px] space-y-3 overflow-y-auto">
-                {result.history.length === 0 ? (
-                  <div className="text-sm text-app-muted">这次兼容恢复没有返回可展示的历史记录。</div>
-                ) : (
-                  result.history.map((message, index) => (
-                    <div key={`${message.role}-${index}`} className="rounded-xl bg-white px-4 py-3 ring-1 ring-app-line/70">
-                      <div className="text-xs font-medium text-app-muted">
-                        {message.role === "user" ? "用户" : "GA"}
-                      </div>
-                      <div className="mt-2 whitespace-pre-wrap text-sm leading-7 text-app-text">
-                        {message.content}
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </section>
-          </div>
-        ) : null}
-
-        <div className="flex items-center justify-end gap-3">
-          <Button onClick={() => onOpenChange(false)}>关闭</Button>
-          <Button type="primary" htmlType="submit" loading={loading} disabled={!command.trim()}>
-            执行兼容恢复
-          </Button>
-        </div>
-      </form>
-    </Modal>
-  );
 }
 
 function ConversationActions({
@@ -814,34 +495,6 @@ function ConversationSidebar({
         </div>
       </div>
     </aside>
-  );
-}
-
-function SidebarDialog({
-  open,
-  onOpenChange,
-  children,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <Drawer
-      open={open}
-      placement="left"
-      width="min(92vw, 340px)"
-      title="会话列表"
-      aria-label="会话列表"
-      className="ga-sidebar-drawer xl:hidden"
-      styles={{
-        body: { padding: 0 },
-        header: { borderBottom: "1px solid #d8deeb" },
-      }}
-      onClose={() => onOpenChange(false)}
-    >
-      {children}
-    </Drawer>
   );
 }
 
