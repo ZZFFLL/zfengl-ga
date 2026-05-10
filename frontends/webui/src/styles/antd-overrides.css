@@ -37,3 +37,15 @@
 .ga-sidebar-drawer .ant-drawer-body {
   height: 100%;
 }
+
+.ga-context-panel .ant-segmented {
+  flex-shrink: 0;
+}
+
+.ga-context-panel .ant-empty {
+  margin: 1rem 0;
+}
+
+.ga-workbench-splitter .ant-splitter-bar-dragger::before {
+  background: #cfd8e3;
+}

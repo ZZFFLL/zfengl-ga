@@ -50,17 +50,17 @@ export const gaTheme: ThemeConfig = {
     colorFillSecondary: "#eef2f6",
     colorFillTertiary: "#f4f7fa",
     borderRadius: 8,
-    borderRadiusLG: 12,
+    borderRadiusLG: 10,
     borderRadiusSM: 6,
     controlHeight: 38,
-    controlHeightLG: 44,
+    controlHeightLG: 42,
     controlHeightSM: 32,
     fontFamily:
       '"Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
     fontSize: 14,
     lineHeight: 1.55,
-    boxShadow: "0 16px 36px rgba(17, 24, 39, 0.12)",
-    boxShadowSecondary: "0 8px 22px rgba(17, 24, 39, 0.08)",
+    boxShadow: "0 18px 42px rgba(17, 24, 39, 0.13)",
+    boxShadowSecondary: "0 8px 20px rgba(17, 24, 39, 0.08)",
     motionDurationFast: "0.14s",
     motionDurationMid: "0.2s",
     motionDurationSlow: "0.28s",
@@ -105,6 +105,15 @@ export const gaTheme: ThemeConfig = {
     },
     Tag: {
       borderRadiusSM: 999,
+    },
+    Segmented: {
+      itemSelectedBg: "#ffffff",
+      itemSelectedColor: gaPalette.textStrong,
+      trackBg: "#eef3f6",
+    },
+    Card: {
+      borderRadiusLG: 10,
+      headerBg: "#ffffff",
     },
   },
 };

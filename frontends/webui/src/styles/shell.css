@@ -10,19 +10,3 @@
   box-shadow: 0 1px 0 rgba(17, 24, 39, 0.02);
   backdrop-filter: blur(12px);
 }
-
-.ga-sidebar {
-  background: #edf1f5;
-  border-right: 1px solid #d9e0e8;
-}
-
-.ga-sidebar-active {
-  background: #ffffff;
-  box-shadow: inset 3px 0 0 #0f766e;
-}
-
-.ga-composer-surface {
-  border: 1px solid #d9e0e8;
-  background: #ffffff;
-  box-shadow: 0 12px 34px rgba(17, 24, 39, 0.10);
-}
