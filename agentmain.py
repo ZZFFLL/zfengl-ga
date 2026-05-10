@@ -144,7 +144,7 @@ class GenericAgent:
             self.handler = handler  # although new handler, the **full** history is in llmclient, so it is full history!
             self.llmclient.log_path = self.log_path
             gen = agent_runner_loop(self.llmclient, sys_prompt, raw_query, 
-                                handler, TOOLS_SCHEMA, max_turns=70, verbose=self.verbose)
+                                handler, TOOLS_SCHEMA, max_turns=140, verbose=self.verbose)
             try:
                 full_resp = ""; last_pos = 0
                 for chunk in gen:

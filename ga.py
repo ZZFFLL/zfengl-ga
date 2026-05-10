@@ -9,6 +9,13 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from agent_loop import BaseHandler, StepOutcome, json_default
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
+NORMAL_WORKING_MEMORY_WINDOW = 60
+NORMAL_LONG_RUN_ASK_USER_TURN = 70
+NORMAL_CHECKPOINT_EVERY = 25
+PLAN_MAX_TURNS = 200
+PLAN_LONG_RUN_ASK_USER_TURN = 100
+PLAN_CHECKPOINT_EVERY = 35
+
 def code_run(code, code_type="python", timeout=60, cwd=None, code_cwd=None, stop_signal=None):
     """代码执行器
     python: 运行复杂的 .py 脚本（文件模式）
@@ -421,7 +428,7 @@ class GenericAgentHandler(BaseHandler):
     def _in_plan_mode(self): return self.working.get('in_plan_mode')
     def _exit_plan_mode(self): self.working.pop('in_plan_mode', None)
     def enter_plan_mode(self, plan_path): 
-        self.working['in_plan_mode'] = plan_path; self.max_turns = 100
+        self.working['in_plan_mode'] = plan_path; self.max_turns = PLAN_MAX_TURNS
         print(f"[Info] Entered plan mode with plan file: {plan_path}"); return plan_path
     def _check_plan_completion(self):
         if not os.path.isfile(p:=self._in_plan_mode() or ''): return None
@@ -528,7 +535,7 @@ class GenericAgentHandler(BaseHandler):
 
     def _get_anchor_prompt(self, skip=False):
         if skip: return "\n"
-        h = self.history_info; W = 30
+        h = self.history_info; W = NORMAL_WORKING_MEMORY_WINDOW
         earlier = f'<earlier_context>\n{self._fold_earlier(h[:-W])}\n</earlier_context>\n' if len(h) > W else ""
         h_str = "\n".join(h[-W:])
         prompt = f"\n### [WORKING MEMORY]\n{earlier}<history>\n{h_str}\n</history>"
@@ -539,6 +546,17 @@ class GenericAgentHandler(BaseHandler):
             try: print(prompt)
             except: pass
         return prompt
+
+    def _checkpoint_prompt(self, plan=False):
+        if plan:
+            return (
+                "\n\n[DANGER] 长程Plan任务checkpoint：如有新增信息，请调用 update_working_checkpoint "
+                "保存计划文件之外的用户关键约束、当前目标、已验证执行状态、失败路径和下一步。"
+            )
+        return (
+            "\n\n[DANGER] 长程任务checkpoint：如有新增信息，请调用 update_working_checkpoint "
+            "保存用户补充的关键约束、当前目标、已验证结论、失败路径和下一步。"
+        )
     
     def turn_end_callback(self, response, tool_calls, tool_results, turn, next_prompt, exit_reason):
         _c = re.sub(r'```.*?```|<thinking>.*?</thinking>', '', response.content, flags=re.DOTALL)
@@ -554,15 +572,20 @@ class GenericAgentHandler(BaseHandler):
         self.history_info.append(f'[Agent] {summary}')
         _plan = self._in_plan_mode()
 
-        if turn % 65 == 0 and (not _plan):
+        if not _plan and turn % NORMAL_LONG_RUN_ASK_USER_TURN == 0:
             next_prompt += f"\n\n[DANGER] 已连续执行第 {turn} 轮。必须总结情况进行ask_user，不允许继续重试。"
         elif turn % 7 == 0:
             next_prompt += f"\n\n[DANGER] 已连续执行第 {turn} 轮。禁止无效重试。若无有效进展，必须切换策略：1. 探测物理边界 2. 请求用户协助。如有需要，可调用 update_working_checkpoint 保存关键上下文。"
         elif turn % 10 == 0: next_prompt += get_global_memory()
+        if not _plan and turn % NORMAL_CHECKPOINT_EVERY == 0:
+            next_prompt += self._checkpoint_prompt(plan=False)
 
         if _plan and turn >= 10 and turn % 5 == 0:
             next_prompt = f"[Plan Hint] 正在计划模式。必须 file_read({_plan}) 确认当前步骤，回复开头引用：📌 当前步骤：...\n\n" + next_prompt
-        if _plan and turn >= 90: next_prompt += f"\n\n[DANGER] Plan模式已运行 {turn} 轮，已达上限。必须 ask_user 汇报进度并确认是否继续。"
+        if _plan and turn % PLAN_CHECKPOINT_EVERY == 0:
+            next_prompt += self._checkpoint_prompt(plan=True)
+        if _plan and turn >= PLAN_LONG_RUN_ASK_USER_TURN:
+            next_prompt += f"\n\n[DANGER] Plan模式已运行 {turn} 轮，已达上限。必须 ask_user 汇报进度并确认是否继续。"
 
         injkeyinfo = consume_file(self.parent.task_dir, '_keyinfo')
         injprompt = consume_file(self.parent.task_dir, '_intervene')
