@@ -4,7 +4,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 const moduleUrl = pathToFileURL(
-  path.resolve("frontends/webui/src/sidebar-selection.ts"),
+  path.resolve("frontends/webui/src/state/sidebar-selection.ts"),
 ).href;
 const {
   buildBulkDeleteLabel,

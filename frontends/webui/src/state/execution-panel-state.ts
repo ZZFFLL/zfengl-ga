@@ -1,4 +1,4 @@
-import type { ExecutionTurn } from "./types";
+import type { ExecutionTurn } from "../types";
 
 export type ExecutionMessageLike = {
   id: string;

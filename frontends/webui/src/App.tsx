@@ -57,13 +57,13 @@ import {
   resolveExecutionChipRunning,
   resolveExecutionTurns,
   shouldShowPendingAssistant,
-} from "./execution-panel-state";
-import { isNearScrollBottom } from "./chat-scroll-state";
+} from "./state/execution-panel-state";
+import { isNearScrollBottom } from "./state/chat-scroll-state";
 import {
   buildBulkDeleteLabel,
   pruneSelectedConversations,
   toggleSelectedConversation,
-} from "./sidebar-selection";
+} from "./state/sidebar-selection";
 import { gaTheme } from "./theme";
 
 const nowLabel = () => new Date().toLocaleString();

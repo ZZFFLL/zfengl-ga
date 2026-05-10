@@ -4,7 +4,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 const moduleUrl = pathToFileURL(
-  path.resolve("frontends/webui/src/chat-scroll-state.ts"),
+  path.resolve("frontends/webui/src/state/chat-scroll-state.ts"),
 ).href;
 const {
   isNearScrollBottom,

@@ -4,7 +4,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 const moduleUrl = pathToFileURL(
-  path.resolve("frontends/webui/src/execution-panel-state.ts"),
+  path.resolve("frontends/webui/src/state/execution-panel-state.ts"),
 ).href;
 const {
   buildExecutionChipLabel,
