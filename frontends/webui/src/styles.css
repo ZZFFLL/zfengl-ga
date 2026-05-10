@@ -3,6 +3,7 @@
 @import "./styles/shell.css";
 @import "./styles/chat.css";
 @import "./styles/execution.css";
+@import "./styles/context.css";
 @import "./styles/motion.css";
 
 @tailwind base;

@@ -1,0 +1,62 @@
+.ga-context-panel {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  flex-direction: column;
+  border-left: 1px solid #d9e0e8;
+  background: #f8fafb;
+}
+
+.ga-context-header {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  gap: 0.75rem;
+  border-bottom: 1px solid #d9e0e8;
+  padding: 0.75rem;
+}
+
+.ga-context-section {
+  border: 1px solid #d9e0e8;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 0.875rem;
+}
+
+.ga-context-summary-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.75rem;
+  border-radius: 8px;
+  background: #f7f9fb;
+  padding: 0.625rem 0.75rem;
+}
+
+.ga-context-summary-icon {
+  display: inline-flex;
+  width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: #0f766e;
+  background: #e7f5f2;
+}
+
+.ga-context-timeline.ant-timeline {
+  margin-top: 0.75rem;
+}
+
+.ga-context-timeline .ant-timeline-item {
+  padding-bottom: 0.875rem;
+}
+
+.ga-context-activity-item {
+  min-width: 0;
+  border-radius: 8px;
+  background: #f7f9fb;
+  padding: 0.625rem 0.75rem;
+}
