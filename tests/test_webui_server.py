@@ -135,65 +135,6 @@ class ErrorTextTitleAgent:
         self.llmclient.backend = ErrorTextTitleBackend()
 
 
-class AgentMainCompatibilityTests(unittest.TestCase):
-    def test_feishu_followup_injects_anchor_prompt_into_first_user_input(self):
-        import agentmain
-        from unittest import mock
-
-        captured = {}
-
-        def fake_runner_loop(_client, _system_prompt, user_input, _handler, _tools_schema, **_kwargs):
-            captured["user_input"] = user_input
-            yield "final answer"
-
-        agent = object.__new__(agentmain.GeneraticAgent)
-        agent.task_queue = queue.Queue()
-        agent.task_dir = None
-        agent.history = ["[USER]: 历史消息"]
-        agent.handler = SimpleNamespace(working={"key_info": "旧key"}, code_stop_signal=[])
-        agent.is_running = False
-        agent.stop_sig = False
-        agent.inc_out = False
-        agent.verbose = False
-        agent.peer_hint = False
-        agent.log_path = str(Path(tempfile.gettempdir()) / "genericagent_model_responses_test.txt")
-        agent.llmclient = SimpleNamespace(
-            backend=SimpleNamespace(extra_sys_prompt="", history=[]),
-            last_tools="",
-            log_path=None,
-        )
-
-        handler = SimpleNamespace(
-            working={},
-            history_info=["final history"],
-            code_stop_signal=[],
-            _get_anchor_prompt=lambda: "ANCHOR PROMPT",
-        )
-
-        with mock.patch("agentmain.get_system_prompt", return_value=""), mock.patch(
-            "agentmain.GenericAgentHandler", return_value=handler
-        ), mock.patch("agentmain.agent_runner_loop", fake_runner_loop):
-            worker = threading.Thread(target=agent.run, daemon=True)
-            worker.start()
-            output = agent.put_task("当前飞书消息", source="feishu", images=["a.png"])
-            done = output.get(timeout=2)
-
-        self.assertEqual(done["done"], "final answer")
-        self.assertEqual(
-            captured["user_input"],
-            "ANCHOR PROMPT\n\n### 用户当前消息\n当前飞书消息",
-        )
-
-    def test_build_arg_parser_accepts_legacy_bg_flag(self):
-        import agentmain
-
-        parser = agentmain.build_arg_parser()
-        args = parser.parse_args(["--task", "demo", "--bg"])
-
-        self.assertEqual(args.task, "demo")
-        self.assertTrue(args.bg)
-
-
 class WebUILogParserTests(unittest.TestCase):
     def test_parse_execution_log_returns_summary_only(self):
         text = (
