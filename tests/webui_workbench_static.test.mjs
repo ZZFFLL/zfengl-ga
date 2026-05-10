@@ -17,6 +17,11 @@ test("App wires the workbench context shell surfaces", async () => {
   assert.match(appSource, /ga-workbench-main-panel/);
   assert.match(appSource, /ga-workbench-context-panel/);
   assert.match(appSource, /aria-label="工作上下文"/);
+  assert.doesNotMatch(
+    appSource,
+    /turns\.length > 0 \? turns : activeConversation\?\.execution_log \?\? \[\]/,
+  );
+  assert.match(appSource, /running \? \[\] : activeConversation\?\.execution_log/);
 });
 
 test("workbench does not add subagent or inspector API surfaces", async () => {

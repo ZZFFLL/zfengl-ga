@@ -7,10 +7,12 @@ export function ContextPanelHeader({
   activeTab,
   onTabChange,
   onClose,
+  closeLabel = "收起上下文面板",
 }: {
   activeTab: WorkbenchContextTab;
   onTabChange: (tab: WorkbenchContextTab) => void;
   onClose?: () => void;
+  closeLabel?: string;
 }) {
   return (
     <header className="ga-context-header">
@@ -28,14 +30,14 @@ export function ContextPanelHeader({
         ]}
       />
       {onClose ? (
-        <Tooltip title="收起上下文面板">
+        <Tooltip title={closeLabel}>
           <Button
             type="text"
             size="small"
             className="inline-flex items-center justify-center"
             icon={<PanelRightClose className="h-4 w-4" aria-hidden="true" />}
             onClick={onClose}
-            aria-label="收起上下文面板"
+            aria-label={closeLabel}
           />
         </Tooltip>
       ) : null}

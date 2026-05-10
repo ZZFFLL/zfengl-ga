@@ -100,7 +100,7 @@ function GenericAgentWebUI() {
   const activeConversationId = activeConversation?.summary.id ?? state?.active_conversation_id ?? null;
   const lastReplyTime = state?.last_reply_time || 0;
   const hasThread = messages.length > 0;
-  const contextTurns = turns.length > 0 ? turns : activeConversation?.execution_log ?? [];
+  const contextTurns = turns.length > 0 ? turns : running ? [] : activeConversation?.execution_log ?? [];
   const resolvedContextTab = chooseWorkbenchContextTab(contextTab, contextTurns, running);
   const recentConversationIds = conversations
     .filter((conversation) => !conversation.group_id && !conversation.pinned)
@@ -769,6 +769,7 @@ function GenericAgentWebUI() {
                   activeTab={resolvedContextTab}
                   onTabChange={setContextTab}
                   onClose={() => setContextOpen(false)}
+                  closeLabel="收起上下文面板"
                 />
               </Splitter.Panel>
             ) : null}
@@ -822,6 +823,7 @@ function GenericAgentWebUI() {
           activeTab={resolvedContextTab}
           onTabChange={setContextTab}
           onClose={() => setContextDrawerOpen(false)}
+          closeLabel="关闭上下文面板"
         />
       </Drawer>
 

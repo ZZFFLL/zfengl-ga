@@ -11,16 +11,23 @@ export function WorkbenchContextPanel({
   activeTab,
   onTabChange,
   onClose,
+  closeLabel,
 }: {
   state: RuntimeState | null;
   turns: ExecutionTurn[];
   activeTab: WorkbenchContextTab;
   onTabChange: (tab: WorkbenchContextTab) => void;
   onClose?: () => void;
+  closeLabel?: string;
 }) {
   return (
     <aside className="ga-context-panel">
-      <ContextPanelHeader activeTab={activeTab} onTabChange={onTabChange} onClose={onClose} />
+      <ContextPanelHeader
+        activeTab={activeTab}
+        onTabChange={onTabChange}
+        onClose={onClose}
+        closeLabel={closeLabel}
+      />
       <div className="operation-scroll min-h-0 flex-1 overflow-y-auto px-3 pb-4 pt-3">
         {activeTab === "activity" ? (
           <ExecutionActivityPanel turns={turns} running={state?.running ?? false} />
