@@ -27,10 +27,10 @@ export function ChatHome({
             <Sparkles className="h-5 w-5" aria-hidden="true" />
           </div>
           <h2 className="mt-5 text-2xl font-semibold text-app-textStrong sm:text-3xl">
-            让 GenericAgent 接手下一步
+            开始一个 GA 工作流
           </h2>
           <p className="mx-auto mt-2 max-w-xl text-sm leading-7 text-app-muted">
-            适合代码修改、文件分析、环境排查和长任务执行。执行过程会保留在回答内，便于复查。
+            输入任务、问题或代码修改目标。WebUI 会保留回答和执行过程，便于复查当前会话。
           </p>
         </div>
 
@@ -62,8 +62,8 @@ export function ChatHome({
               >
               </Button>
             </div>
-            <div className="mt-3 flex items-center justify-between gap-3 text-xs text-app-muted">
-              <span>GA 原有控制能力保留在顶部和更多菜单。</span>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-app-muted">
+              <span>{state?.configured ? "当前后端已就绪" : "请先配置模型后再发送"}</span>
               <span>Shift+Enter 换行，Enter 发送</span>
             </div>
           </div>

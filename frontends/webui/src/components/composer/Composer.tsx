@@ -20,8 +20,14 @@ export function Composer({
   onSubmit: (event?: FormEvent) => void;
   onAbort: () => void;
 }) {
+  const helperText = !state?.configured
+    ? "请先配置模型后再发送。"
+    : running
+      ? "任务运行中，可以停止当前任务。"
+      : "Shift+Enter 换行，Enter 发送。";
+
   return (
-    <form className="shrink-0 border-t border-app-line bg-white/86 px-3 py-3 backdrop-blur md:px-4 md:py-4" onSubmit={onSubmit}>
+    <form className="ga-composer-bar shrink-0 border-t border-app-line px-3 py-3 backdrop-blur md:px-4 md:py-4" onSubmit={onSubmit}>
       <div className="ga-composer-surface mx-auto max-w-[900px] rounded-xl px-4 py-3">
         <textarea
           id="chat-composer-draft"
@@ -35,7 +41,7 @@ export function Composer({
           rows={2}
         />
         <div className="mt-3 flex items-center justify-between gap-3">
-          <div className="text-xs text-app-muted">Shift+Enter 换行，Enter 发送。</div>
+          <div className="text-xs text-app-muted">{helperText}</div>
           <div className="flex items-center gap-2">
             {running ? (
               <Button

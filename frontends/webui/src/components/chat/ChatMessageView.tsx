@@ -17,6 +17,7 @@ export function ChatMessageView({
   liveExecutionLog?: ExecutionTurn[];
 }) {
   const isUser = message.role === "user";
+  const roleLabel = isUser ? "You" : message.role === "system" ? "System" : "GenericAgent";
   const effectiveExecutionLog = resolveExecutionTurns(message, liveExecutionLog, streaming);
   const executionChipRunning = resolveExecutionChipRunning(Boolean(message.pending), streaming);
   const isPendingAssistant =
@@ -33,8 +34,9 @@ export function ChatMessageView({
               : "ga-message-assistant text-app-text"
           }`}
         >
-          <div className={`mb-2 text-[11px] font-medium ${isUser ? "text-white/60" : "text-app-muted"}`}>
-            {isUser ? "你" : message.role === "system" ? "System" : "GA"} · {message.time}
+          <div className={`mb-2 flex items-center justify-between gap-3 text-[11px] font-medium ${isUser ? "text-white/62" : "text-app-muted"}`}>
+            <span>{roleLabel}</span>
+            <span className="shrink-0">{message.time}</span>
           </div>
           {!isUser ? (
             <InlineExecutionTurns
