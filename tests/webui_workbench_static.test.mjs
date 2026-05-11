@@ -119,11 +119,35 @@ test("composer is a command dock", async () => {
   assert.match(chatCss, /\.ga-home-command-dock[\s\S]*border:\s*0\.0625rem solid #c9c5bd/);
   assert.match(chatCss, /\.ga-home-command-dock[\s\S]*border-radius:\s*0\.625rem/);
   assert.match(chatCss, /\.ga-home-command-dock[\s\S]*box-shadow:\s*0 1\.125rem 3rem rgba\(15, 23, 42, 0\.12\)/);
+  assert.match(
+    chatCss,
+    /\.ga-home-command-input:focus-visible,\s*\.ga-command-input:focus-visible[\s\S]*outline:\s*none;/,
+  );
+  assert.match(chatCss, /\.ga-home-command-input:focus[\s\S]*box-shadow:\s*none;/);
   assert.match(themeSource, /borderRadius:\s*6/);
   assert.match(themeSource, /borderRadiusLG:\s*8/);
   assert.match(themeSource, /borderRadiusSM:\s*4/);
   assert.doesNotMatch(themeSource, /borderRadius:\s*8|borderRadiusLG:\s*10|borderRadiusSM:\s*999/);
   assert.doesNotMatch(baseStyles, /rounded-\[1\.125rem\]|rounded-xl|rounded-full/);
+});
+
+test("new conversation action stays a local draft until first send", async () => {
+  const appSource = await readSource("frontends/webui/src/App.tsx");
+  const handleStart = appSource.indexOf("const handleCreateConversation");
+  const handleEnd = appSource.indexOf("const handleRenameConversation");
+  const handleCreateSource = appSource.slice(handleStart, handleEnd);
+
+  assert.match(appSource, /draftConversationActive/);
+  assert.match(
+    appSource,
+    /const activeConversationId = draftConversationActive\s*\?\s*null\s*:\s*activeConversation\?\.summary\.id \?\? state\?\.active_conversation_id \?\? null;/,
+  );
+  assert.match(handleCreateSource, /setDraftConversationActive\(true\)/);
+  assert.match(handleCreateSource, /setActiveConversation\(null\)/);
+  assert.match(handleCreateSource, /setMessages\(\[\]\)/);
+  assert.match(handleCreateSource, /setDraft\(""\)/);
+  assert.doesNotMatch(handleCreateSource, /createConversation\(|fetchConversation\(|fetchState\(|syncConversationList/);
+  assert.match(appSource, /if \(!conversationId\) \{[\s\S]*setDraftConversationActive\(false\);[\s\S]*createConversation\(prompt\)/);
 });
 
 test("run inspector is manually opened, localized, and not permanent low-value chrome", async () => {

@@ -74,6 +74,7 @@ function GenericAgentWebUI() {
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [groups, setGroups] = useState<GroupSummary[]>([]);
   const [activeConversation, setActiveConversation] = useState<ConversationDetail | null>(null);
+  const [draftConversationActive, setDraftConversationActive] = useState(false);
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [turns, setTurns] = useState<ExecutionTurn[]>([]);
   const [draft, setDraft] = useState("");
@@ -103,7 +104,9 @@ function GenericAgentWebUI() {
   const wasRunningRef = useRef(false);
 
   const running = Boolean(state?.running);
-  const activeConversationId = activeConversation?.summary.id ?? state?.active_conversation_id ?? null;
+  const activeConversationId = draftConversationActive
+    ? null
+    : activeConversation?.summary.id ?? state?.active_conversation_id ?? null;
   const lastReplyTime = state?.last_reply_time || 0;
   const hasThread = messages.length > 0;
   const contextTurns = turns.length > 0 ? turns : running ? [] : activeConversation?.execution_log ?? [];
@@ -157,6 +160,7 @@ function GenericAgentWebUI() {
         const detail = await fetchConversation(candidateId);
         setActiveConversation(detail);
         setMessages(toUiMessages(detail));
+        setDraftConversationActive(false);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -381,6 +385,7 @@ function GenericAgentWebUI() {
     autoScrollPinnedRef.current = true;
     const detail = await activateConversation(conversationId);
     setActiveConversation(detail);
+    setDraftConversationActive(false);
     setMessages(toUiMessages(detail));
     setTurns(detail.execution_log ?? []);
     setSidebarOpen(false);
@@ -389,19 +394,16 @@ function GenericAgentWebUI() {
     syncConversationList(nextState);
   };
 
-  const handleCreateConversation = async (titleHint = "") => {
+  const handleCreateConversation = async () => {
     setError("");
     autoScrollPinnedRef.current = true;
-    const conversation = await createConversation(titleHint);
-    const detail = await fetchConversation(conversation.id);
-    setActiveConversation(detail);
+    setDraftConversationActive(true);
+    setActiveConversation(null);
     setMessages([]);
     setTurns([]);
+    setDraft("");
     closeInspector();
     resetStreamingAssistant();
-    const nextState = await fetchState();
-    setState(nextState);
-    syncConversationList(nextState);
     setSidebarOpen(false);
   };
 
@@ -435,11 +437,13 @@ function GenericAgentWebUI() {
     if (nextActiveId) {
       autoScrollPinnedRef.current = true;
       const detail = await fetchConversation(nextActiveId);
+      setDraftConversationActive(false);
       setActiveConversation(detail);
       setMessages(toUiMessages(detail));
       setTurns(detail.execution_log ?? []);
     } else {
       setActiveConversation(null);
+      setDraftConversationActive(false);
       setMessages([]);
       setTurns([]);
       closeInspector();
@@ -470,11 +474,13 @@ function GenericAgentWebUI() {
       autoScrollPinnedRef.current = true;
       const detail = await fetchConversation(nextActiveId);
       const nextMessages = toUiMessages(detail);
+      setDraftConversationActive(false);
       setActiveConversation(detail);
       setMessages(nextMessages);
       setTurns(detail.execution_log ?? []);
     } else {
       setActiveConversation(null);
+      setDraftConversationActive(false);
       setMessages([]);
       setTurns([]);
     }
@@ -543,6 +549,7 @@ function GenericAgentWebUI() {
     let conversationId = activeConversationId;
     // 中文注释：空首页首次发送时，先创建真实会话，再切入线程态。
     if (!conversationId) {
+      setDraftConversationActive(false);
       const created = await createConversation(prompt);
       conversationId = created.id;
       const detail = await fetchConversation(conversationId);
