@@ -215,6 +215,31 @@ test("desktop workbench fills the viewport and exposes usable resize rails", asy
   );
 });
 
+test("workbench preserves left, center, and right panel motion after splitter migration", async () => {
+  const [appSource, workbenchCss, overridesCss] = await Promise.all([
+    readSource("frontends/webui/src/App.tsx"),
+    readSource("frontends/webui/src/styles/workbench.css"),
+    readSource("frontends/webui/src/styles/antd-overrides.css"),
+  ]);
+
+  assert.match(appSource, /const \[workbenchResizing, setWorkbenchResizing\] = useState\(false\);/);
+  assert.match(appSource, /const \[inspectorPanelMounted, setInspectorPanelMounted\] = useState\(false\);/);
+  assert.match(appSource, /const \[inspectorPanelExpanded, setInspectorPanelExpanded\] = useState\(false\);/);
+  assert.match(appSource, /onResizeStart=\{\(\) => setWorkbenchResizing\(true\)\}/);
+  assert.match(appSource, /className=\{`ga-workbench-desktop-splitter \$\{workbenchResizing \? "is-resizing" : ""\} hidden xl:flex`\}/);
+  assert.match(appSource, /const inspectorPanelOpen = inspectorOpen && inspectorDrawerDesktop && inspectorPanelExpanded;/);
+  assert.match(appSource, /setInspectorPanelMounted\(true\);[\s\S]*window\.requestAnimationFrame\(\(\) => \{[\s\S]*setInspectorPanelExpanded\(true\);/);
+  assert.match(appSource, /setInspectorPanelExpanded\(false\);[\s\S]*window\.setTimeout\(\(\) => \{[\s\S]*setInspectorPanelMounted\(false\);[\s\S]*setSelectedInspectorTaskId\(null\);[\s\S]*setSelectedInspectorTarget\(null\);[\s\S]*\}, INSPECTOR_PANEL_EXIT_MS\)/);
+  assert.match(appSource, /<Splitter\.Panel\s+size=\{inspectorPanelOpen \? inspectorPanelSize : 0\}\s+min=\{inspectorPanelOpen \? "20%" : 0\}\s+max="36%"\s+resizable=\{inspectorPanelOpen\}/);
+  assert.doesNotMatch(appSource, /\{inspectorOpen && inspectorDrawerDesktop \? \(/);
+  assert.doesNotMatch(appSource, /inspectorPanelOpen \? \(\s*<RunInspector/s);
+  assert.match(workbenchCss, /\.ga-workbench-main-splitter \.ant-splitter-panel\s*\{[\s\S]*transition:\s*flex-basis 240ms cubic-bezier\(0\.2, 0, 0, 1\),\s*opacity 180ms ease,\s*transform 220ms cubic-bezier\(0\.2, 0, 0, 1\);/);
+  assert.match(workbenchCss, /\.ga-workbench-desktop-splitter \.ant-splitter-panel\s*\{[\s\S]*transition:\s*flex-basis 240ms cubic-bezier\(0\.2, 0, 0, 1\),\s*opacity 180ms ease;\s*\}/);
+  assert.match(workbenchCss, /\.ga-workbench-desktop-splitter\.is-resizing \.ant-splitter-panel[\s\S]*transition:\s*none;/);
+  assert.match(workbenchCss, /\.ga-workbench-inspector-panel\.is-closed[\s\S]*transform:\s*translateX\(0\.75rem\);[\s\S]*opacity:\s*0;/);
+  assert.match(overridesCss, /\.ga-workbench-main-splitter \.ant-splitter-bar\s*\{[\s\S]*transition:\s*background 160ms ease,\s*opacity 160ms ease;/);
+});
+
 test("conversation groups can be expanded and collapsed from the folder row", async () => {
   const sidebarSource = await readSource("frontends/webui/src/components/sidebar/ConversationSidebar.tsx");
 

@@ -60,6 +60,7 @@ import { gaTheme } from "./theme";
 const id = () => Math.random().toString(36).slice(2);
 const DEFAULT_CONTINUE_COMMAND = "/continue 1";
 const INSPECTOR_DRAWER_DESKTOP_QUERY = "(min-width: 80rem)";
+const INSPECTOR_PANEL_EXIT_MS = 320;
 const SIDEBAR_COLLAPSED_WIDTH = "4.75rem";
 
 function toUiMessages(detail: ConversationDetail | null) {
@@ -98,6 +99,9 @@ function GenericAgentWebUI() {
   const [selectingRecent, setSelectingRecent] = useState(false);
   const [selectedRecentIds, setSelectedRecentIds] = useState<string[]>([]);
   const [streamAnimating, setStreamAnimating] = useState(false);
+  const [workbenchResizing, setWorkbenchResizing] = useState(false);
+  const [inspectorPanelMounted, setInspectorPanelMounted] = useState(false);
+  const [inspectorPanelExpanded, setInspectorPanelExpanded] = useState(false);
   const [workbenchLayout, setWorkbenchLayout] = useState(() =>
     readWorkbenchLayoutPreference(typeof window === "undefined" ? undefined : window.localStorage),
   );
@@ -111,6 +115,9 @@ function GenericAgentWebUI() {
   const streamLastStepAtRef = useRef(0);
   const autoScrollPinnedRef = useRef(true);
   const wasRunningRef = useRef(false);
+  const inspectorPanelMountedRef = useRef(false);
+  const inspectorPanelAnimationFrameRef = useRef<number | null>(null);
+  const inspectorPanelExitTimerRef = useRef<number | null>(null);
 
   const running = Boolean(state?.running);
   const activeConversationId = draftConversationActive
@@ -141,7 +148,8 @@ function GenericAgentWebUI() {
     latestInspectableItem?.executionLog.length || inspectorTurns.length || contextTurns.length;
   const sidebarPanelSize = sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : `${workbenchLayout.sidebar}%`;
   const sidebarPanelResizable = !sidebarCollapsed;
-  const mainPanelSize = inspectorOpen && inspectorDrawerDesktop ? `${workbenchLayout.main}%` : "100%";
+  const inspectorPanelOpen = inspectorOpen && inspectorDrawerDesktop && inspectorPanelExpanded;
+  const mainPanelSize = inspectorPanelOpen ? `${workbenchLayout.main}%` : "100%";
   const inspectorPanelSize = `${workbenchLayout.inspector}%`;
   const activeChatScrollRef = inspectorDrawerDesktop ? desktopChatScrollRef : mobileChatScrollRef;
   const recentConversationIds = conversations
@@ -202,6 +210,46 @@ function GenericAgentWebUI() {
   }, []);
 
   useEffect(() => {
+    const shouldOpenInspectorPanel = inspectorOpen && inspectorDrawerDesktop;
+    clearInspectorPanelMotionTimers();
+
+    if (!inspectorDrawerDesktop) {
+      setInspectorPanelExpanded(false);
+      setInspectorPanelMounted(false);
+      inspectorPanelMountedRef.current = false;
+      return clearInspectorPanelMotionTimers;
+    }
+
+    if (shouldOpenInspectorPanel) {
+      setInspectorPanelMounted(true);
+      inspectorPanelMountedRef.current = true;
+      inspectorPanelAnimationFrameRef.current = window.requestAnimationFrame(() => {
+        inspectorPanelAnimationFrameRef.current = null;
+        setInspectorPanelExpanded(true);
+      });
+      return undefined;
+    }
+
+    setInspectorPanelExpanded(false);
+    if (inspectorPanelMountedRef.current) {
+      inspectorPanelExitTimerRef.current = window.setTimeout(() => {
+        inspectorPanelExitTimerRef.current = null;
+        setInspectorPanelMounted(false);
+        inspectorPanelMountedRef.current = false;
+        setSelectedInspectorTaskId(null);
+        setSelectedInspectorTarget(null);
+      }, INSPECTOR_PANEL_EXIT_MS);
+    } else {
+      setInspectorPanelMounted(false);
+      inspectorPanelMountedRef.current = false;
+      setSelectedInspectorTaskId(null);
+      setSelectedInspectorTarget(null);
+    }
+
+    return clearInspectorPanelMotionTimers;
+  }, [inspectorOpen, inspectorDrawerDesktop]);
+
+  useEffect(() => {
     if (!autoScrollPinnedRef.current) return;
     scrollChatToBottom("auto");
   }, [messages, streamAnimating, turns]);
@@ -238,6 +286,17 @@ function GenericAgentWebUI() {
     if (streamAnimationFrameRef.current !== null) {
       window.cancelAnimationFrame(streamAnimationFrameRef.current);
       streamAnimationFrameRef.current = null;
+    }
+  }
+
+  function clearInspectorPanelMotionTimers() {
+    if (inspectorPanelAnimationFrameRef.current !== null) {
+      window.cancelAnimationFrame(inspectorPanelAnimationFrameRef.current);
+      inspectorPanelAnimationFrameRef.current = null;
+    }
+    if (inspectorPanelExitTimerRef.current !== null) {
+      window.clearTimeout(inspectorPanelExitTimerRef.current);
+      inspectorPanelExitTimerRef.current = null;
     }
   }
 
@@ -698,8 +757,6 @@ function GenericAgentWebUI() {
 
   const closeInspector = () => {
     setInspectorVisible(false);
-    setSelectedInspectorTaskId(null);
-    setSelectedInspectorTarget(null);
   };
 
   const handleSidebarResize = (sizes: number[]) => {
@@ -708,6 +765,7 @@ function GenericAgentWebUI() {
   };
 
   const handleSidebarResizeEnd = (sizes: number[]) => {
+    setWorkbenchResizing(false);
     if (sidebarCollapsed) return;
     setWorkbenchLayout((current) => {
       const nextLayout = nextWorkbenchLayoutFromSidebarResize(current, sizes);
@@ -717,12 +775,13 @@ function GenericAgentWebUI() {
   };
 
   const handleInspectorResize = (sizes: number[]) => {
-    if (!inspectorOpen || !inspectorDrawerDesktop) return;
+    if (!inspectorPanelOpen) return;
     setWorkbenchLayout((current) => nextWorkbenchLayoutFromInspectorResize(current, sizes));
   };
 
   const handleInspectorResizeEnd = (sizes: number[]) => {
-    if (!inspectorOpen || !inspectorDrawerDesktop) return;
+    setWorkbenchResizing(false);
+    if (!inspectorPanelOpen) return;
     setWorkbenchLayout((current) => {
       const nextLayout = nextWorkbenchLayoutFromInspectorResize(current, sizes);
       writeWorkbenchLayoutPreference(window.localStorage, nextLayout);
@@ -837,8 +896,9 @@ function GenericAgentWebUI() {
       className="ga-shell ga-workbench-shell h-screen h-dvh min-h-0 overflow-hidden bg-app-bg text-app-text"
     >
       <Splitter
-        className="ga-workbench-desktop-splitter hidden xl:flex"
+        className={`ga-workbench-desktop-splitter ${workbenchResizing ? "is-resizing" : ""} hidden xl:flex`}
         layout="horizontal"
+        onResizeStart={() => setWorkbenchResizing(true)}
         onResize={handleSidebarResize}
         onResizeEnd={handleSidebarResizeEnd}
       >
@@ -884,17 +944,26 @@ function GenericAgentWebUI() {
             <Layout.Content className="min-h-0 min-w-0 overflow-hidden">
               <div className="ga-workbench-content-frame">
                 <Splitter
-                  className="ga-workbench-main-splitter"
+                  className={`ga-workbench-main-splitter ${workbenchResizing ? "is-resizing" : ""}`}
                   layout="horizontal"
+                  onResizeStart={() => setWorkbenchResizing(true)}
                   onResize={handleInspectorResize}
                   onResizeEnd={handleInspectorResizeEnd}
                 >
-                  <Splitter.Panel size={mainPanelSize} min="50%" resizable={inspectorOpen && inspectorDrawerDesktop}>
+                  <Splitter.Panel size={mainPanelSize} min="50%" resizable={inspectorPanelOpen}>
                     {renderMainPanel(desktopChatScrollRef)}
                   </Splitter.Panel>
-                  {inspectorOpen && inspectorDrawerDesktop ? (
-                    <Splitter.Panel size={inspectorPanelSize} min="20%" max="36%">
-                      <div className="ga-workbench-inspector-panel is-open" aria-hidden={false}>
+                  {inspectorPanelMounted ? (
+                    <Splitter.Panel
+                      size={inspectorPanelOpen ? inspectorPanelSize : 0}
+                      min={inspectorPanelOpen ? "20%" : 0}
+                      max="36%"
+                      resizable={inspectorPanelOpen}
+                    >
+                      <div
+                        className={`ga-workbench-inspector-panel ${inspectorPanelOpen ? "is-open" : "is-closed"}`}
+                        aria-hidden={!inspectorPanelOpen}
+                      >
                         <RunInspector
                           turns={inspectorTurns}
                           target={activeInspectorTarget}

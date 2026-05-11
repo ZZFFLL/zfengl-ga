@@ -51,6 +51,9 @@
   margin-inline: -0.4375rem;
   cursor: col-resize;
   z-index: 20;
+  transition:
+    background 160ms ease,
+    opacity 160ms ease;
 }
 
 .ga-workbench-main-splitter .ant-splitter-bar-dragger {
