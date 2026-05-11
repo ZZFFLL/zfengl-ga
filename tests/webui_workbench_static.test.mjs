@@ -58,3 +58,25 @@ test("workbench hides inline context panel below desktop breakpoint", async () =
   assert.match(workbenchCss, /\.ga-workbench-context-panel\s*\{[^}]*display:\s*none\s*!important;/s);
   assert.match(workbenchCss, /\.ga-workbench-main-panel\s*\{[^}]*width:\s*100%\s*!important;/s);
 });
+
+test("chat workbench uses task stream instead of chat bubbles", async () => {
+  const [appSource, chatMessageSource, taskStreamSource, commandSource, responseSource, chatCss] =
+    await Promise.all([
+      readSource("frontends/webui/src/App.tsx"),
+      readSource("frontends/webui/src/components/chat/ChatMessageView.tsx"),
+      readSource("frontends/webui/src/components/chat/TaskStream.tsx"),
+      readSource("frontends/webui/src/components/chat/CommandBlock.tsx"),
+      readSource("frontends/webui/src/components/chat/ResponsePanel.tsx"),
+      readSource("frontends/webui/src/styles/chat.css"),
+    ]);
+
+  assert.match(appSource, /\bTaskStream\b/);
+  assert.doesNotMatch(appSource, /\bChatMessageView\b/);
+  assert.doesNotMatch(chatMessageSource, /justify-end|max-w-\[78%\]|ga-message-user/);
+  assert.match(taskStreamSource, /ga-task-stream/);
+  assert.match(commandSource, /ga-command-block/);
+  assert.match(responseSource, /ga-response-panel/);
+  assert.match(chatCss, /\.ga-task-stream/);
+  assert.match(chatCss, /\.ga-command-block/);
+  assert.match(chatCss, /\.ga-response-panel/);
+});

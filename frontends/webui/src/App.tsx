@@ -34,7 +34,7 @@ import {
   toggleSelectedConversation,
 } from "./state/sidebar-selection";
 import { ChatHome } from "./components/chat/ChatHome";
-import { ChatMessageView } from "./components/chat/ChatMessageView";
+import { TaskStream } from "./components/chat/TaskStream";
 import { StatusBadge } from "./components/app/StatusBadge";
 import { Composer } from "./components/composer/Composer";
 import { WorkbenchContextPanel } from "./components/context/WorkbenchContextPanel";
@@ -46,6 +46,8 @@ import { TopBar } from "./components/shell/TopBar";
 import { sanitizeDisplayText } from "./domain/message-text";
 import { formatMessageTime, nowLabel } from "./domain/time";
 import { nextSmoothContent, prefersReducedMotion, streamStepInterval } from "./domain/streaming-text";
+import type { InspectorTarget } from "./state/task-stream-state";
+import { buildTaskStreamItems } from "./state/task-stream-state";
 import { chooseWorkbenchContextTab } from "./state/workbench-context-state";
 import { gaTheme } from "./theme";
 
@@ -80,6 +82,8 @@ function GenericAgentWebUI() {
   const [contextDrawerOpen, setContextDrawerOpen] = useState(false);
   const [contextDrawerDesktop, setContextDrawerDesktop] = useState(false);
   const [contextTab, setContextTab] = useState<WorkbenchContextTab>("status");
+  const [selectedInspectorTurns, setSelectedInspectorTurns] = useState<ExecutionTurn[]>([]);
+  const [selectedInspectorTarget, setSelectedInspectorTarget] = useState<InspectorTarget | null>(null);
   const [continueDialogOpen, setContinueDialogOpen] = useState(false);
   const [continueCommand, setContinueCommand] = useState(DEFAULT_CONTINUE_COMMAND);
   const [continueLoading, setContinueLoading] = useState(false);
@@ -104,6 +108,7 @@ function GenericAgentWebUI() {
   const hasThread = messages.length > 0;
   const contextTurns = turns.length > 0 ? turns : running ? [] : activeConversation?.execution_log ?? [];
   const resolvedContextTab = chooseWorkbenchContextTab(contextTab, contextTurns, running);
+  const taskItems = buildTaskStreamItems(messages, turns, streamAnimating);
   const recentConversationIds = conversations
     .filter((conversation) => !conversation.group_id && !conversation.pinned)
     .map((conversation) => conversation.id);
@@ -624,6 +629,12 @@ function GenericAgentWebUI() {
     }
   };
 
+  const selectInspectorTarget = (nextTurns: ExecutionTurn[], target: InspectorTarget) => {
+    setSelectedInspectorTurns(nextTurns);
+    setSelectedInspectorTarget(target);
+    setContextDrawerOpen(false);
+  };
+
   if (state && !state.configured) {
     return (
       <main className="flex h-screen h-dvh items-center justify-center overflow-hidden bg-app-bg p-6">
@@ -739,20 +750,11 @@ function GenericAgentWebUI() {
                     />
                   ) : (
                     <div className="mx-auto flex min-h-full w-full max-w-[920px] flex-col px-6 pb-10 pt-8">
-                      <div className="space-y-5">
-                        {messages.map((message, index) => {
-                          const isStreamingAssistant =
-                            streamAnimating && message.role === "assistant" && index === messages.length - 1;
-                          return (
-                            <ChatMessageView
-                              key={message.id}
-                              message={message}
-                              streaming={isStreamingAssistant}
-                              liveExecutionLog={isStreamingAssistant ? turns : []}
-                            />
-                          );
-                        })}
-                      </div>
+                      <TaskStream
+                        items={taskItems}
+                        streaming={streamAnimating}
+                        onSelectInspectorTarget={selectInspectorTarget}
+                      />
                     </div>
                   )}
                 </section>
