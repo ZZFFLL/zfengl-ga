@@ -88,12 +88,6 @@ export function RunInspector({
                 ) : null}
               </section>
             ) : null}
-
-            {running ? (
-              <Button danger icon={<Square className="h-4 w-4" aria-hidden="true" />} onClick={onAbort}>
-                停止当前任务
-              </Button>
-            ) : null}
           </div>
         )}
       </div>

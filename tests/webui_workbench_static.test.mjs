@@ -276,6 +276,7 @@ test("run inspector is manually opened, localized, and not permanent low-value c
   assert.match(inspectorSource, /selectedToolCall/);
   assert.match(inspectorSource, /任务正在启动，等待执行步骤/);
   assert.match(inspectorSource, /停止当前任务/);
+  assert.equal((inspectorSource.match(/停止当前任务/g) ?? []).length, 1);
   assert.match(inspectorSource, /运行详情/);
   assert.match(inspectorSource, /步骤/);
   assert.match(inspectorSource, /已选工具/);
