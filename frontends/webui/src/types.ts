@@ -98,6 +98,10 @@ export type StreamEvent =
       status: string;
     }
   | {
+      event: "task_aborted";
+      conversation_id: string;
+    }
+  | {
       event: "app_error";
       error: string;
     };

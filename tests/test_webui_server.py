@@ -1215,6 +1215,47 @@ class WebUITaskManagerTests(unittest.TestCase):
         self.assertEqual(detail["summary"]["title"], "LLM 概括标题")
         self.assertEqual(generated_prompts, ["帮我整理今天的 WebUI 优化点"])
 
+    def test_abort_notifies_active_stream_immediately(self):
+        conversation = self.store.create_conversation(initial_user_text="stop me")
+        task = self.manager.start_chat(
+            ChatStartRequest(
+                conversation_id=conversation["id"],
+                prompt="long running task",
+            )
+        )
+        task_id = task["task_id"]
+
+        self.manager.abort()
+        self.assertEqual(self.manager.tasks[task_id].status, "aborted")
+        events = list(self.manager.drain_task(task_id, timeout=0.01))
+
+        self.assertTrue(self.agent.aborted)
+        self.assertEqual(events[-1]["event"], "task_aborted")
+        self.assertEqual(events[-1]["conversation_id"], conversation["id"])
+
+    def test_abort_ignores_late_done_payload(self):
+        conversation = self.store.create_conversation(initial_user_text="stop me")
+        task = self.manager.start_chat(
+            ChatStartRequest(
+                conversation_id=conversation["id"],
+                prompt="long running task",
+            )
+        )
+        task_id = task["task_id"]
+        output = self.agent.tasks[-1][3]
+
+        self.manager.abort()
+        output.put({"done": "late answer should not be saved"})
+        events = list(self.manager.drain_task(task_id, timeout=0.01))
+
+        self.assertEqual(events[-1]["event"], "task_aborted")
+        self.assertEqual(self.manager.tasks[task_id].status, "aborted")
+        detail = self.store.get_conversation_detail(conversation["id"])
+        assistant_messages = [
+            message for message in detail["messages"] if message["role"] == "assistant"
+        ]
+        self.assertEqual(assistant_messages, [])
+
     def test_switching_conversation_resets_agent_before_next_send(self):
         first = self.store.create_conversation(initial_user_text="first")
         second = self.store.create_conversation(initial_user_text="second")

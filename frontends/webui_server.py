@@ -1148,12 +1148,33 @@ class WebUITaskManager:
         if task is None:
             yield {"event": "app_error", "error": "task_not_found"}
             return
-        while task.status == "running":
+        while task.status in {"running", "aborted"}:
             try:
                 item = task.output_queue.get(timeout=timeout)
             except queue.Empty:
+                if task.status == "aborted":
+                    yield {
+                        "event": "task_aborted",
+                        "conversation_id": task.conversation_id,
+                    }
+                    return
                 yield {"event": "heartbeat", "status": task.status}
                 continue
+            if task.status == "aborted":
+                yield {
+                    "event": "task_aborted",
+                    "conversation_id": task.conversation_id,
+                }
+                return
+            if "aborted" in item:
+                task.status = "aborted"
+                task.completed_at = time.time()
+                self.last_reply_time = int(task.completed_at)
+                yield {
+                    "event": "task_aborted",
+                    "conversation_id": task.conversation_id,
+                }
+                return
             if "next" in item:
                 task.current_response = item["next"]
                 projection = project_ga_response(task.current_response, running=True)
@@ -1204,6 +1225,8 @@ class WebUITaskManager:
             if task.status == "running":
                 task.status = "aborted"
                 task.completed_at = time.time()
+                self.last_reply_time = int(task.completed_at)
+                task.output_queue.put({"aborted": True})
         return {"ok": True}
 
     def switch_llm(self, index):

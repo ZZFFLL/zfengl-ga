@@ -57,6 +57,26 @@ test("workbench does not add subagent or backend inspector API surfaces", async 
   assert.doesNotMatch(apiSource, /\/api\/(?:subagents|runs|checkpoints|artifacts)\b/i);
 });
 
+test("stream task closes immediately when the server reports task abortion", async () => {
+  const [apiSource, typesSource] = await Promise.all([
+    readSource("frontends/webui/src/api.ts"),
+    readSource("frontends/webui/src/types.ts"),
+  ]);
+
+  assert.match(typesSource, /event:\s*"task_aborted"/);
+  assert.match(apiSource, /source\.addEventListener\("task_aborted", handle\)/);
+  assert.match(
+    apiSource,
+    /payload\.event === "message_done" \|\| payload\.event === "app_error" \|\| payload\.event === "task_aborted"/,
+  );
+});
+
+test("inline execution turns do not expose per-turn abort actions", async () => {
+  const turnSource = await readSource("frontends/webui/src/components/execution/InlineExecutionTurn.tsx");
+
+  assert.doesNotMatch(turnSource, /\bonAbort\b|abortTask|停止当前任务|停止任务|停止/);
+});
+
 test("TopBar does not expose permanent context entry points", async () => {
   const topBarSource = await readSource("frontends/webui/src/components/shell/TopBar.tsx");
 
