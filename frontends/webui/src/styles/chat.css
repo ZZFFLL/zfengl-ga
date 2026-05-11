@@ -168,14 +168,26 @@
   color: #f8fafc;
 }
 
-.ga-composer-bar {
+.ga-command-dock {
   background: rgba(248, 250, 251, 0.9);
 }
 
-.ga-composer-surface {
+.ga-command-dock-inner {
   border: 1px solid #cfd8e3;
   background: #ffffff;
   box-shadow: 0 14px 32px rgba(17, 24, 39, 0.11);
+}
+
+.ga-command-dock-status {
+  min-width: 0;
+}
+
+.ga-command-input {
+  display: block;
+}
+
+.ga-command-dock-footer {
+  min-width: 0;
 }
 
 .ga-message-card {

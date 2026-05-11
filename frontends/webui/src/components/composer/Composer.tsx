@@ -27,12 +27,12 @@ export function Composer({
       : "Shift+Enter 换行，Enter 发送。";
 
   return (
-    <form className="ga-composer-bar shrink-0 border-t border-app-line px-3 py-3 backdrop-blur md:px-4 md:py-4" onSubmit={onSubmit}>
-      <div className="ga-composer-surface mx-auto max-w-[900px] rounded-xl px-4 py-3">
+    <form className="ga-command-dock shrink-0 border-t border-app-line px-3 py-3 backdrop-blur md:px-4 md:py-4" onSubmit={onSubmit}>
+      <div className="ga-command-dock-inner mx-auto max-w-[900px] rounded-xl px-4 py-3">
         <textarea
           id="chat-composer-draft"
           name="chat-composer-draft"
-          className="min-h-[64px] w-full resize-none border-0 bg-transparent text-[15px] leading-7 text-app-text placeholder:text-app-muted focus:outline-none"
+          className="ga-command-input min-h-[64px] w-full resize-none border-0 bg-transparent text-[15px] leading-7 text-app-text placeholder:text-app-muted focus:outline-none"
           placeholder={running ? "任务运行中..." : "继续补充问题，Shift+Enter 换行"}
           value={draft}
           disabled={running || !state?.configured}
@@ -40,8 +40,8 @@ export function Composer({
           onKeyDown={onKeyDown}
           rows={2}
         />
-        <div className="mt-3 flex items-center justify-between gap-3">
-          <div className="text-xs text-app-muted">{helperText}</div>
+        <div className="ga-command-dock-footer mt-3 flex items-center justify-between gap-3">
+          <div className="ga-command-dock-status text-xs text-app-muted">{helperText}</div>
           <div className="flex items-center gap-2">
             {running ? (
               <Button

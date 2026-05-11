@@ -83,3 +83,16 @@ test("chat workbench uses task stream instead of chat bubbles", async () => {
   assert.match(chatCss, /\.ga-task-item \.markdown-content/);
   assert.match(chatCss, /\.ga-response-panel \.markdown-content/);
 });
+
+test("composer is a command dock", async () => {
+  const [composerSource, chatCss] = await Promise.all([
+    readSource("frontends/webui/src/components/composer/Composer.tsx"),
+    readSource("frontends/webui/src/styles/chat.css"),
+  ]);
+
+  assert.match(composerSource, /ga-command-dock/);
+  assert.match(composerSource, /ga-command-input/);
+  assert.doesNotMatch(composerSource, /ga-composer-surface/);
+  assert.match(chatCss, /\.ga-command-dock/);
+  assert.match(chatCss, /\.ga-command-input/);
+});
