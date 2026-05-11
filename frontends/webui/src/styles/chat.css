@@ -82,6 +82,49 @@
   --tw-ring-color: rgba(52, 211, 153, 0.2);
 }
 
+.ga-task-item .markdown-content {
+  color: #dbe7f5;
+}
+
+.ga-task-item .markdown-content a {
+  color: #6ee7b7;
+}
+
+.ga-task-item .markdown-content blockquote {
+  border-left-color: #334155;
+  color: #8ea0b8;
+}
+
+.ga-task-item .markdown-content code {
+  background: #020617;
+  color: #dbeafe;
+}
+
+.ga-task-item .markdown-content pre {
+  border: 1px solid #263246;
+  background: #020617;
+  color: #dbeafe;
+}
+
+.ga-task-item .markdown-content pre code {
+  background: transparent;
+  color: inherit;
+}
+
+.ga-task-item .markdown-content table {
+  color: #dbe7f5;
+}
+
+.ga-task-item .markdown-content th,
+.ga-task-item .markdown-content td {
+  border-color: #334155;
+}
+
+.ga-task-item .markdown-content th {
+  background: #172033;
+  color: #f8fafc;
+}
+
 .ga-response-panel .markdown-content {
   color: #dbe7f5;
 }
