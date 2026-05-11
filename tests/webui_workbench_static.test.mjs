@@ -11,21 +11,25 @@ test("App wires on-demand run inspector without permanent context chrome", async
   const appSource = await readSource("frontends/webui/src/App.tsx");
 
   assert.match(appSource, /\bRunInspector\b/);
+  assert.match(appSource, /\bRunInspectorToggle\b/);
   assert.match(appSource, /\bchooseActiveInspectorTarget\b/);
   assert.match(appSource, /\bDrawer\b/);
-  assert.match(appSource, /\bSplitter\b/);
   assert.match(appSource, /ga-workbench-main-panel/);
   assert.match(appSource, /ga-workbench-inspector-panel/);
-  assert.match(appSource, /rootClassName="ga-run-inspector-drawer-root xl:hidden"/);
+  assert.match(appSource, /ga-workbench-content-frame/);
+  assert.match(appSource, /rootClassName="ga-run-inspector-drawer-root/);
   assert.match(appSource, /className="ga-run-inspector-drawer"/);
   assert.match(appSource, /aria-label="运行详情"/);
-  assert.match(appSource, /INSPECTOR_DRAWER_DESKTOP_QUERY\s*=\s*"\(min-width: 1280px\)"/);
+  assert.match(appSource, /INSPECTOR_DRAWER_DESKTOP_QUERY\s*=\s*"\(min-width: 80rem\)"/);
   assert.match(appSource, /window\.matchMedia\(INSPECTOR_DRAWER_DESKTOP_QUERY\)/);
-  assert.match(appSource, /open=\{inspectorOpen && !inspectorDrawerDesktop\}/);
-  assert.match(appSource, /const inspectorOpen = autoSelectInspector \|\| Boolean\(activeInspectorTarget\)/);
-  assert.match(appSource, /width="min\(92vw, 360px\)"/);
+  assert.match(appSource, /const inspectorOpen = inspectorVisible && \(running \|\| Boolean\(activeInspectorTarget\)\)/);
+  assert.match(appSource, /openLatestInspector/);
+  assert.match(appSource, /if \(wasRunningRef\.current && !running\) \{\s*closeInspector\(\);/s);
+  assert.match(appSource, /width="min\(92vw, 22\.5rem\)"/);
   assert.match(appSource, /setSelectedInspectorTarget\(null\)/);
-  assert.match(appSource, /if \(running\) \{\s*setAutoInspectorDismissed\(true\);/s);
+  assert.doesNotMatch(appSource, /autoSelectInspector|autoInspectorDismissed/);
+  assert.doesNotMatch(appSource, /\bSplitter\b/);
+  assert.doesNotMatch(appSource, /defaultSize=\{|min=\{300\}|max=\{460\}|360px|1280px|1279px|max-w-\[920px\]/);
   assert.doesNotMatch(appSource, /\bWorkbenchContextPanel\b/);
   assert.doesNotMatch(appSource, /\bchooseWorkbenchContextTab\b/);
   assert.doesNotMatch(appSource, /contextOpen/);
@@ -60,9 +64,13 @@ test("TopBar does not expose permanent context entry points", async () => {
 test("workbench hides inline inspector below desktop breakpoint", async () => {
   const workbenchCss = await readSource("frontends/webui/src/styles/workbench.css");
 
-  assert.match(workbenchCss, /@media\s*\(max-width:\s*1279px\)/);
+  assert.match(workbenchCss, /@media\s*\(max-width:\s*79\.999rem\)/);
   assert.match(workbenchCss, /\.ga-workbench-inspector-panel\s*\{[^}]*display:\s*none\s*!important;/s);
   assert.match(workbenchCss, /\.ga-workbench-main-panel\s*\{[^}]*width:\s*100%\s*!important;/s);
+  assert.match(workbenchCss, /\.ga-workbench-inspector-panel[\s\S]*transition:/);
+  assert.match(workbenchCss, /\.ga-run-inspector-toggle/);
+  assert.match(workbenchCss, /clamp\(/);
+  assert.doesNotMatch(workbenchCss, /1279px|1280px|300px|360px|460px/);
 });
 
 test("chat workbench uses task stream instead of chat bubbles", async () => {
@@ -103,11 +111,12 @@ test("composer is a command dock", async () => {
   assert.match(chatCss, /\.ga-command-input/);
 });
 
-test("run inspector is on-demand and context panel is not permanent low-value chrome", async () => {
-  const [appSource, taskStreamSource, inspectorSource, turnSource, toolCardSource, contextCss] = await Promise.all([
+test("run inspector is manually opened, localized, and not permanent low-value chrome", async () => {
+  const [appSource, taskStreamSource, inspectorSource, toggleSource, turnSource, toolCardSource, contextCss] = await Promise.all([
     readSource("frontends/webui/src/App.tsx"),
     readSource("frontends/webui/src/components/chat/TaskStream.tsx"),
     readSource("frontends/webui/src/components/context/RunInspector.tsx"),
+    readSource("frontends/webui/src/components/context/RunInspectorToggle.tsx"),
     readSource("frontends/webui/src/components/execution/InlineExecutionTurn.tsx"),
     readSource("frontends/webui/src/components/execution/ExecutionToolCallCard.tsx"),
     readSource("frontends/webui/src/styles/context.css"),
@@ -118,13 +127,29 @@ test("run inspector is on-demand and context panel is not permanent low-value ch
   assert.doesNotMatch(appSource, /\bWorkbenchContextPanel\b/);
   assert.doesNotMatch(appSource, /contextOpen/);
   assert.match(taskStreamSource, /onSelectInspectorTarget/);
+  assert.match(toggleSource, /展开运行详情/);
+  assert.match(toggleSource, /运行中/);
+  assert.match(toggleSource, /执行详情/);
   assert.match(inspectorSource, /ga-run-inspector/);
   assert.match(inspectorSource, /selectedToolCall/);
   assert.match(inspectorSource, /任务正在启动，等待执行步骤/);
   assert.match(inspectorSource, /停止当前任务/);
+  assert.match(inspectorSource, /运行详情/);
+  assert.match(inspectorSource, /步骤/);
+  assert.match(inspectorSource, /已选工具/);
+  assert.match(inspectorSource, /此步骤暂无摘要/);
+  assert.doesNotMatch(inspectorSource, /Run Inspector|Selected Tool|>Step<|>Summary</);
   assert.match(turnSource, /aria-label=\{`检查 Turn \$\{turn\.turn\} 执行步骤`\}/);
   assert.match(toolCardSource, /onInspect/);
   assert.match(toolCardSource, /aria-label=\{`检查 \$\{toolCall\.tool\} 工具调用`\}/);
+  assert.match(toolCardSource, /详情/);
+  assert.match(toolCardSource, /参数/);
+  assert.match(toolCardSource, /结果预览/);
+  assert.match(toolCardSource, /执行结果/);
+  assert.doesNotMatch(toolCardSource, />\s*Inspect\s*</);
+  assert.doesNotMatch(toolCardSource, />\s*Args\s*</);
+  assert.doesNotMatch(toolCardSource, /`Result preview|>\s*Result preview\s*</);
+  assert.doesNotMatch(toolCardSource, /`Result ·|>\s*Result\s*</);
   assert.doesNotMatch(toolCardSource, /event\.stopPropagation/);
   assert.match(contextCss, /\.ga-run-inspector/);
   assert.match(contextCss, /\.ga-run-inspector \.text-app-textStrong/);

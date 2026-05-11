@@ -61,7 +61,7 @@ export function ConversationSidebar({
   );
   const selectedRecentSet = new Set(selectedRecentIds);
   const conversationRowClass = (conversationId: string) =>
-    `ga-sidebar-row group flex min-h-[40px] w-full items-center gap-2 border px-2.5 py-2 text-left transition ${
+    `ga-sidebar-row group flex min-h-[2.5rem] w-full items-center gap-2 border px-2.5 py-2 text-left transition ${
       activeConversationId === conversationId
         ? "is-active border-app-line text-app-textStrong"
         : "border-transparent text-app-text"
@@ -72,7 +72,7 @@ export function ConversationSidebar({
       <aside className="ga-sidebar flex h-full min-h-0 flex-col items-center px-2 py-3">
         <button
           type="button"
-          className="flex h-10 w-10 items-center justify-center rounded-[15px] text-app-text transition hover:bg-[#e8ecf3]"
+          className="flex h-10 w-10 items-center justify-center rounded-[0.9375rem] text-app-text transition hover:bg-[#e8ecf3]"
           aria-label="展开会话侧栏"
           onClick={onToggleCollapsed}
         >
@@ -80,7 +80,7 @@ export function ConversationSidebar({
         </button>
         <button
           type="button"
-          className="mt-2 flex h-10 w-10 items-center justify-center rounded-[15px] text-app-text transition hover:bg-[#e8ecf3] disabled:cursor-not-allowed disabled:opacity-50"
+          className="mt-2 flex h-10 w-10 items-center justify-center rounded-[0.9375rem] text-app-text transition hover:bg-[#e8ecf3] disabled:cursor-not-allowed disabled:opacity-50"
           aria-label="新建对话"
           onClick={onCreateConversation}
           disabled={!state?.configured || running}
@@ -182,7 +182,7 @@ export function ConversationSidebar({
             {grouped.map((group) => (
               <div key={group.id} className="mb-3">
                 <div className="mb-1 flex items-center justify-between px-2">
-                  <div className="flex min-w-0 items-center gap-2 text-[13px] font-medium text-app-text/90">
+                  <div className="flex min-w-0 items-center gap-2 text-[0.8125rem] font-medium text-app-text/90">
                     <Folder className="h-3.5 w-3.5 shrink-0 text-app-muted" />
                     <span className="truncate">{group.name}</span>
                     <span className="ga-sidebar-meta shrink-0">{group.conversations.length}</span>
@@ -259,7 +259,7 @@ export function ConversationSidebar({
                   {selectingRecent ? (
                     <button
                       type="button"
-                      className="rounded-full px-2 py-1 text-[11px] font-medium text-app-danger transition hover:bg-[#e8ecf3] disabled:cursor-not-allowed disabled:opacity-40"
+                      className="rounded-full px-2 py-1 text-[0.6875rem] font-medium text-app-danger transition hover:bg-[#e8ecf3] disabled:cursor-not-allowed disabled:opacity-40"
                       disabled={selectedRecentIds.length === 0 || running}
                       onClick={onBulkDeleteRecent}
                     >
@@ -268,7 +268,7 @@ export function ConversationSidebar({
                   ) : null}
                   <button
                     type="button"
-                    className="rounded-full px-2 py-1 text-[11px] font-medium text-app-muted transition hover:bg-[#e8ecf3] hover:text-app-text disabled:cursor-not-allowed disabled:opacity-40"
+                    className="rounded-full px-2 py-1 text-[0.6875rem] font-medium text-app-muted transition hover:bg-[#e8ecf3] hover:text-app-text disabled:cursor-not-allowed disabled:opacity-40"
                     disabled={running}
                     onClick={onToggleRecentSelection}
                   >

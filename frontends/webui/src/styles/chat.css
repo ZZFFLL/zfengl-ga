@@ -6,14 +6,14 @@
 
 .ga-task-item {
   overflow: hidden;
-  border: 1px solid #e1ded7;
-  border-radius: 14px;
+  border: 0.0625rem solid #e1ded7;
+  border-radius: 0.875rem;
   background: #ffffff;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  box-shadow: 0 0.0625rem 0.125rem rgba(15, 23, 42, 0.04);
 }
 
 .ga-command-block {
-  border-bottom: 1px solid #e8e5de;
+  border-bottom: 0.0625rem solid #e8e5de;
   background: #fbfbf9;
   padding: 0.875rem 1rem;
 }
@@ -101,7 +101,7 @@
 }
 
 .ga-task-item .markdown-content pre {
-  border: 1px solid #1f2937;
+  border: 0.0625rem solid #1f2937;
   background: #020617;
   color: #dbeafe;
 }
@@ -144,7 +144,7 @@
 }
 
 .ga-response-panel .markdown-content pre {
-  border: 1px solid #1f2937;
+  border: 0.0625rem solid #1f2937;
   background: #020617;
   color: #dbeafe;
 }
@@ -170,19 +170,19 @@
 
 .ga-command-dock {
   flex-shrink: 0;
-  border-top: 1px solid #e3e1dc;
+  border-top: 0.0625rem solid #e3e1dc;
   background: rgba(247, 247, 245, 0.92);
   padding: 0.875rem 1rem 1rem;
-  backdrop-filter: blur(16px);
+  backdrop-filter: blur(1rem);
 }
 
 .ga-command-dock-inner {
-  max-width: 940px;
+  max-width: min(100%, 58.75rem);
   margin: 0 auto;
-  border: 1px solid #d8d5cd;
-  border-radius: 14px;
+  border: 0.0625rem solid #d8d5cd;
+  border-radius: 0.875rem;
   background: #ffffff;
-  box-shadow: 0 8px 30px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 0.5rem 1.875rem rgba(15, 23, 42, 0.08);
   padding: 0.875rem;
 }
 
@@ -224,13 +224,13 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  border-top: 1px solid #ece9e3;
+  border-top: 0.0625rem solid #ece9e3;
   padding-top: 0.75rem;
 }
 
 .ga-message-card {
-  border-radius: 10px;
-  border: 1px solid #d9e0e8;
+  border-radius: 0.625rem;
+  border: 0.0625rem solid #d9e0e8;
   box-shadow: none;
 }
 
@@ -241,7 +241,7 @@
 .ga-message-user {
   border-color: rgba(23, 32, 51, 0.18);
   background: #ffffff;
-  box-shadow: 0 8px 18px rgba(17, 24, 39, 0.13);
+  box-shadow: 0 0.5rem 1.125rem rgba(17, 24, 39, 0.13);
 }
 
 .message-content {
@@ -292,11 +292,11 @@
 .markdown-content a {
   color: #516dd2;
   text-decoration: underline;
-  text-underline-offset: 3px;
+  text-underline-offset: 0.1875rem;
 }
 
 .markdown-content blockquote {
-  border-left: 3px solid #cfd7ea;
+  border-left: 0.1875rem solid #cfd7ea;
   color: #636f8a;
   padding-left: 0.85rem;
 }
@@ -333,7 +333,7 @@
 
 .markdown-content th,
 .markdown-content td {
-  border: 1px solid #dfe5f1;
+  border: 0.0625rem solid #dfe5f1;
   padding: 0.5rem 0.65rem;
 }
 

@@ -28,7 +28,7 @@ export function InlineExecutionTurn({
 
   return (
     <section
-      className={`ga-run-rail rounded-[10px] border bg-white ${
+      className={`ga-run-rail rounded-[0.625rem] border bg-white ${
         active ? "border-app-primary/45 shadow-soft" : "border-app-line"
       }`}
     >

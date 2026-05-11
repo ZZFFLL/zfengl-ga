@@ -14,13 +14,13 @@ export function SidebarDialog({
     <Drawer
       open={open}
       placement="left"
-      width="min(92vw, 340px)"
+      width="min(92vw, 21.25rem)"
       title="会话列表"
       aria-label="会话列表"
       className="ga-sidebar-drawer xl:hidden"
       styles={{
         body: { padding: 0 },
-        header: { borderBottom: "1px solid #d8deeb" },
+        header: { borderBottom: "0.0625rem solid #d8deeb" },
       }}
       onClose={() => onOpenChange(false)}
     >

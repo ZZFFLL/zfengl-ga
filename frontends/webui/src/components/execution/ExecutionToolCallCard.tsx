@@ -17,14 +17,14 @@ export function ExecutionToolCallCard({
   const resultText = showingPreview ? toolCall.result_preview : toolCall.result || toolCall.result_preview;
   const resultLabel = showingPreview
     ? toolCall.result_length
-      ? `Result preview · 完整 ${toolCall.result_length} 字符`
-      : "Result preview"
+      ? `结果预览 · 完整 ${toolCall.result_length} 字符`
+      : "结果预览"
     : toolCall.result_length
-      ? `Result · ${toolCall.result_length} 字符`
-      : "Result";
+      ? `执行结果 · ${toolCall.result_length} 字符`
+      : "执行结果";
 
   return (
-    <section className="rounded-[10px] border border-app-line bg-app-surface">
+    <section className="rounded-[0.625rem] border border-app-line bg-app-surface">
       <div className="flex w-full items-center justify-between gap-3 px-3.5 py-2.5">
         <button
           type="button"
@@ -48,7 +48,7 @@ export function ExecutionToolCallCard({
               aria-label={`检查 ${toolCall.tool} 工具调用`}
               onClick={onInspect}
             >
-              Inspect
+              详情
             </button>
           ) : null}
           <ChevronDown className={`h-4 w-4 text-app-muted transition ${open ? "rotate-180" : ""}`} />
@@ -58,7 +58,7 @@ export function ExecutionToolCallCard({
         <div className="space-y-3 border-t border-app-line/70 px-4 py-4">
           {toolCall.args ? (
             <div>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">Args</div>
+              <div className="text-xs font-semibold tracking-[0.18em] text-app-muted">参数</div>
               <pre className="mt-2 overflow-x-auto rounded-lg bg-app-codeBg px-3.5 py-3 text-xs leading-6 text-app-codeText">
                 <code>{toolCall.args}</code>
               </pre>
@@ -66,7 +66,7 @@ export function ExecutionToolCallCard({
           ) : null}
           {resultText ? (
             <div>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-muted">
+              <div className="text-xs font-semibold tracking-[0.18em] text-app-muted">
                 {resultLabel}
               </div>
               <pre className="mt-2 overflow-x-auto rounded-lg bg-app-codeBg px-3.5 py-3 text-xs leading-6 text-app-codeText">

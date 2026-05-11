@@ -1,5 +1,5 @@
 import { CSSProperties, FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
-import { App as AntApp, ConfigProvider, Drawer, Input, Layout, Splitter } from "antd";
+import { App as AntApp, ConfigProvider, Drawer, Input, Layout } from "antd";
 import {
   abortTask,
   activateConversation,
@@ -38,6 +38,7 @@ import { TaskStream } from "./components/chat/TaskStream";
 import { StatusBadge } from "./components/app/StatusBadge";
 import { Composer } from "./components/composer/Composer";
 import { RunInspector } from "./components/context/RunInspector";
+import { RunInspectorToggle } from "./components/context/RunInspectorToggle";
 import { ConversationSidebar } from "./components/sidebar/ConversationSidebar";
 import { ContinueCompatDialog } from "./components/dialogs/ContinueCompatDialog";
 import type { ContinueCompatResult } from "./components/dialogs/ContinueCompatDialog";
@@ -52,7 +53,9 @@ import { gaTheme } from "./theme";
 
 const id = () => Math.random().toString(36).slice(2);
 const DEFAULT_CONTINUE_COMMAND = "/continue 1";
-const INSPECTOR_DRAWER_DESKTOP_QUERY = "(min-width: 1280px)";
+const INSPECTOR_DRAWER_DESKTOP_QUERY = "(min-width: 80rem)";
+const SIDEBAR_WIDTH = "17.5rem";
+const SIDEBAR_COLLAPSED_WIDTH = "4.75rem";
 
 function toUiMessages(detail: ConversationDetail | null) {
   if (!detail) return [];
@@ -77,9 +80,9 @@ function GenericAgentWebUI() {
   const [error, setError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [inspectorDrawerDesktop, setInspectorDrawerDesktop] = useState(false);
+  const [inspectorVisible, setInspectorVisible] = useState(false);
   const [selectedInspectorTaskId, setSelectedInspectorTaskId] = useState<string | null>(null);
   const [selectedInspectorTarget, setSelectedInspectorTarget] = useState<InspectorTarget | null>(null);
-  const [autoInspectorDismissed, setAutoInspectorDismissed] = useState(false);
   const [continueDialogOpen, setContinueDialogOpen] = useState(false);
   const [continueCommand, setContinueCommand] = useState(DEFAULT_CONTINUE_COMMAND);
   const [continueLoading, setContinueLoading] = useState(false);
@@ -97,6 +100,7 @@ function GenericAgentWebUI() {
   const streamAnimationFrameRef = useRef<number | null>(null);
   const streamLastStepAtRef = useRef(0);
   const autoScrollPinnedRef = useRef(true);
+  const wasRunningRef = useRef(false);
 
   const running = Boolean(state?.running);
   const activeConversationId = activeConversation?.summary.id ?? state?.active_conversation_id ?? null;
@@ -104,18 +108,25 @@ function GenericAgentWebUI() {
   const hasThread = messages.length > 0;
   const contextTurns = turns.length > 0 ? turns : running ? [] : activeConversation?.execution_log ?? [];
   const taskItems = buildTaskStreamItems(messages, turns, streamAnimating);
+  const latestInspectableItem =
+    [...taskItems].reverse().find((item) => item.executionLog.length > 0 || item.pending) ?? null;
   const selectedInspectorItem = selectedInspectorTaskId
     ? taskItems.find((item) => item.id === selectedInspectorTaskId) ?? null
     : null;
   const inspectorTurns = selectedInspectorItem ? selectedInspectorItem.executionLog : contextTurns;
   const effectiveInspectorTarget = selectedInspectorItem ? selectedInspectorTarget : null;
-  const autoSelectInspector = running && !autoInspectorDismissed && !selectedInspectorTaskId;
   const activeInspectorTarget = chooseActiveInspectorTarget(
     inspectorTurns,
-    autoSelectInspector,
+    inspectorVisible && running && !effectiveInspectorTarget,
     effectiveInspectorTarget,
   );
-  const inspectorOpen = autoSelectInspector || Boolean(activeInspectorTarget);
+  const inspectorOpen = inspectorVisible && (running || Boolean(activeInspectorTarget));
+  const inspectorToggleVisible =
+    hasThread &&
+    !inspectorOpen &&
+    (running || contextTurns.length > 0 || taskItems.some((item) => item.executionLog.length > 0));
+  const inspectorToggleTurnCount =
+    latestInspectableItem?.executionLog.length || inspectorTurns.length || contextTurns.length;
   const recentConversationIds = conversations
     .filter((conversation) => !conversation.group_id && !conversation.pinned)
     .map((conversation) => conversation.id);
@@ -307,7 +318,7 @@ function GenericAgentWebUI() {
       const confirmRef = modal.confirm({
         title,
         icon: null,
-        width: 460,
+        width: "min(92vw, 28.75rem)",
         zIndex: 1500,
         okText: "确认",
         cancelText: "取消",
@@ -367,7 +378,6 @@ function GenericAgentWebUI() {
     // 中文注释：这里先切 UI 与中间层 active 会话，不在切换动作里主动触发 GA 重放。
     setError("");
     closeInspector();
-    setAutoInspectorDismissed(false);
     autoScrollPinnedRef.current = true;
     const detail = await activateConversation(conversationId);
     setActiveConversation(detail);
@@ -388,7 +398,6 @@ function GenericAgentWebUI() {
     setMessages([]);
     setTurns([]);
     closeInspector();
-    setAutoInspectorDismissed(false);
     resetStreamingAssistant();
     const nextState = await fetchState();
     setState(nextState);
@@ -422,7 +431,6 @@ function GenericAgentWebUI() {
     const nextActiveId = nextState.active_conversation_id;
     if (conversation.id === activeConversationId || nextActiveId !== activeConversationId) {
       closeInspector();
-      setAutoInspectorDismissed(false);
     }
     if (nextActiveId) {
       autoScrollPinnedRef.current = true;
@@ -457,7 +465,6 @@ function GenericAgentWebUI() {
     const nextActiveId = nextState.active_conversation_id;
     if (selectedRecentIds.includes(activeConversationId ?? "") || nextActiveId !== activeConversationId) {
       closeInspector();
-      setAutoInspectorDismissed(false);
     }
     if (nextActiveId) {
       autoScrollPinnedRef.current = true;
@@ -531,7 +538,6 @@ function GenericAgentWebUI() {
     setError("");
     setTurns([]);
     closeInspector();
-    setAutoInspectorDismissed(false);
     resetStreamingAssistant();
 
     let conversationId = activeConversationId;
@@ -651,21 +657,41 @@ function GenericAgentWebUI() {
   const selectInspectorTarget = (taskId: string, target: InspectorTarget) => {
     setSelectedInspectorTaskId(taskId);
     setSelectedInspectorTarget(target);
-    setAutoInspectorDismissed(false);
+    setInspectorVisible(true);
+  };
+
+  const openLatestInspector = () => {
+    if (latestInspectableItem) {
+      setSelectedInspectorTaskId(latestInspectableItem.id);
+      setSelectedInspectorTarget(
+        running || latestInspectableItem.executionLog.length === 0
+          ? null
+          : { turnIndex: latestInspectableItem.executionLog.length - 1, toolIndex: null },
+      );
+    } else {
+      setSelectedInspectorTaskId(null);
+      setSelectedInspectorTarget(null);
+    }
+    setInspectorVisible(true);
   };
 
   const closeInspector = () => {
-    if (running) {
-      setAutoInspectorDismissed(true);
-    }
+    setInspectorVisible(false);
     setSelectedInspectorTaskId(null);
     setSelectedInspectorTarget(null);
   };
 
+  useEffect(() => {
+    if (wasRunningRef.current && !running) {
+      closeInspector();
+    }
+    wasRunningRef.current = running;
+  }, [running]);
+
   if (state && !state.configured) {
     return (
       <main className="flex h-screen h-dvh items-center justify-center overflow-hidden bg-app-bg p-6">
-        <section className="max-w-2xl rounded-[28px] border border-app-line bg-white p-8 shadow-panel">
+        <section className="max-w-2xl rounded-[1.75rem] border border-app-line bg-white p-8 shadow-panel">
           <StatusBadge state={state} />
           <h1 className="mt-5 text-3xl font-semibold text-app-text">LLM 尚未配置</h1>
           <p className="mt-4 text-sm leading-8 text-app-muted">
@@ -681,14 +707,14 @@ function GenericAgentWebUI() {
     <Layout
       style={
         {
-          "--sidebar-width": sidebarCollapsed ? "76px" : "280px",
+          "--sidebar-width": sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_WIDTH,
         } as CSSProperties
       }
       className="ga-shell ga-workbench-shell h-screen h-dvh min-h-0 overflow-hidden bg-app-bg text-app-text"
     >
       <Layout.Sider
-        width={sidebarCollapsed ? 76 : 280}
-        collapsedWidth={76}
+        width={sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_WIDTH}
+        collapsedWidth={SIDEBAR_COLLAPSED_WIDTH}
         collapsed={sidebarCollapsed}
         trigger={null}
         className="ga-workbench-sider hidden xl:block"
@@ -753,8 +779,8 @@ function GenericAgentWebUI() {
         />
 
         <Layout.Content className="min-h-0 min-w-0 overflow-hidden">
-          <Splitter className="ga-workbench-splitter h-full min-h-0">
-            <Splitter.Panel min={0} className="ga-workbench-main-panel">
+          <div className="ga-workbench-content-frame">
+            <div className="ga-workbench-main-panel">
               <main className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
                 {error ? (
                   <div className="shrink-0 border-b border-app-line bg-app-danger/10 px-6 py-3 text-sm text-app-danger">
@@ -772,8 +798,8 @@ function GenericAgentWebUI() {
                       onKeyDown={handleKeyDown}
                       onSubmit={(event) => void handleSubmit(event)}
                     />
-                  ) : (
-                    <div className="mx-auto flex min-h-full w-full max-w-[920px] flex-col px-6 pb-10 pt-8">
+                ) : (
+                    <div className="ga-chat-stream-frame mx-auto flex min-h-full w-full flex-col">
                       <TaskStream
                         items={taskItems}
                         streaming={streamAnimating}
@@ -795,16 +821,23 @@ function GenericAgentWebUI() {
                   />
                 ) : null}
               </main>
-            </Splitter.Panel>
+            </div>
 
-            {inspectorOpen ? (
-              <Splitter.Panel
-                min={300}
-                max={460}
-                defaultSize={360}
-                collapsible={{ start: true }}
-                className="ga-workbench-inspector-panel"
-              >
+            {inspectorToggleVisible ? (
+              <RunInspectorToggle
+                running={running}
+                turnCount={inspectorToggleTurnCount}
+                onClick={openLatestInspector}
+              />
+            ) : null}
+
+            <div
+              className={`ga-workbench-inspector-panel ${
+                inspectorOpen && inspectorDrawerDesktop ? "is-open" : "is-closed"
+              }`}
+              aria-hidden={!(inspectorOpen && inspectorDrawerDesktop)}
+            >
+              {inspectorOpen && inspectorDrawerDesktop ? (
                 <RunInspector
                   turns={inspectorTurns}
                   target={activeInspectorTarget}
@@ -812,9 +845,9 @@ function GenericAgentWebUI() {
                   onClose={closeInspector}
                   onAbort={() => void abortTask().then(refreshState)}
                 />
-              </Splitter.Panel>
-            ) : null}
-          </Splitter>
+              ) : null}
+            </div>
+          </div>
         </Layout.Content>
       </Layout>
 
@@ -851,7 +884,7 @@ function GenericAgentWebUI() {
       <Drawer
         open={inspectorOpen && !inspectorDrawerDesktop}
         placement="right"
-        width="min(92vw, 360px)"
+        width="min(92vw, 22.5rem)"
         title={null}
         closable={false}
         aria-label="运行详情"

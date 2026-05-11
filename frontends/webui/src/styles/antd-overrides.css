@@ -3,13 +3,13 @@
 }
 
 .ga-model-select .ant-select-selector {
-  padding-inline: 4px !important;
+  padding-inline: 0.25rem !important;
 }
 
 .ga-dropdown .ant-dropdown-menu {
-  min-width: 220px;
-  border: 1px solid #e3e1dc;
-  box-shadow: 0 10px 34px rgba(15, 23, 42, 0.08);
+  min-width: 13.75rem;
+  border: 0.0625rem solid #e3e1dc;
+  box-shadow: 0 0.625rem 2.125rem rgba(15, 23, 42, 0.08);
 }
 
 .ga-dropdown {
@@ -18,12 +18,12 @@
 
 .ga-dropdown .ant-dropdown-menu-item,
 .ga-dropdown .ant-dropdown-menu-submenu-title {
-  min-height: 36px;
+  min-height: 2.25rem;
 }
 
 .ga-modal .ant-modal-content {
-  border: 1px solid #e3e1dc;
-  box-shadow: 0 10px 34px rgba(15, 23, 42, 0.1);
+  border: 0.0625rem solid #e3e1dc;
+  box-shadow: 0 0.625rem 2.125rem rgba(15, 23, 42, 0.1);
 }
 
 .ga-modal .ant-modal-header {

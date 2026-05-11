@@ -4,7 +4,7 @@
 
 .ga-topbar {
   background: rgba(255, 255, 255, 0.84);
-  border-bottom: 1px solid #e3e1dc;
+  border-bottom: 0.0625rem solid #e3e1dc;
   box-shadow: none;
-  backdrop-filter: blur(16px);
+  backdrop-filter: blur(1rem);
 }

@@ -26,14 +26,14 @@ export function RunInspector({
     <aside className="ga-run-inspector">
       <div className="ga-run-inspector-header">
         <div className="min-w-0">
-          <div className="text-sm font-semibold text-app-textStrong">Run Inspector</div>
+          <div className="text-sm font-semibold text-app-textStrong">运行详情</div>
           <div className="mt-1 truncate text-xs text-app-muted">
             {selectedTurn ? selectedTurn.title || `Turn ${selectedTurn.turn}` : "没有选中的执行步骤"}
           </div>
         </div>
         <Button
           type="text"
-          aria-label="关闭 Inspector"
+          aria-label="关闭运行详情"
           icon={<PanelRightClose className="h-4 w-4" aria-hidden="true" />}
           onClick={onClose}
         />
@@ -56,7 +56,7 @@ export function RunInspector({
           <div className="space-y-4">
             <section className="ga-run-inspector-section">
               <div className="mb-2 flex items-center justify-between gap-3">
-                <div className="text-xs font-semibold uppercase text-app-muted">Step</div>
+                <div className="text-xs font-semibold text-app-muted">步骤</div>
                 <Tag bordered={false} color={selectedTurn.state === "active" ? "processing" : "success"}>
                   {selectedTurn.state === "active" ? "执行中" : "已完成"}
                 </Tag>
@@ -65,16 +65,16 @@ export function RunInspector({
                 {selectedTurn.title || `Turn ${selectedTurn.turn}`}
               </div>
               <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-app-muted">
-                {selectedTurn.summary || selectedTurn.content || "此步骤没有 summary。"}
+                {selectedTurn.summary || selectedTurn.content || "此步骤暂无摘要。"}
               </p>
             </section>
 
             {selectedToolCall ? (
               <section className="ga-run-inspector-section">
-                <div className="mb-2 text-xs font-semibold uppercase text-app-muted">Selected Tool</div>
+                <div className="mb-2 text-xs font-semibold text-app-muted">已选工具</div>
                 <div className="text-sm font-semibold text-app-textStrong">{selectedToolCall.tool}</div>
                 <div className="mt-1 text-xs text-app-muted">
-                  {selectedToolCall.status || selectedToolCall.action || "tool call"}
+                  {selectedToolCall.status || selectedToolCall.action || "工具调用"}
                 </div>
                 {selectedToolCall.args ? (
                   <pre className="mt-3 overflow-x-auto rounded-lg bg-app-codeBg p-3 text-xs leading-6 text-app-codeText">

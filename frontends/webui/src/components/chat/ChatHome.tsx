@@ -21,7 +21,7 @@ export function ChatHome({
 }) {
   return (
     <section className="flex min-h-full flex-col justify-center px-4 pb-10 pt-6 sm:px-6">
-      <div className="mx-auto w-full max-w-[820px]">
+      <div className="mx-auto w-full max-w-[51.25rem]">
         <div className="text-center">
           <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-app-primarySoft text-app-primary ring-1 ring-app-line/70">
             <Sparkles className="h-5 w-5" aria-hidden="true" />
@@ -34,7 +34,7 @@ export function ChatHome({
           </p>
         </div>
 
-        <form className="mx-auto mt-12 max-w-[820px]" onSubmit={onSubmit}>
+        <form className="mx-auto mt-12 max-w-[51.25rem]" onSubmit={onSubmit}>
           <div className="ga-composer-surface rounded-xl px-4 py-3.5">
             <div className="flex items-start gap-4">
               <div className="mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-app-primarySoft text-app-primary">
@@ -43,7 +43,7 @@ export function ChatHome({
               <textarea
                 id="chat-home-draft"
                 name="chat-home-draft"
-                className="min-h-[44px] flex-1 resize-none border-0 bg-transparent pt-2 text-base leading-8 text-app-text placeholder:text-app-muted focus:outline-none"
+                className="min-h-[2.75rem] flex-1 resize-none border-0 bg-transparent pt-2 text-base leading-8 text-app-text placeholder:text-app-muted focus:outline-none"
                 placeholder={running ? "任务运行中..." : "有什么我能帮您的吗？"}
                 value={draft}
                 disabled={running || !state?.configured}

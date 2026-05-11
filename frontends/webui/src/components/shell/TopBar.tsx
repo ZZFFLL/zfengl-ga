@@ -82,7 +82,7 @@ export function TopBar({
 
   return (
     <header className="ga-topbar shrink-0">
-      <div className="flex min-h-[52px] items-center gap-2.5 px-3 py-2 md:px-5">
+      <div className="flex min-h-[3.25rem] items-center gap-2.5 px-3 py-2 md:px-5">
         <Tooltip title="打开会话侧栏">
           <Button
             type="text"
@@ -95,7 +95,7 @@ export function TopBar({
 
         <div className="min-w-0 flex items-center gap-3">
           <div className="min-w-0">
-            <div className="truncate text-[15px] font-semibold text-app-textStrong">{conversationTitle}</div>
+            <div className="truncate text-[0.9375rem] font-semibold text-app-textStrong">{conversationTitle}</div>
             <div className="mt-0.5 flex min-w-0 items-center gap-2 text-xs text-app-muted">
               <span className="truncate">{running ? "任务执行中" : state?.configured ? "准备就绪" : "未配置"}</span>
               <span aria-hidden="true">/</span>
@@ -105,13 +105,13 @@ export function TopBar({
         </div>
 
         <div className="ml-auto flex min-w-0 items-center gap-2">
-          <div className="hidden min-h-9 min-w-0 items-center gap-2 rounded-xl border border-app-line bg-white px-2 py-1 shadow-[0_1px_0_rgba(31,41,55,0.03)] sm:flex">
-            <span className="shrink-0 text-[11px] font-semibold uppercase text-app-muted">
+          <div className="hidden min-h-9 min-w-0 items-center gap-2 rounded-xl border border-app-line bg-white px-2 py-1 shadow-[0_0.0625rem_0_rgba(31,41,55,0.03)] sm:flex">
+            <span className="shrink-0 text-[0.6875rem] font-semibold uppercase text-app-muted">
               Model
             </span>
             <Select
               aria-label="选择当前模型"
-              className="ga-model-select min-w-[168px]"
+              className="ga-model-select min-w-[10.5rem]"
               size="small"
               variant="borderless"
               value={state?.current_llm?.index ?? 0}
