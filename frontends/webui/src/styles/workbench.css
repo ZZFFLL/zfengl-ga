@@ -18,13 +18,13 @@
   min-height: 0;
 }
 
-.ga-context-drawer .ant-drawer-body {
+.ga-run-inspector-drawer .ant-drawer-body {
   height: 100%;
   padding: 0;
 }
 
-.ga-context-drawer .ant-drawer-content {
-  background: #f8fafb;
+.ga-run-inspector-drawer .ant-drawer-content {
+  background: #0b1120;
 }
 
 @media (max-width: 1279px) {
@@ -38,7 +38,7 @@
     max-width: 100% !important;
   }
 
-  .ga-workbench-context-panel {
+  .ga-workbench-inspector-panel {
     display: none !important;
   }
 }

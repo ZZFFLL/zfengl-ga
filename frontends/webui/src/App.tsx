@@ -37,7 +37,7 @@ import { ChatHome } from "./components/chat/ChatHome";
 import { TaskStream } from "./components/chat/TaskStream";
 import { StatusBadge } from "./components/app/StatusBadge";
 import { Composer } from "./components/composer/Composer";
-import { WorkbenchContextPanel } from "./components/context/WorkbenchContextPanel";
+import { RunInspector } from "./components/context/RunInspector";
 import { ConversationSidebar } from "./components/sidebar/ConversationSidebar";
 import { ContinueCompatDialog } from "./components/dialogs/ContinueCompatDialog";
 import type { ContinueCompatResult } from "./components/dialogs/ContinueCompatDialog";
@@ -46,14 +46,13 @@ import { TopBar } from "./components/shell/TopBar";
 import { sanitizeDisplayText } from "./domain/message-text";
 import { formatMessageTime, nowLabel } from "./domain/time";
 import { nextSmoothContent, prefersReducedMotion, streamStepInterval } from "./domain/streaming-text";
-import { buildTaskStreamItems } from "./state/task-stream-state";
-import { chooseWorkbenchContextTab } from "./state/workbench-context-state";
+import type { InspectorTarget } from "./state/task-stream-state";
+import { buildTaskStreamItems, chooseActiveInspectorTarget } from "./state/task-stream-state";
 import { gaTheme } from "./theme";
 
 const id = () => Math.random().toString(36).slice(2);
 const DEFAULT_CONTINUE_COMMAND = "/continue 1";
-const CONTEXT_DRAWER_DESKTOP_QUERY = "(min-width: 1280px)";
-type WorkbenchContextTab = "activity" | "status";
+const INSPECTOR_DRAWER_DESKTOP_QUERY = "(min-width: 1280px)";
 
 function toUiMessages(detail: ConversationDetail | null) {
   if (!detail) return [];
@@ -77,10 +76,10 @@ function GenericAgentWebUI() {
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [contextOpen, setContextOpen] = useState(true);
-  const [contextDrawerOpen, setContextDrawerOpen] = useState(false);
-  const [contextDrawerDesktop, setContextDrawerDesktop] = useState(false);
-  const [contextTab, setContextTab] = useState<WorkbenchContextTab>("status");
+  const [inspectorDrawerDesktop, setInspectorDrawerDesktop] = useState(false);
+  const [selectedInspectorTaskId, setSelectedInspectorTaskId] = useState<string | null>(null);
+  const [selectedInspectorTarget, setSelectedInspectorTarget] = useState<InspectorTarget | null>(null);
+  const [autoInspectorDismissed, setAutoInspectorDismissed] = useState(false);
   const [continueDialogOpen, setContinueDialogOpen] = useState(false);
   const [continueCommand, setContinueCommand] = useState(DEFAULT_CONTINUE_COMMAND);
   const [continueLoading, setContinueLoading] = useState(false);
@@ -104,8 +103,19 @@ function GenericAgentWebUI() {
   const lastReplyTime = state?.last_reply_time || 0;
   const hasThread = messages.length > 0;
   const contextTurns = turns.length > 0 ? turns : running ? [] : activeConversation?.execution_log ?? [];
-  const resolvedContextTab = chooseWorkbenchContextTab(contextTab, contextTurns, running);
   const taskItems = buildTaskStreamItems(messages, turns, streamAnimating);
+  const selectedInspectorItem = selectedInspectorTaskId
+    ? taskItems.find((item) => item.id === selectedInspectorTaskId) ?? null
+    : null;
+  const inspectorTurns = selectedInspectorItem ? selectedInspectorItem.executionLog : contextTurns;
+  const effectiveInspectorTarget = selectedInspectorItem ? selectedInspectorTarget : null;
+  const autoSelectInspector = running && !autoInspectorDismissed && !selectedInspectorTaskId;
+  const activeInspectorTarget = chooseActiveInspectorTarget(
+    inspectorTurns,
+    autoSelectInspector,
+    effectiveInspectorTarget,
+  );
+  const inspectorOpen = autoSelectInspector || Boolean(activeInspectorTarget);
   const recentConversationIds = conversations
     .filter((conversation) => !conversation.group_id && !conversation.pinned)
     .map((conversation) => conversation.id);
@@ -152,17 +162,14 @@ function GenericAgentWebUI() {
   }, []);
 
   useEffect(() => {
-    const media = window.matchMedia(CONTEXT_DRAWER_DESKTOP_QUERY);
-    const syncContextDrawerViewport = () => {
-      setContextDrawerDesktop(media.matches);
-      if (media.matches) {
-        setContextDrawerOpen(false);
-      }
+    const media = window.matchMedia(INSPECTOR_DRAWER_DESKTOP_QUERY);
+    const syncInspectorDrawerViewport = () => {
+      setInspectorDrawerDesktop(media.matches);
     };
 
-    syncContextDrawerViewport();
-    media.addEventListener("change", syncContextDrawerViewport);
-    return () => media.removeEventListener("change", syncContextDrawerViewport);
+    syncInspectorDrawerViewport();
+    media.addEventListener("change", syncInspectorDrawerViewport);
+    return () => media.removeEventListener("change", syncInspectorDrawerViewport);
   }, []);
 
   useEffect(() => {
@@ -359,6 +366,8 @@ function GenericAgentWebUI() {
     }
     // 中文注释：这里先切 UI 与中间层 active 会话，不在切换动作里主动触发 GA 重放。
     setError("");
+    closeInspector();
+    setAutoInspectorDismissed(false);
     autoScrollPinnedRef.current = true;
     const detail = await activateConversation(conversationId);
     setActiveConversation(detail);
@@ -378,6 +387,8 @@ function GenericAgentWebUI() {
     setActiveConversation(detail);
     setMessages([]);
     setTurns([]);
+    closeInspector();
+    setAutoInspectorDismissed(false);
     resetStreamingAssistant();
     const nextState = await fetchState();
     setState(nextState);
@@ -409,6 +420,10 @@ function GenericAgentWebUI() {
     setState(nextState);
     syncConversationList(nextState);
     const nextActiveId = nextState.active_conversation_id;
+    if (conversation.id === activeConversationId || nextActiveId !== activeConversationId) {
+      closeInspector();
+      setAutoInspectorDismissed(false);
+    }
     if (nextActiveId) {
       autoScrollPinnedRef.current = true;
       const detail = await fetchConversation(nextActiveId);
@@ -419,6 +434,7 @@ function GenericAgentWebUI() {
       setActiveConversation(null);
       setMessages([]);
       setTurns([]);
+      closeInspector();
     }
   };
 
@@ -439,6 +455,10 @@ function GenericAgentWebUI() {
     setState(nextState);
     syncConversationList(nextState);
     const nextActiveId = nextState.active_conversation_id;
+    if (selectedRecentIds.includes(activeConversationId ?? "") || nextActiveId !== activeConversationId) {
+      closeInspector();
+      setAutoInspectorDismissed(false);
+    }
     if (nextActiveId) {
       autoScrollPinnedRef.current = true;
       const detail = await fetchConversation(nextActiveId);
@@ -510,6 +530,8 @@ function GenericAgentWebUI() {
     setDraft("");
     setError("");
     setTurns([]);
+    closeInspector();
+    setAutoInspectorDismissed(false);
     resetStreamingAssistant();
 
     let conversationId = activeConversationId;
@@ -626,6 +648,20 @@ function GenericAgentWebUI() {
     }
   };
 
+  const selectInspectorTarget = (taskId: string, target: InspectorTarget) => {
+    setSelectedInspectorTaskId(taskId);
+    setSelectedInspectorTarget(target);
+    setAutoInspectorDismissed(false);
+  };
+
+  const closeInspector = () => {
+    if (running) {
+      setAutoInspectorDismissed(true);
+    }
+    setSelectedInspectorTaskId(null);
+    setSelectedInspectorTarget(null);
+  };
+
   if (state && !state.configured) {
     return (
       <main className="flex h-screen h-dvh items-center justify-center overflow-hidden bg-app-bg p-6">
@@ -692,10 +728,7 @@ function GenericAgentWebUI() {
           state={state}
           running={running}
           conversationTitle={activeConversation?.summary.title || "新对话"}
-          contextOpen={contextOpen}
           onOpenSidebar={() => setSidebarOpen(true)}
-          onOpenContext={() => setContextDrawerOpen(true)}
-          onToggleContext={() => setContextOpen((current) => !current)}
           onCreateConversation={() => void handleCreateConversation()}
           onSwitchLlm={(index) =>
             void switchLlm(index).then((next) => {
@@ -744,6 +777,7 @@ function GenericAgentWebUI() {
                       <TaskStream
                         items={taskItems}
                         streaming={streamAnimating}
+                        onSelectInspectorTarget={selectInspectorTarget}
                       />
                     </div>
                   )}
@@ -763,21 +797,20 @@ function GenericAgentWebUI() {
               </main>
             </Splitter.Panel>
 
-            {contextOpen ? (
+            {inspectorOpen ? (
               <Splitter.Panel
-                min={280}
-                max={420}
-                defaultSize={340}
+                min={300}
+                max={460}
+                defaultSize={360}
                 collapsible={{ start: true }}
-                className="ga-workbench-context-panel"
+                className="ga-workbench-inspector-panel"
               >
-                <WorkbenchContextPanel
-                  state={state}
-                  turns={contextTurns}
-                  activeTab={resolvedContextTab}
-                  onTabChange={setContextTab}
-                  onClose={() => setContextOpen(false)}
-                  closeLabel="收起上下文面板"
+                <RunInspector
+                  turns={inspectorTurns}
+                  target={activeInspectorTarget}
+                  running={running}
+                  onClose={closeInspector}
+                  onAbort={() => void abortTask().then(refreshState)}
                 />
               </Splitter.Panel>
             ) : null}
@@ -816,23 +849,22 @@ function GenericAgentWebUI() {
       </SidebarDialog>
 
       <Drawer
-        open={contextDrawerOpen && !contextDrawerDesktop}
+        open={inspectorOpen && !inspectorDrawerDesktop}
         placement="right"
         width="min(92vw, 360px)"
         title={null}
         closable={false}
-        aria-label="工作上下文"
-        rootClassName="ga-context-drawer-root xl:hidden"
-        className="ga-context-drawer"
-        onClose={() => setContextDrawerOpen(false)}
+        aria-label="运行详情"
+        rootClassName="ga-run-inspector-drawer-root xl:hidden"
+        className="ga-run-inspector-drawer"
+        onClose={closeInspector}
       >
-        <WorkbenchContextPanel
-          state={state}
-          turns={contextTurns}
-          activeTab={resolvedContextTab}
-          onTabChange={setContextTab}
-          onClose={() => setContextDrawerOpen(false)}
-          closeLabel="关闭上下文面板"
+        <RunInspector
+          turns={inspectorTurns}
+          target={activeInspectorTarget}
+          running={running}
+          onClose={closeInspector}
+          onAbort={() => void abortTask().then(refreshState)}
         />
       </Drawer>
 

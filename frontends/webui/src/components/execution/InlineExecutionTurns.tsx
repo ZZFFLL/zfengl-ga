@@ -2,14 +2,17 @@ import { Tag } from "antd";
 
 import type { ExecutionTurn } from "../../types";
 import { buildExecutionChipLabel } from "../../state/execution-panel-state";
+import type { InspectorTarget } from "../../state/task-stream-state";
 import { InlineExecutionTurn } from "./InlineExecutionTurn";
 
 export function InlineExecutionTurns({
   turns,
   streaming,
+  onSelectInspectorTarget,
 }: {
   turns: ExecutionTurn[];
   streaming: boolean;
+  onSelectInspectorTarget?: (target: InspectorTarget) => void;
 }) {
   const label = buildExecutionChipLabel(turns, streaming);
   if (!label) return null;
@@ -37,6 +40,9 @@ export function InlineExecutionTurns({
               key={`${turn.turn}-${index}`}
               turn={turn}
               defaultOpen={defaultOpen}
+              onSelectInspectorTarget={(toolIndex) =>
+                onSelectInspectorTarget?.({ turnIndex: index, toolIndex })
+              }
             />
           );
         })}

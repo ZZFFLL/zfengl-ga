@@ -1,4 +1,4 @@
-import type { TaskStreamItem } from "../../state/task-stream-state";
+import type { InspectorTarget, TaskStreamItem } from "../../state/task-stream-state";
 import { InlineExecutionTurns } from "../execution/InlineExecutionTurns";
 import { CommandBlock } from "./CommandBlock";
 import { ResponsePanel } from "./ResponsePanel";
@@ -6,9 +6,11 @@ import { ResponsePanel } from "./ResponsePanel";
 export function TaskStream({
   items,
   streaming,
+  onSelectInspectorTarget,
 }: {
   items: TaskStreamItem[];
   streaming: boolean;
+  onSelectInspectorTarget?: (taskId: string, target: InspectorTarget) => void;
 }) {
   return (
     <div className="ga-task-stream">
@@ -21,6 +23,9 @@ export function TaskStream({
             <InlineExecutionTurns
               turns={item.executionLog}
               streaming={Boolean(item.pending || itemStreaming)}
+              onSelectInspectorTarget={(target) =>
+                onSelectInspectorTarget?.(item.id, target)
+              }
             />
             <ResponsePanel
               message={item.response}
