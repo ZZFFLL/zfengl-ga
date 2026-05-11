@@ -101,7 +101,8 @@ function GenericAgentWebUI() {
   const [workbenchLayout, setWorkbenchLayout] = useState(() =>
     readWorkbenchLayoutPreference(typeof window === "undefined" ? undefined : window.localStorage),
   );
-  const chatScrollRef = useRef<HTMLElement | null>(null);
+  const desktopChatScrollRef = useRef<HTMLElement | null>(null);
+  const mobileChatScrollRef = useRef<HTMLElement | null>(null);
   const streamRef = useRef<EventSource | null>(null);
   const streamTargetRef = useRef("");
   const streamDisplayedRef = useRef("");
@@ -142,6 +143,7 @@ function GenericAgentWebUI() {
   const sidebarPanelResizable = !sidebarCollapsed;
   const mainPanelSize = inspectorOpen && inspectorDrawerDesktop ? `${workbenchLayout.main}%` : "100%";
   const inspectorPanelSize = `${workbenchLayout.inspector}%`;
+  const activeChatScrollRef = inspectorDrawerDesktop ? desktopChatScrollRef : mobileChatScrollRef;
   const recentConversationIds = conversations
     .filter((conversation) => !conversation.group_id && !conversation.pinned)
     .map((conversation) => conversation.id);
@@ -205,7 +207,7 @@ function GenericAgentWebUI() {
   }, [messages, streamAnimating, turns]);
 
   useEffect(() => {
-    const target = chatScrollRef.current;
+    const target = activeChatScrollRef.current;
     if (!target) return;
 
     const updateAutoScrollPinned = () => {
@@ -221,10 +223,10 @@ function GenericAgentWebUI() {
     return () => {
       target.removeEventListener("scroll", updateAutoScrollPinned);
     };
-  }, [activeConversationId, hasThread]);
+  }, [activeConversationId, hasThread, inspectorDrawerDesktop]);
 
   function scrollChatToBottom(behavior: ScrollBehavior = "auto") {
-    const target = chatScrollRef.current;
+    const target = activeChatScrollRef.current;
     if (!target) return;
     autoScrollPinnedRef.current = true;
     window.requestAnimationFrame(() => {
@@ -700,18 +702,32 @@ function GenericAgentWebUI() {
     setSelectedInspectorTarget(null);
   };
 
+  const handleSidebarResize = (sizes: number[]) => {
+    if (sidebarCollapsed) return;
+    setWorkbenchLayout((current) => nextWorkbenchLayoutFromSidebarResize(current, sizes));
+  };
+
   const handleSidebarResizeEnd = (sizes: number[]) => {
     if (sidebarCollapsed) return;
-    const nextLayout = nextWorkbenchLayoutFromSidebarResize(workbenchLayout, sizes);
-    setWorkbenchLayout(nextLayout);
-    writeWorkbenchLayoutPreference(window.localStorage, nextLayout);
+    setWorkbenchLayout((current) => {
+      const nextLayout = nextWorkbenchLayoutFromSidebarResize(current, sizes);
+      writeWorkbenchLayoutPreference(window.localStorage, nextLayout);
+      return nextLayout;
+    });
+  };
+
+  const handleInspectorResize = (sizes: number[]) => {
+    if (!inspectorOpen || !inspectorDrawerDesktop) return;
+    setWorkbenchLayout((current) => nextWorkbenchLayoutFromInspectorResize(current, sizes));
   };
 
   const handleInspectorResizeEnd = (sizes: number[]) => {
     if (!inspectorOpen || !inspectorDrawerDesktop) return;
-    const nextLayout = nextWorkbenchLayoutFromInspectorResize(workbenchLayout, sizes);
-    setWorkbenchLayout(nextLayout);
-    writeWorkbenchLayoutPreference(window.localStorage, nextLayout);
+    setWorkbenchLayout((current) => {
+      const nextLayout = nextWorkbenchLayoutFromInspectorResize(current, sizes);
+      writeWorkbenchLayoutPreference(window.localStorage, nextLayout);
+      return nextLayout;
+    });
   };
 
   const renderTopBar = () => (
@@ -744,7 +760,7 @@ function GenericAgentWebUI() {
     />
   );
 
-  const renderMainPanel = () => (
+  const renderMainPanel = (scrollRef: typeof activeChatScrollRef) => (
     <div className="ga-workbench-main-panel">
       <main className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
         {error ? (
@@ -753,7 +769,7 @@ function GenericAgentWebUI() {
           </div>
         ) : null}
 
-        <section ref={chatScrollRef} className="operation-scroll min-h-0 flex-1 overflow-y-auto">
+        <section ref={scrollRef} className="operation-scroll min-h-0 flex-1 overflow-y-auto">
           {!hasThread ? (
             <ChatHome
               state={state}
@@ -823,6 +839,7 @@ function GenericAgentWebUI() {
       <Splitter
         className="ga-workbench-desktop-splitter hidden xl:flex"
         layout="horizontal"
+        onResize={handleSidebarResize}
         onResizeEnd={handleSidebarResizeEnd}
       >
         <Splitter.Panel
@@ -869,10 +886,11 @@ function GenericAgentWebUI() {
                 <Splitter
                   className="ga-workbench-main-splitter"
                   layout="horizontal"
+                  onResize={handleInspectorResize}
                   onResizeEnd={handleInspectorResizeEnd}
                 >
                   <Splitter.Panel size={mainPanelSize} min="50%" resizable={inspectorOpen && inspectorDrawerDesktop}>
-                    {renderMainPanel()}
+                    {renderMainPanel(desktopChatScrollRef)}
                   </Splitter.Panel>
                   {inspectorOpen && inspectorDrawerDesktop ? (
                     <Splitter.Panel size={inspectorPanelSize} min="20%" max="36%">
@@ -907,7 +925,7 @@ function GenericAgentWebUI() {
 
         <Layout.Content className="min-h-0 min-w-0 overflow-hidden">
           <div className="ga-workbench-content-frame">
-            {renderMainPanel()}
+            {renderMainPanel(mobileChatScrollRef)}
 
             {inspectorToggleVisible ? (
               <RunInspectorToggle

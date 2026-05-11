@@ -20,8 +20,8 @@ export function ChatHome({
   onSubmit: (event?: FormEvent) => void;
 }) {
   return (
-    <section className="ga-chat-home flex min-h-full flex-col justify-center px-4 pb-10 pt-6 sm:px-6">
-      <div className="mx-auto w-full max-w-[51.25rem]">
+    <section className="ga-chat-home flex min-h-full flex-col justify-center px-4 py-8 sm:px-6">
+      <div className="mx-auto w-full">
         <div className="text-center">
           <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-lg bg-app-primarySoft text-app-primary ring-1 ring-app-line/70">
             <Sparkles className="h-5 w-5" aria-hidden="true" />
@@ -34,7 +34,7 @@ export function ChatHome({
           </p>
         </div>
 
-        <form className="mx-auto mt-12 max-w-[51.25rem]" onSubmit={onSubmit}>
+        <form className="ga-home-command-form" onSubmit={onSubmit}>
           <div className="ga-home-command-dock">
             <div className="flex items-start gap-4">
               <div className="mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-app-primarySoft text-app-primary">

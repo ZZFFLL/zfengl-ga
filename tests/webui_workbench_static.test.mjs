@@ -163,6 +163,38 @@ test("chat auto-scroll stays pinned during live execution growth", async () => {
   assert.doesNotMatch(appSource, /scrollChatToBottom\("smooth"\)/);
 });
 
+test("responsive workbench does not share one chat scroll ref across mounted layouts", async () => {
+  const appSource = await readSource("frontends/webui/src/App.tsx");
+
+  assert.match(appSource, /const desktopChatScrollRef = useRef<HTMLElement \| null>\(null\);/);
+  assert.match(appSource, /const mobileChatScrollRef = useRef<HTMLElement \| null>\(null\);/);
+  assert.match(
+    appSource,
+    /const activeChatScrollRef = inspectorDrawerDesktop \? desktopChatScrollRef : mobileChatScrollRef;/,
+  );
+  assert.match(appSource, /const renderMainPanel = \(scrollRef: typeof activeChatScrollRef\) =>/);
+  assert.match(appSource, /<section ref=\{scrollRef\}/);
+  assert.doesNotMatch(appSource, /const chatScrollRef = useRef/);
+  assert.doesNotMatch(appSource, /<section ref=\{chatScrollRef\}/);
+});
+
+test("controlled splitters update layout during drag and persist when drag ends", async () => {
+  const appSource = await readSource("frontends/webui/src/App.tsx");
+
+  assert.match(appSource, /const handleSidebarResize = \(sizes: number\[\]\) =>/);
+  assert.match(appSource, /const handleInspectorResize = \(sizes: number\[\]\) =>/);
+  assert.match(appSource, /onResize=\{handleSidebarResize\}/);
+  assert.match(appSource, /onResize=\{handleInspectorResize\}/);
+  assert.match(
+    appSource,
+    /const handleSidebarResizeEnd = \(sizes: number\[\]\) => \{[\s\S]*writeWorkbenchLayoutPreference\(window\.localStorage, nextLayout\);[\s\S]*\};/,
+  );
+  assert.match(
+    appSource,
+    /const handleInspectorResizeEnd = \(sizes: number\[\]\) => \{[\s\S]*writeWorkbenchLayoutPreference\(window\.localStorage, nextLayout\);[\s\S]*\};/,
+  );
+});
+
 test("conversation groups can be expanded and collapsed from the folder row", async () => {
   const sidebarSource = await readSource("frontends/webui/src/components/sidebar/ConversationSidebar.tsx");
 
