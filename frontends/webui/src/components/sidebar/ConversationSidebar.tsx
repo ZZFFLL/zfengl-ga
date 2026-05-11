@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { Button, Dropdown } from "antd";
-import { Folder, FolderPlus, MoreHorizontal, PanelLeft, Pin, Plus, Sparkles } from "lucide-react";
+import { ChevronRight, Folder, FolderPlus, MoreHorizontal, PanelLeft, Pin, Plus, Sparkles } from "lucide-react";
 import type { ConversationSummary, GroupSummary, RuntimeState } from "../../types";
 import { buildGroups } from "../../domain/conversation-groups";
 import { previewText } from "../../domain/message-text";
@@ -60,12 +61,24 @@ export function ConversationSidebar({
     conversations.filter((conversation) => !conversation.pinned),
   );
   const selectedRecentSet = new Set(selectedRecentIds);
+  const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(new Set());
   const conversationRowClass = (conversationId: string) =>
     `ga-sidebar-row group flex min-h-[2.5rem] w-full items-center gap-2 border px-2.5 py-2 text-left transition ${
       activeConversationId === conversationId
         ? "is-active border-app-line text-app-textStrong"
         : "border-transparent text-app-text"
     }`;
+  const toggleGroupCollapsed = (groupId: string) => {
+    setCollapsedGroupIds((current) => {
+      const next = new Set(current);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
+  };
 
   if (collapsed) {
     return (
@@ -179,78 +192,96 @@ export function ConversationSidebar({
               </button>
             </div>
 
-            {grouped.map((group) => (
-              <div key={group.id} className="mb-3">
-                <div className="mb-1 flex items-center justify-between px-2">
-                  <div className="flex min-w-0 items-center gap-2 text-[0.8125rem] font-medium text-app-text/90">
-                    <Folder className="h-3.5 w-3.5 shrink-0 text-app-muted" />
-                    <span className="truncate">{group.name}</span>
-                    <span className="ga-sidebar-meta shrink-0">{group.conversations.length}</span>
+            {grouped.map((group) => {
+              const groupCollapsed = collapsedGroupIds.has(group.id);
+              return (
+                <div key={group.id} className="mb-3">
+                  <div className="mb-1 flex items-center justify-between px-2">
+                    <button
+                      type="button"
+                      className="ga-sidebar-group-toggle flex min-w-0 flex-1 items-center gap-2 text-left text-[0.8125rem] font-medium text-app-text/90"
+                      aria-label={`${groupCollapsed ? "展开分组" : "折叠分组"} ${group.name}`}
+                      aria-expanded={!groupCollapsed}
+                      aria-controls={`group-${group.id}-conversations`}
+                      onClick={() => toggleGroupCollapsed(group.id)}
+                    >
+                      <ChevronRight
+                        className={`ga-sidebar-group-chevron h-3.5 w-3.5 shrink-0 text-app-muted ${
+                          !groupCollapsed ? "is-open" : ""
+                        }`}
+                        aria-hidden="true"
+                      />
+                      <Folder className="h-3.5 w-3.5 shrink-0 text-app-muted" />
+                      <span className="truncate">{group.name}</span>
+                      <span className="ga-sidebar-meta shrink-0">{group.conversations.length}</span>
+                    </button>
+                    <Dropdown
+                      menu={{
+                        items: [
+                          {
+                            key: "rename",
+                            label: "重命名分组",
+                            onClick: () => onRenameGroup(group),
+                          },
+                          {
+                            key: "delete",
+                            danger: true,
+                            label: "删除分组",
+                            onClick: () => onDeleteGroup(group),
+                          },
+                        ],
+                      }}
+                      trigger={["click"]}
+                      placement="bottomRight"
+                      overlayClassName="ga-dropdown"
+                    >
+                      <Button
+                        type="text"
+                        size="small"
+                        aria-label="分组更多操作"
+                        disabled={running}
+                        icon={<MoreHorizontal className="h-4 w-4" aria-hidden="true" />}
+                        onClick={(event) => event.stopPropagation()}
+                      />
+                    </Dropdown>
                   </div>
-                  <Dropdown
-                    menu={{
-                      items: [
-                        {
-                          key: "rename",
-                          label: "重命名分组",
-                          onClick: () => onRenameGroup(group),
-                        },
-                        {
-                          key: "delete",
-                          danger: true,
-                          label: "删除分组",
-                          onClick: () => onDeleteGroup(group),
-                        },
-                      ],
-                    }}
-                    trigger={["click"]}
-                    placement="bottomRight"
-                    overlayClassName="ga-dropdown"
-                  >
-                    <Button
-                      type="text"
-                      size="small"
-                      aria-label="分组更多操作"
-                      disabled={running}
-                      icon={<MoreHorizontal className="h-4 w-4" aria-hidden="true" />}
-                      onClick={(event) => event.stopPropagation()}
-                    />
-                  </Dropdown>
+                  {!groupCollapsed ? (
+                    <div id={`group-${group.id}-conversations`} className="sidebar-list">
+                      {group.conversations.length === 0 ? (
+                        <div className="rounded-md px-3 py-2 text-xs text-app-muted">分组里还没有会话</div>
+                      ) : (
+                        group.conversations.map((conversation) => (
+                          <div
+                            key={conversation.id}
+                            className={conversationRowClass(conversation.id)}
+                          >
+                            <button
+                              type="button"
+                              className="min-w-0 flex-1 text-left disabled:cursor-not-allowed disabled:opacity-60"
+                              onClick={() => onSelectConversation(conversation.id)}
+                              disabled={running && activeConversationId !== conversation.id}
+                            >
+                              <div className="truncate text-sm font-medium">{conversation.title}</div>
+                              <div className="mt-1 truncate text-xs text-app-muted">{previewText(conversation.preview)}</div>
+                            </button>
+                            <ConversationActions
+                              conversation={conversation}
+                              groups={groups}
+                              running={running}
+                              actionsAlwaysVisible={actionsAlwaysVisible}
+                              onRename={onRenameConversation}
+                              onDelete={onDeleteConversation}
+                              onPin={onPinConversation}
+                              onMove={onMoveConversation}
+                            />
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  ) : null}
                 </div>
-                <div className="sidebar-list">
-                  {group.conversations.length === 0 ? (
-                    <div className="rounded-md px-3 py-2 text-xs text-app-muted">分组里还没有会话</div>
-                  ) : (
-                    group.conversations.map((conversation) => (
-                      <div
-                        key={conversation.id}
-                        className={conversationRowClass(conversation.id)}
-                      >
-                        <button
-                          type="button"
-                          className="min-w-0 flex-1 text-left disabled:cursor-not-allowed disabled:opacity-60"
-                          onClick={() => onSelectConversation(conversation.id)}
-                          disabled={running && activeConversationId !== conversation.id}
-                        >
-                          <div className="truncate text-sm font-medium">{conversation.title}</div>
-                          <div className="mt-1 truncate text-xs text-app-muted">{previewText(conversation.preview)}</div>
-                        </button>
-                        <ConversationActions
-                          conversation={conversation}
-                          groups={groups}
-                          running={running}
-                          actionsAlwaysVisible={actionsAlwaysVisible}
-                          onRename={onRenameConversation}
-                          onDelete={onDeleteConversation}
-                          onPin={onPinConversation}
-                          onMove={onMoveConversation}
-                        />
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            ))}
+              );
+            })}
 
             <div className="mb-1.5 flex items-center justify-between gap-2 px-2">
               <div className="sidebar-section-title px-0">最近对话 · {ungrouped.length}</div>

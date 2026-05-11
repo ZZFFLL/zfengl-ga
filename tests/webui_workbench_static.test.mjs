@@ -160,6 +160,19 @@ test("chat auto-scroll stays pinned during live execution growth", async () => {
   assert.doesNotMatch(appSource, /scrollChatToBottom\("smooth"\)/);
 });
 
+test("conversation groups can be expanded and collapsed from the folder row", async () => {
+  const sidebarSource = await readSource("frontends/webui/src/components/sidebar/ConversationSidebar.tsx");
+
+  assert.match(sidebarSource, /useState<Set<string>>/);
+  assert.match(sidebarSource, /toggleGroupCollapsed/);
+  assert.match(sidebarSource, /aria-expanded=\{!groupCollapsed\}/);
+  assert.match(sidebarSource, /aria-controls=\{`group-\$\{group\.id\}-conversations`\}/);
+  assert.match(sidebarSource, /onClick=\{\(\) => toggleGroupCollapsed\(group\.id\)\}/);
+  assert.match(sidebarSource, /groupCollapsed \? "展开分组" : "折叠分组"/);
+  assert.match(sidebarSource, /ChevronRight/);
+  assert.match(sidebarSource, /\{!groupCollapsed \? \([\s\S]*<div\s+id=\{`group-\$\{group\.id\}-conversations`\}/);
+});
+
 test("run inspector is manually opened, localized, and not permanent low-value chrome", async () => {
   const [appSource, taskStreamSource, inspectorSource, toggleSource, turnSource, toolCardSource, contextCss] = await Promise.all([
     readSource("frontends/webui/src/App.tsx"),
