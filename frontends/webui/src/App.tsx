@@ -189,8 +189,8 @@ function GenericAgentWebUI() {
 
   useEffect(() => {
     if (!autoScrollPinnedRef.current) return;
-    scrollChatToBottom(streamAnimating ? "auto" : "smooth");
-  }, [messages, streamAnimating]);
+    scrollChatToBottom("auto");
+  }, [messages, streamAnimating, turns]);
 
   useEffect(() => {
     const target = chatScrollRef.current;
@@ -573,7 +573,7 @@ function GenericAgentWebUI() {
       pending: true,
     };
     setMessages((items) => [...items, userMessage, pendingAssistantMessage]);
-    scrollChatToBottom("smooth");
+    scrollChatToBottom("auto");
 
     try {
       const { task_id } = await startChat(conversationId, prompt);

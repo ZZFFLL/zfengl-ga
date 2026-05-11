@@ -150,6 +150,16 @@ test("new conversation action stays a local draft until first send", async () =>
   assert.match(appSource, /if \(!conversationId\) \{[\s\S]*setDraftConversationActive\(false\);[\s\S]*createConversation\(prompt\)/);
 });
 
+test("chat auto-scroll stays pinned during live execution growth", async () => {
+  const appSource = await readSource("frontends/webui/src/App.tsx");
+
+  assert.match(
+    appSource,
+    /useEffect\(\(\) => \{[\s\S]*scrollChatToBottom\("auto"\);[\s\S]*\}, \[messages, streamAnimating, turns\]\);/,
+  );
+  assert.doesNotMatch(appSource, /scrollChatToBottom\("smooth"\)/);
+});
+
 test("run inspector is manually opened, localized, and not permanent low-value chrome", async () => {
   const [appSource, taskStreamSource, inspectorSource, toggleSource, turnSource, toolCardSource, contextCss] = await Promise.all([
     readSource("frontends/webui/src/App.tsx"),
