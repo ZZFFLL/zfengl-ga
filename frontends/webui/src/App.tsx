@@ -878,7 +878,7 @@ function GenericAgentWebUI() {
           />
         </Splitter.Panel>
         <Splitter.Panel>
-          <Layout className="min-h-0 min-w-0 overflow-hidden bg-transparent">
+          <Layout className="h-full min-h-0 min-w-0 overflow-hidden bg-transparent">
             {renderTopBar()}
 
             <Layout.Content className="min-h-0 min-w-0 overflow-hidden">
@@ -920,7 +920,7 @@ function GenericAgentWebUI() {
         </Splitter.Panel>
       </Splitter>
 
-      <Layout className="ga-workbench-mobile-layout min-h-0 min-w-0 overflow-hidden bg-transparent xl:hidden">
+      <Layout className="ga-workbench-mobile-layout h-full min-h-0 min-w-0 overflow-hidden bg-transparent xl:hidden">
         {renderTopBar()}
 
         <Layout.Content className="min-h-0 min-w-0 overflow-hidden">

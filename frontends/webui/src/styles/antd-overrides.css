@@ -46,6 +46,18 @@
   margin: 1rem 0;
 }
 
+.ga-workbench-main-splitter .ant-splitter-bar {
+  width: 0.875rem;
+  margin-inline: -0.4375rem;
+  cursor: col-resize;
+  z-index: 20;
+}
+
+.ga-workbench-main-splitter .ant-splitter-bar-dragger {
+  width: 100% !important;
+  cursor: col-resize;
+}
+
 .ga-workbench-desktop-splitter .ant-splitter-bar-dragger::before,
 .ga-workbench-main-splitter .ant-splitter-bar-dragger::before {
   background: #d8d5cd;

@@ -195,6 +195,26 @@ test("controlled splitters update layout during drag and persist when drag ends"
   );
 });
 
+test("desktop workbench fills the viewport and exposes usable resize rails", async () => {
+  const [appSource, workbenchCss, overridesCss] = await Promise.all([
+    readSource("frontends/webui/src/App.tsx"),
+    readSource("frontends/webui/src/styles/workbench.css"),
+    readSource("frontends/webui/src/styles/antd-overrides.css"),
+  ]);
+
+  assert.match(appSource, /<Layout className="h-full min-h-0 min-w-0 overflow-hidden bg-transparent">/);
+  assert.match(appSource, /className="ga-workbench-mobile-layout h-full min-h-0 min-w-0 overflow-hidden bg-transparent xl:hidden"/);
+  assert.match(workbenchCss, /\.ga-workbench-desktop-splitter[\s\S]*height:\s*100%/);
+  assert.match(
+    overridesCss,
+    /\.ga-workbench-main-splitter \.ant-splitter-bar\s*\{[\s\S]*width:\s*0\.875rem;[\s\S]*margin-inline:\s*-0\.4375rem;[\s\S]*cursor:\s*col-resize;[\s\S]*z-index:\s*20;/,
+  );
+  assert.match(
+    overridesCss,
+    /\.ga-workbench-main-splitter \.ant-splitter-bar-dragger\s*\{[\s\S]*width:\s*100%\s*!important;[\s\S]*cursor:\s*col-resize;/,
+  );
+});
+
 test("conversation groups can be expanded and collapsed from the folder row", async () => {
   const sidebarSource = await readSource("frontends/webui/src/components/sidebar/ConversationSidebar.tsx");
 
