@@ -1,11 +1,101 @@
-.ga-execution-status-tag.ant-tag-success {
-  color: #126c4d;
-  background: #e9f6ef;
+.ga-inline-execution {
+  margin: 0.75rem 1rem 1rem;
 }
 
-.ga-execution-status-tag.ant-tag-processing {
+.ga-inline-execution-summary {
+  display: inline-flex;
+  max-width: 100%;
+  min-height: 2rem;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid #e3e1dc;
+  border-radius: 999px;
+  background: #fbfbf9;
+  padding: 0.35rem 0.55rem;
+  color: #242424;
+  font-size: 0.78rem;
+  line-height: 1.2;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.ga-inline-execution-summary:hover {
+  border-color: #d8d5cd;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+
+.ga-inline-execution-summary:focus-visible {
+  outline: 2px solid rgba(15, 118, 110, 0.24);
+  outline-offset: 2px;
+}
+
+.ga-execution-dot {
+  width: 0.48rem;
+  height: 0.48rem;
+  flex: 0 0 auto;
+  border-radius: 999px;
+}
+
+.ga-execution-dot.is-complete {
+  background: #0f766e;
+}
+
+.ga-execution-dot.is-running {
+  background: #0b6f86;
+  box-shadow: 0 0 0 4px rgba(11, 111, 134, 0.11);
+}
+
+.ga-execution-state {
+  flex: 0 0 auto;
+  font-weight: 700;
+  color: #126c4d;
+}
+
+.ga-inline-execution-summary.is-running .ga-execution-state {
   color: #0b6f86;
-  background: #e7f7fb;
+}
+
+.ga-execution-separator {
+  width: 1px;
+  height: 0.85rem;
+  flex: 0 0 auto;
+  background: #dedbd4;
+}
+
+.ga-execution-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 650;
+}
+
+.ga-execution-count {
+  flex: 0 0 auto;
+  color: #6f6f6b;
+  font-weight: 600;
+}
+
+.ga-execution-chevron {
+  width: 0.9rem;
+  height: 0.9rem;
+  flex: 0 0 auto;
+  color: #6f6f6b;
+  transition: transform 160ms ease;
+}
+
+.ga-execution-chevron.is-open {
+  transform: rotate(180deg);
+}
+
+.ga-inline-execution-list {
+  margin-top: 0.625rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 .ga-run-rail {

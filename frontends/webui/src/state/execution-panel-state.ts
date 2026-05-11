@@ -24,7 +24,7 @@ export function buildExecutionChipLabel(turns: ExecutionTurn[], streaming: boole
   if (turns.length === 0) return null;
   const latest = turns[turns.length - 1];
   const title = latest?.title || `Turn ${latest?.turn ?? turns.length}`;
-  return streaming ? `正在执行 · ${title}` : `执行过程 · ${turns.length} 轮`;
+  return streaming ? title : "执行过程";
 }
 
 // 中文注释：工具执行阶段可能没有正文流动画，胶囊运行态需要同时参考消息 pending。

@@ -38,14 +38,14 @@ test("resolveExecutionTurns falls back to persisted turns for completed replies"
 });
 
 test("buildExecutionChipLabel reflects running and completed states", () => {
-  assert.equal(buildExecutionChipLabel(persistedTurns, true), "正在执行 · Draft answer");
-  assert.equal(buildExecutionChipLabel(persistedTurns, false), "执行过程 · 2 轮");
+  assert.equal(buildExecutionChipLabel(persistedTurns, true), "Draft answer");
+  assert.equal(buildExecutionChipLabel(persistedTurns, false), "执行过程");
   assert.equal(buildExecutionChipLabel([], false), null);
 });
 
 test("execution labels stay compact for completed and active turns", () => {
-  assert.equal(buildExecutionChipLabel([{ turn: 1, title: "", content: "" }], false), "执行过程 · 1 轮");
-  assert.equal(buildExecutionChipLabel([{ turn: 2, title: "Tool pass", content: "", state: "active" }], true), "正在执行 · Tool pass");
+  assert.equal(buildExecutionChipLabel([{ turn: 1, title: "", content: "" }], false), "执行过程");
+  assert.equal(buildExecutionChipLabel([{ turn: 2, title: "Tool pass", content: "", state: "active" }], true), "Tool pass");
 });
 
 test("resolveExecutionChipRunning stays active for tool-only pending updates", () => {

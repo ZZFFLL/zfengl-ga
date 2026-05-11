@@ -1,4 +1,5 @@
-import { Tag } from "antd";
+import { useEffect, useState } from "react";
+import { ChevronDown } from "lucide-react";
 
 import type { ExecutionTurn } from "../../types";
 import { buildExecutionChipLabel } from "../../state/execution-panel-state";
@@ -15,38 +16,54 @@ export function InlineExecutionTurns({
   onSelectInspectorTarget?: (target: InspectorTarget) => void;
 }) {
   const label = buildExecutionChipLabel(turns, streaming);
+  const [open, setOpen] = useState(streaming);
+
+  useEffect(() => {
+    if (streaming) {
+      setOpen(true);
+    }
+  }, [streaming]);
+
   if (!label) return null;
 
   return (
-    <section className="mb-5 border-b border-app-line pb-4">
-      <div className="flex min-w-0 items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2 text-sm font-semibold text-app-text">
-          <Tag
-            bordered={false}
-            color={streaming ? "processing" : "success"}
-            className="m-0 ga-execution-status-tag"
-          >
-            {streaming ? "执行中" : "已完成"}
-          </Tag>
-          <span className="truncate">{label}</span>
+    <section className="ga-inline-execution">
+      <button
+        type="button"
+        className={`ga-inline-execution-summary ${streaming ? "is-running" : "is-complete"}`}
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <span
+          className={`ga-execution-dot ${streaming ? "is-running" : "is-complete"}`}
+          aria-hidden="true"
+        />
+        <span className="ga-execution-state">{streaming ? "执行中" : "已完成"}</span>
+        <span className="ga-execution-separator" aria-hidden="true" />
+        <span className="ga-execution-title">{label}</span>
+        <span className="ga-execution-count">{turns.length} 轮</span>
+        <ChevronDown
+          className={`ga-execution-chevron ${open ? "is-open" : ""}`}
+          aria-hidden="true"
+        />
+      </button>
+      {open ? (
+        <div className="ga-inline-execution-list">
+          {turns.map((turn, index) => {
+            const defaultOpen = turn.state === "active";
+            return (
+              <InlineExecutionTurn
+                key={`${turn.turn}-${index}`}
+                turn={turn}
+                defaultOpen={defaultOpen}
+                onSelectInspectorTarget={(toolIndex) =>
+                  onSelectInspectorTarget?.({ turnIndex: index, toolIndex })
+                }
+              />
+            );
+          })}
         </div>
-        <span className="shrink-0 text-xs text-app-muted">{turns.length} 轮</span>
-      </div>
-      <div className="mt-3 space-y-2">
-        {turns.map((turn, index) => {
-          const defaultOpen = turn.state === "active";
-          return (
-            <InlineExecutionTurn
-              key={`${turn.turn}-${index}`}
-              turn={turn}
-              defaultOpen={defaultOpen}
-              onSelectInspectorTarget={(toolIndex) =>
-                onSelectInspectorTarget?.({ turnIndex: index, toolIndex })
-              }
-            />
-          );
-        })}
-      </div>
+      ) : null}
     </section>
   );
 }
