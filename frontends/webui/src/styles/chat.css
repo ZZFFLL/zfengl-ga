@@ -168,6 +168,42 @@
   color: #111111;
 }
 
+.ga-chat-home {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.42), rgba(247, 247, 245, 0) 38%),
+    #f7f7f5;
+}
+
+.ga-home-command-dock {
+  border: 0.0625rem solid #c9c5bd;
+  border-radius: 0.625rem;
+  background: #ffffff;
+  padding: 1rem;
+  box-shadow: 0 1.125rem 3rem rgba(15, 23, 42, 0.12);
+}
+
+.ga-home-command-input {
+  min-height: 3.5rem;
+  flex: 1;
+  resize: none;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: #242424;
+  font-size: 1rem;
+  line-height: 1.75;
+  padding-top: 0.35rem;
+}
+
+.ga-home-command-input::placeholder {
+  color: #6f6f6b;
+}
+
+.ga-home-command-input:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
 .ga-command-dock {
   flex-shrink: 0;
   border-top: 0.0625rem solid #e3e1dc;
@@ -180,7 +216,7 @@
   max-width: min(100%, 58.75rem);
   margin: 0 auto;
   border: 0.0625rem solid #d8d5cd;
-  border-radius: 0.875rem;
+  border-radius: 0.625rem;
   background: #ffffff;
   box-shadow: 0 0.5rem 1.875rem rgba(15, 23, 42, 0.08);
   padding: 0.875rem;

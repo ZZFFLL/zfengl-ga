@@ -72,7 +72,7 @@ export function ConversationSidebar({
       <aside className="ga-sidebar flex h-full min-h-0 flex-col items-center px-2 py-3">
         <button
           type="button"
-          className="flex h-10 w-10 items-center justify-center rounded-[0.9375rem] text-app-text transition hover:bg-[#e8ecf3]"
+          className="flex h-10 w-10 items-center justify-center rounded-lg text-app-text transition hover:bg-[#e8ecf3]"
           aria-label="展开会话侧栏"
           onClick={onToggleCollapsed}
         >
@@ -80,7 +80,7 @@ export function ConversationSidebar({
         </button>
         <button
           type="button"
-          className="mt-2 flex h-10 w-10 items-center justify-center rounded-[0.9375rem] text-app-text transition hover:bg-[#e8ecf3] disabled:cursor-not-allowed disabled:opacity-50"
+          className="mt-2 flex h-10 w-10 items-center justify-center rounded-lg text-app-text transition hover:bg-[#e8ecf3] disabled:cursor-not-allowed disabled:opacity-50"
           aria-label="新建对话"
           onClick={onCreateConversation}
           disabled={!state?.configured || running}
@@ -95,7 +95,7 @@ export function ConversationSidebar({
     <aside className="ga-sidebar flex h-full min-h-0 flex-col">
       <div className="px-4 pb-3 pt-4">
         <div className="ga-sidebar-brand flex items-center gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-app-primary ring-1 ring-app-line">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white text-app-primary ring-1 ring-app-line">
             <Sparkles className="h-5 w-5" />
           </div>
           <div className="min-w-0 flex-1">
@@ -115,7 +115,7 @@ export function ConversationSidebar({
 
         <button
           type="button"
-          className="mt-4 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-full bg-white/75 px-4 text-sm font-medium text-app-text ring-1 ring-app-line/80 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+          className="mt-4 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-md bg-white/75 px-4 text-sm font-medium text-app-text ring-1 ring-app-line/80 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
           onClick={onCreateConversation}
           disabled={!state?.configured || running}
         >
@@ -219,7 +219,7 @@ export function ConversationSidebar({
                 </div>
                 <div className="sidebar-list">
                   {group.conversations.length === 0 ? (
-                    <div className="rounded-xl px-3 py-2 text-xs text-app-muted">分组里还没有会话</div>
+                    <div className="rounded-md px-3 py-2 text-xs text-app-muted">分组里还没有会话</div>
                   ) : (
                     group.conversations.map((conversation) => (
                       <div
@@ -259,7 +259,7 @@ export function ConversationSidebar({
                   {selectingRecent ? (
                     <button
                       type="button"
-                      className="rounded-full px-2 py-1 text-[0.6875rem] font-medium text-app-danger transition hover:bg-[#e8ecf3] disabled:cursor-not-allowed disabled:opacity-40"
+                      className="rounded-md px-2 py-1 text-[0.6875rem] font-medium text-app-danger transition hover:bg-[#e8ecf3] disabled:cursor-not-allowed disabled:opacity-40"
                       disabled={selectedRecentIds.length === 0 || running}
                       onClick={onBulkDeleteRecent}
                     >
@@ -268,7 +268,7 @@ export function ConversationSidebar({
                   ) : null}
                   <button
                     type="button"
-                    className="rounded-full px-2 py-1 text-[0.6875rem] font-medium text-app-muted transition hover:bg-[#e8ecf3] hover:text-app-text disabled:cursor-not-allowed disabled:opacity-40"
+                    className="rounded-md px-2 py-1 text-[0.6875rem] font-medium text-app-muted transition hover:bg-[#e8ecf3] hover:text-app-text disabled:cursor-not-allowed disabled:opacity-40"
                     disabled={running}
                     onClick={onToggleRecentSelection}
                   >

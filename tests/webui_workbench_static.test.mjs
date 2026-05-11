@@ -99,16 +99,31 @@ test("chat workbench uses task stream instead of chat bubbles", async () => {
 });
 
 test("composer is a command dock", async () => {
-  const [composerSource, chatCss] = await Promise.all([
+  const [composerSource, chatHomeSource, chatCss, themeSource, baseStyles] = await Promise.all([
     readSource("frontends/webui/src/components/composer/Composer.tsx"),
+    readSource("frontends/webui/src/components/chat/ChatHome.tsx"),
     readSource("frontends/webui/src/styles/chat.css"),
+    readSource("frontends/webui/src/theme.ts"),
+    readSource("frontends/webui/src/styles.css"),
   ]);
 
   assert.match(composerSource, /ga-command-dock/);
   assert.match(composerSource, /ga-command-input/);
   assert.doesNotMatch(composerSource, /ga-composer-surface/);
+  assert.match(chatHomeSource, /ga-chat-home/);
+  assert.match(chatHomeSource, /ga-home-command-dock/);
+  assert.match(chatHomeSource, /ga-home-command-input/);
+  assert.doesNotMatch(chatHomeSource, /ga-composer-surface|rounded-xl|rounded-2xl/);
   assert.match(chatCss, /\.ga-command-dock/);
   assert.match(chatCss, /\.ga-command-input/);
+  assert.match(chatCss, /\.ga-home-command-dock[\s\S]*border:\s*0\.0625rem solid #c9c5bd/);
+  assert.match(chatCss, /\.ga-home-command-dock[\s\S]*border-radius:\s*0\.625rem/);
+  assert.match(chatCss, /\.ga-home-command-dock[\s\S]*box-shadow:\s*0 1\.125rem 3rem rgba\(15, 23, 42, 0\.12\)/);
+  assert.match(themeSource, /borderRadius:\s*6/);
+  assert.match(themeSource, /borderRadiusLG:\s*8/);
+  assert.match(themeSource, /borderRadiusSM:\s*4/);
+  assert.doesNotMatch(themeSource, /borderRadius:\s*8|borderRadiusLG:\s*10|borderRadiusSM:\s*999/);
+  assert.doesNotMatch(baseStyles, /rounded-\[1\.125rem\]|rounded-xl|rounded-full/);
 });
 
 test("run inspector is manually opened, localized, and not permanent low-value chrome", async () => {
@@ -162,7 +177,18 @@ test("run inspector is manually opened, localized, and not permanent low-value c
 });
 
 test("workbench visual system follows Codex-like light shell", async () => {
-  const [themeSource, tailwindSource, baseCss, shellCss, sidebarCss, chatCss, contextCss] =
+  const [
+    themeSource,
+    tailwindSource,
+    baseCss,
+    shellCss,
+    sidebarCss,
+    chatCss,
+    contextCss,
+    topBarSource,
+    statusBadgeSource,
+    sidebarSource,
+  ] =
     await Promise.all([
       readSource("frontends/webui/src/theme.ts"),
       readSource("frontends/webui/tailwind.config.ts"),
@@ -171,6 +197,9 @@ test("workbench visual system follows Codex-like light shell", async () => {
       readSource("frontends/webui/src/styles/sidebar.css"),
       readSource("frontends/webui/src/styles/chat.css"),
       readSource("frontends/webui/src/styles/context.css"),
+      readSource("frontends/webui/src/components/shell/TopBar.tsx"),
+      readSource("frontends/webui/src/components/app/StatusBadge.tsx"),
+      readSource("frontends/webui/src/components/sidebar/ConversationSidebar.tsx"),
     ]);
 
   assert.match(themeSource, /bg:\s*"#f7f7f5"/);
@@ -182,4 +211,11 @@ test("workbench visual system follows Codex-like light shell", async () => {
   assert.match(chatCss, /\.ga-task-item[\s\S]*background:\s*#ffffff/);
   assert.match(chatCss, /\.ga-command-dock-inner[\s\S]*background:\s*#ffffff/);
   assert.match(contextCss, /\.ga-run-inspector[\s\S]*background:\s*#f8f8f6/);
+  assert.match(topBarSource, /rounded-md border border-app-line bg-white/);
+  assert.doesNotMatch(topBarSource, /rounded-xl/);
+  assert.match(statusBadgeSource, /rounded-md/);
+  assert.doesNotMatch(statusBadgeSource, /rounded-full/);
+  assert.match(sidebarSource, /rounded-lg bg-white text-app-primary/);
+  assert.match(sidebarSource, /rounded-md bg-white\/75/);
+  assert.doesNotMatch(sidebarSource, /rounded-\[0\.9375rem\]|rounded-xl|rounded-full bg-white\/75/);
 });

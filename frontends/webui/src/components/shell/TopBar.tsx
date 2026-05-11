@@ -105,7 +105,7 @@ export function TopBar({
         </div>
 
         <div className="ml-auto flex min-w-0 items-center gap-2">
-          <div className="hidden min-h-9 min-w-0 items-center gap-2 rounded-xl border border-app-line bg-white px-2 py-1 shadow-[0_0.0625rem_0_rgba(31,41,55,0.03)] sm:flex">
+          <div className="hidden min-h-9 min-w-0 items-center gap-2 rounded-md border border-app-line bg-white px-2 py-1 shadow-[0_0.0625rem_0_rgba(31,41,55,0.03)] sm:flex">
             <span className="shrink-0 text-[0.6875rem] font-semibold uppercase text-app-muted">
               Model
             </span>

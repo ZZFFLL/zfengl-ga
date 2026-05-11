@@ -49,9 +49,9 @@ export const gaTheme: ThemeConfig = {
     colorTextTertiary: gaPalette.mutedSoft,
     colorFillSecondary: gaPalette.surface,
     colorFillTertiary: gaPalette.shellMuted,
-    borderRadius: 8,
-    borderRadiusLG: 10,
-    borderRadiusSM: 6,
+    borderRadius: 6,
+    borderRadiusLG: 8,
+    borderRadiusSM: 4,
     controlHeight: 38,
     controlHeightLG: 42,
     controlHeightSM: 32,
@@ -67,7 +67,7 @@ export const gaTheme: ThemeConfig = {
   },
   components: {
     Button: {
-      borderRadius: 8,
+      borderRadius: 6,
       controlHeight: 38,
       fontWeight: 600,
       defaultShadow: "none",
@@ -75,7 +75,7 @@ export const gaTheme: ThemeConfig = {
       textHoverBg: "rgba(17, 17, 17, 0.04)",
     },
     Select: {
-      borderRadius: 8,
+      borderRadius: 6,
       selectorBg: "#ffffff",
       optionSelectedBg: gaPalette.primarySoft,
       optionActiveBg: gaPalette.surface,
@@ -83,7 +83,7 @@ export const gaTheme: ThemeConfig = {
       hoverBorderColor: gaPalette.lineStrong,
     },
     Input: {
-      borderRadius: 10,
+      borderRadius: 6,
       activeBorderColor: gaPalette.primary,
       hoverBorderColor: gaPalette.lineStrong,
       activeShadow: "0 0 0 0.1875rem rgba(15, 118, 110, 0.12)",
@@ -93,7 +93,7 @@ export const gaTheme: ThemeConfig = {
       zIndexPopup: 1200,
     },
     Modal: {
-      borderRadiusLG: 12,
+      borderRadiusLG: 8,
       contentBg: "#ffffff",
       headerBg: "#ffffff",
       footerBg: "#ffffff",
@@ -104,7 +104,7 @@ export const gaTheme: ThemeConfig = {
       zIndexPopup: 1200,
     },
     Tag: {
-      borderRadiusSM: 999,
+      borderRadiusSM: 4,
     },
     Segmented: {
       itemSelectedBg: "#ffffff",
@@ -112,7 +112,7 @@ export const gaTheme: ThemeConfig = {
       trackBg: gaPalette.surface,
     },
     Card: {
-      borderRadiusLG: 10,
+      borderRadiusLG: 8,
       headerBg: "#ffffff",
     },
   },

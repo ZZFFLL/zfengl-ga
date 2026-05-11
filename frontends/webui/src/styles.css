@@ -14,19 +14,19 @@
 
 @layer components {
   .control-button {
-    @apply inline-flex min-h-11 w-full items-center gap-2 rounded-[1.125rem] border border-app-line bg-white px-4 text-left text-sm font-medium text-app-text transition hover:bg-app-surface disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex min-h-11 w-full items-center gap-2 rounded-md border border-app-line bg-white px-4 text-left text-sm font-medium text-app-text transition hover:bg-app-surface disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .icon-button-subtle {
-    @apply inline-flex h-10 w-10 items-center justify-center rounded-[1.125rem] border border-app-line bg-white text-app-text transition hover:bg-app-surface;
+    @apply inline-flex h-10 w-10 items-center justify-center rounded-md border border-app-line bg-white text-app-text transition hover:bg-app-surface;
   }
 
   .icon-button-ghost {
-    @apply inline-flex h-8 w-8 items-center justify-center rounded-xl text-app-muted transition hover:bg-[#e8ecf3] hover:text-app-text disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex h-8 w-8 items-center justify-center rounded-md text-app-muted transition hover:bg-[#e8ecf3] hover:text-app-text disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .chip-muted {
-    @apply inline-flex items-center rounded-full bg-white px-3 py-1 text-xs text-app-muted ring-1 ring-app-line;
+    @apply inline-flex items-center rounded-md bg-white px-3 py-1 text-xs text-app-muted ring-1 ring-app-line;
   }
 
   .sidebar-section-title {
@@ -38,7 +38,7 @@
   }
 
   .sidebar-item {
-    @apply flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-app-text transition hover:bg-white/80 disabled:cursor-not-allowed disabled:opacity-60;
+    @apply flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-app-text transition hover:bg-white/80 disabled:cursor-not-allowed disabled:opacity-60;
   }
 
   .sidebar-item.active {

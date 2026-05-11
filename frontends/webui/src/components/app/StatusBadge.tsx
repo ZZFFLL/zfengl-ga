@@ -11,7 +11,7 @@ export function StatusBadge({ state }: { state: RuntimeState | null }) {
   const label = !state?.configured ? "未配置" : state.running ? "运行中" : "空闲";
   return (
     <span
-      className={`inline-flex min-h-9 items-center gap-2 rounded-full px-3 text-sm font-medium ${statusTone(state)}`}
+      className={`inline-flex min-h-9 items-center gap-2 rounded-md px-3 text-sm font-medium ${statusTone(state)}`}
     >
       <Circle className="h-3 w-3 fill-current" aria-hidden="true" />
       {label}
