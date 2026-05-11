@@ -14,6 +14,11 @@ test("App wires on-demand run inspector without permanent context chrome", async
   assert.match(appSource, /\bRunInspectorToggle\b/);
   assert.match(appSource, /\bchooseActiveInspectorTarget\b/);
   assert.match(appSource, /\bDrawer\b/);
+  assert.match(appSource, /\bSplitter\b/);
+  assert.match(appSource, /\breadWorkbenchLayoutPreference\b/);
+  assert.match(appSource, /\bwriteWorkbenchLayoutPreference\b/);
+  assert.match(appSource, /\bnextWorkbenchLayoutFromSidebarResize\b/);
+  assert.match(appSource, /\bnextWorkbenchLayoutFromInspectorResize\b/);
   assert.match(appSource, /ga-workbench-main-panel/);
   assert.match(appSource, /ga-workbench-inspector-panel/);
   assert.match(appSource, /ga-workbench-content-frame/);
@@ -28,8 +33,7 @@ test("App wires on-demand run inspector without permanent context chrome", async
   assert.match(appSource, /width="min\(92vw, 22\.5rem\)"/);
   assert.match(appSource, /setSelectedInspectorTarget\(null\)/);
   assert.doesNotMatch(appSource, /autoSelectInspector|autoInspectorDismissed/);
-  assert.doesNotMatch(appSource, /\bSplitter\b/);
-  assert.doesNotMatch(appSource, /defaultSize=\{|min=\{300\}|max=\{460\}|360px|1280px|1279px|max-w-\[920px\]/);
+  assert.doesNotMatch(appSource, /360px|1280px|1279px|max-w-\[920px\]/);
   assert.doesNotMatch(appSource, /\bWorkbenchContextPanel\b/);
   assert.doesNotMatch(appSource, /\bchooseWorkbenchContextTab\b/);
   assert.doesNotMatch(appSource, /contextOpen/);
@@ -65,8 +69,7 @@ test("workbench hides inline inspector below desktop breakpoint", async () => {
   const workbenchCss = await readSource("frontends/webui/src/styles/workbench.css");
 
   assert.match(workbenchCss, /@media\s*\(max-width:\s*79\.999rem\)/);
-  assert.match(workbenchCss, /\.ga-workbench-inspector-panel\s*\{[^}]*display:\s*none\s*!important;/s);
-  assert.match(workbenchCss, /\.ga-workbench-main-panel\s*\{[^}]*width:\s*100%\s*!important;/s);
+  assert.match(workbenchCss, /\.ga-workbench-desktop-splitter\s*\{[^}]*display:\s*none\s*!important;/s);
   assert.match(workbenchCss, /\.ga-workbench-inspector-panel[\s\S]*transition:/);
   assert.match(workbenchCss, /\.ga-run-inspector-toggle/);
   assert.match(workbenchCss, /clamp\(/);
