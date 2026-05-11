@@ -8,8 +8,8 @@
 
 .ga-dropdown .ant-dropdown-menu {
   min-width: 220px;
-  border: 1px solid #d9e0e8;
-  box-shadow: 0 16px 36px rgba(17, 24, 39, 0.12);
+  border: 1px solid #e3e1dc;
+  box-shadow: 0 10px 34px rgba(15, 23, 42, 0.08);
 }
 
 .ga-dropdown {
@@ -22,8 +22,8 @@
 }
 
 .ga-modal .ant-modal-content {
-  border: 1px solid #d9e0e8;
-  box-shadow: 0 18px 48px rgba(17, 24, 39, 0.16);
+  border: 1px solid #e3e1dc;
+  box-shadow: 0 10px 34px rgba(15, 23, 42, 0.1);
 }
 
 .ga-modal .ant-modal-header {
@@ -31,7 +31,7 @@
 }
 
 .ga-sidebar-drawer .ant-drawer-content {
-  background: #edf1f5;
+  background: #f3f3f1;
 }
 
 .ga-sidebar-drawer .ant-drawer-body {
@@ -47,5 +47,5 @@
 }
 
 .ga-workbench-splitter .ant-splitter-bar-dragger::before {
-  background: #cfd8e3;
+  background: #d8d5cd;
 }

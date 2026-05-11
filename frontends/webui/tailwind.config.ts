@@ -6,36 +6,36 @@ export default {
     extend: {
       colors: {
         app: {
-          bg: "#f4f6f8",
-          canvas: "#f8fafb",
-          shell: "#161a22",
-          shellMuted: "#252b35",
-          sidebar: "#edf1f5",
+          bg: "#f7f7f5",
+          canvas: "#ffffff",
+          shell: "#ffffff",
+          shellMuted: "#f3f3f1",
+          sidebar: "#f3f3f1",
           panel: "#ffffff",
-          surface: "#f7f9fb",
+          surface: "#f6f6f3",
           composer: "#ffffff",
-          line: "#d9e0e8",
-          lineStrong: "#b8c3cf",
-          text: "#1d2430",
-          textStrong: "#111827",
-          muted: "#5b6678",
-          mutedSoft: "#8a95a5",
+          line: "#e3e1dc",
+          lineStrong: "#c9c5bd",
+          text: "#242424",
+          textStrong: "#111111",
+          muted: "#6f6f6b",
+          mutedSoft: "#9a9892",
           primary: "#0f766e",
-          primarySoft: "#e7f5f2",
-          primarySubtle: "#f0faf8",
-          info: "#0e7490",
+          primarySoft: "#e6f4ef",
+          primarySubtle: "#f1f8f5",
+          info: "#256f8a",
           success: "#16845b",
-          danger: "#c2413d",
-          warning: "#b26a18",
+          danger: "#b42318",
+          warning: "#a15c07",
           codeBg: "#111827",
           codeText: "#eef2ff",
-          userBubble: "#172033"
+          userBubble: "#ffffff"
         }
       },
       boxShadow: {
-        panel: "0 14px 34px rgba(17, 24, 39, 0.075)",
-        soft: "0 5px 16px rgba(17, 24, 39, 0.045)",
-        composer: "0 12px 34px rgba(17, 24, 39, 0.10)"
+        panel: "0 1px 2px rgba(15, 23, 42, 0.04)",
+        soft: "0 1px 2px rgba(15, 23, 42, 0.05)",
+        composer: "0 8px 30px rgba(15, 23, 42, 0.08)"
       }
     }
   },

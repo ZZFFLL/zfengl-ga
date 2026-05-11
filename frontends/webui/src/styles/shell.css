@@ -1,12 +1,10 @@
 .ga-shell {
-  background:
-    linear-gradient(90deg, rgba(22, 26, 34, 0.04), transparent 18rem),
-    #f4f6f8;
+  background: #f7f7f5;
 }
 
 .ga-topbar {
-  background: rgba(255, 255, 255, 0.92);
-  border-bottom: 1px solid #d9e0e8;
-  box-shadow: 0 1px 0 rgba(17, 24, 39, 0.02);
-  backdrop-filter: blur(12px);
+  background: rgba(255, 255, 255, 0.84);
+  border-bottom: 1px solid #e3e1dc;
+  box-shadow: none;
+  backdrop-filter: blur(16px);
 }

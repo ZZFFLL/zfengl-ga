@@ -78,8 +78,8 @@
   min-width: 0;
   min-height: 0;
   flex-direction: column;
-  border-left: 1px solid #263246;
-  background: #0b1120;
+  border-left: 1px solid #e3e1dc;
+  background: #f8f8f6;
 }
 
 .ga-run-inspector-header {
@@ -88,22 +88,22 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  border-bottom: 1px solid #263246;
+  border-bottom: 1px solid #e3e1dc;
   padding: 0.875rem 1rem;
 }
 
 .ga-run-inspector-section {
-  border: 1px solid #263246;
+  border: 1px solid #e3e1dc;
   border-radius: 12px;
-  background: #111827;
+  background: #ffffff;
   padding: 0.875rem;
 }
 
 .ga-run-inspector .text-app-text,
 .ga-run-inspector .text-app-textStrong {
-  color: #f8fafc;
+  color: #242424;
 }
 
 .ga-run-inspector .text-app-muted {
-  color: #8ea0b8;
+  color: #6f6f6b;
 }

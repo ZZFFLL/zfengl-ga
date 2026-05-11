@@ -19,13 +19,13 @@
   top: 2.55rem;
   bottom: 1rem;
   width: 1px;
-  background: #d9e0e8;
+  background: #e3e1dc;
   pointer-events: none;
 }
 
 .operation-scroll {
   scrollbar-width: thin;
-  scrollbar-color: #c5cddd transparent;
+  scrollbar-color: #d6d2ca transparent;
 }
 
 .thought-chip {

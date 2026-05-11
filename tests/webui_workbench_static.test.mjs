@@ -130,3 +130,26 @@ test("run inspector is on-demand and context panel is not permanent low-value ch
   assert.match(contextCss, /\.ga-run-inspector \.text-app-textStrong/);
   assert.match(contextCss, /\.ga-run-inspector \.text-app-muted/);
 });
+
+test("workbench visual system follows Codex-like light shell", async () => {
+  const [themeSource, tailwindSource, baseCss, shellCss, sidebarCss, chatCss, contextCss] =
+    await Promise.all([
+      readSource("frontends/webui/src/theme.ts"),
+      readSource("frontends/webui/tailwind.config.ts"),
+      readSource("frontends/webui/src/styles/base.css"),
+      readSource("frontends/webui/src/styles/shell.css"),
+      readSource("frontends/webui/src/styles/sidebar.css"),
+      readSource("frontends/webui/src/styles/chat.css"),
+      readSource("frontends/webui/src/styles/context.css"),
+    ]);
+
+  assert.match(themeSource, /bg:\s*"#f7f7f5"/);
+  assert.doesNotMatch(themeSource, /darkAlgorithm/);
+  assert.match(tailwindSource, /sidebar:\s*"#f3f3f1"/);
+  assert.match(baseCss, /background:\s*#f7f7f5/);
+  assert.match(shellCss, /background:\s*#f7f7f5/);
+  assert.match(sidebarCss, /background:\s*#f3f3f1/);
+  assert.match(chatCss, /\.ga-task-item[\s\S]*background:\s*#ffffff/);
+  assert.match(chatCss, /\.ga-command-dock-inner[\s\S]*background:\s*#ffffff/);
+  assert.match(contextCss, /\.ga-run-inspector[\s\S]*background:\s*#f8f8f6/);
+});

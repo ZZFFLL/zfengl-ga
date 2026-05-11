@@ -1,20 +1,20 @@
 .ga-task-stream {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 1rem;
 }
 
 .ga-task-item {
   overflow: hidden;
-  border: 1px solid #263246;
+  border: 1px solid #e1ded7;
   border-radius: 14px;
-  background: #111827;
-  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.22);
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
 .ga-command-block {
-  border-bottom: 1px solid #263246;
-  background: #0b1120;
+  border-bottom: 1px solid #e8e5de;
+  background: #fbfbf9;
   padding: 0.875rem 1rem;
 }
 
@@ -24,28 +24,28 @@
   min-width: 0;
   align-items: center;
   gap: 0.5rem;
-  color: #8ea0b8;
+  color: #6f6f6b;
   font-size: 0.75rem;
   font-weight: 600;
 }
 
 .ga-command-icon {
   display: inline-flex;
-  color: #34d399;
+  color: #0f766e;
 }
 
 .ga-command-content {
   margin-top: 0.625rem;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  color: #e5eefb;
+  color: #242424;
   font-size: 0.95rem;
   line-height: 1.75;
 }
 
 .ga-response-panel {
   padding: 1rem;
-  color: #dbe7f5;
+  color: #242424;
 }
 
 .ga-response-panel.is-pending {
@@ -54,45 +54,45 @@
 }
 
 .ga-task-item .border-app-line {
-  border-color: #263246;
+  border-color: #e3e1dc;
 }
 
 .ga-task-item .border-app-line\/70 {
-  border-color: rgba(38, 50, 70, 0.75);
+  border-color: rgba(227, 225, 220, 0.78);
 }
 
 .ga-task-item .text-app-text,
 .ga-task-item .text-app-textStrong {
-  color: #dbe7f5;
+  color: #242424;
 }
 
 .ga-task-item .text-app-muted {
-  color: #8ea0b8;
+  color: #6f6f6b;
 }
 
 .ga-task-item .bg-white {
-  background: #111827;
+  background: #ffffff;
 }
 
 .ga-task-item .bg-app-surface {
-  background: #172033;
+  background: #f6f6f3;
 }
 
 .ga-task-item .ring-\[\#e9f6ef\] {
-  --tw-ring-color: rgba(52, 211, 153, 0.2);
+  --tw-ring-color: rgba(15, 118, 110, 0.12);
 }
 
 .ga-task-item .markdown-content {
-  color: #dbe7f5;
+  color: #242424;
 }
 
 .ga-task-item .markdown-content a {
-  color: #6ee7b7;
+  color: #0f766e;
 }
 
 .ga-task-item .markdown-content blockquote {
-  border-left-color: #334155;
-  color: #8ea0b8;
+  border-left-color: #d8d5cd;
+  color: #6f6f6b;
 }
 
 .ga-task-item .markdown-content code {
@@ -101,7 +101,7 @@
 }
 
 .ga-task-item .markdown-content pre {
-  border: 1px solid #263246;
+  border: 1px solid #1f2937;
   background: #020617;
   color: #dbeafe;
 }
@@ -112,30 +112,30 @@
 }
 
 .ga-task-item .markdown-content table {
-  color: #dbe7f5;
+  color: #242424;
 }
 
 .ga-task-item .markdown-content th,
 .ga-task-item .markdown-content td {
-  border-color: #334155;
+  border-color: #e3e1dc;
 }
 
 .ga-task-item .markdown-content th {
-  background: #172033;
-  color: #f8fafc;
+  background: #f6f6f3;
+  color: #111111;
 }
 
 .ga-response-panel .markdown-content {
-  color: #dbe7f5;
+  color: #242424;
 }
 
 .ga-response-panel .markdown-content a {
-  color: #6ee7b7;
+  color: #0f766e;
 }
 
 .ga-response-panel .markdown-content blockquote {
-  border-left-color: #334155;
-  color: #8ea0b8;
+  border-left-color: #d8d5cd;
+  color: #6f6f6b;
 }
 
 .ga-response-panel .markdown-content code {
@@ -144,7 +144,7 @@
 }
 
 .ga-response-panel .markdown-content pre {
-  border: 1px solid #263246;
+  border: 1px solid #1f2937;
   background: #020617;
   color: #dbeafe;
 }
@@ -155,34 +155,34 @@
 }
 
 .ga-response-panel .markdown-content table {
-  color: #dbe7f5;
+  color: #242424;
 }
 
 .ga-response-panel .markdown-content th,
 .ga-response-panel .markdown-content td {
-  border-color: #334155;
+  border-color: #e3e1dc;
 }
 
 .ga-response-panel .markdown-content th {
-  background: #172033;
-  color: #f8fafc;
+  background: #f6f6f3;
+  color: #111111;
 }
 
 .ga-command-dock {
   flex-shrink: 0;
-  border-top: 1px solid #263246;
-  background: rgba(7, 12, 22, 0.92);
+  border-top: 1px solid #e3e1dc;
+  background: rgba(247, 247, 245, 0.92);
   padding: 0.875rem 1rem 1rem;
-  backdrop-filter: blur(14px);
+  backdrop-filter: blur(16px);
 }
 
 .ga-command-dock-inner {
   max-width: 940px;
   margin: 0 auto;
-  border: 1px solid #334155;
+  border: 1px solid #d8d5cd;
   border-radius: 14px;
-  background: #0f172a;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.32);
+  background: #ffffff;
+  box-shadow: 0 8px 30px rgba(15, 23, 42, 0.08);
   padding: 0.875rem;
 }
 
@@ -190,7 +190,7 @@
   display: flex;
   min-width: 0;
   gap: 0.5rem;
-  color: #8ea0b8;
+  color: #6f6f6b;
   font-size: 0.75rem;
   font-weight: 600;
 }
@@ -204,13 +204,13 @@
   border: 0;
   outline: none;
   background: transparent;
-  color: #e5eefb;
+  color: #242424;
   font-size: 0.96rem;
   line-height: 1.75;
 }
 
 .ga-command-input::placeholder {
-  color: #64748b;
+  color: #9a9892;
 }
 
 .ga-command-input:disabled {
@@ -224,7 +224,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  border-top: 1px solid #263246;
+  border-top: 1px solid #ece9e3;
   padding-top: 0.75rem;
 }
 
@@ -240,7 +240,7 @@
 
 .ga-message-user {
   border-color: rgba(23, 32, 51, 0.18);
-  background: #172033;
+  background: #ffffff;
   box-shadow: 0 8px 18px rgba(17, 24, 39, 0.13);
 }
 
