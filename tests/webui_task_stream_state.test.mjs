@@ -44,6 +44,12 @@ const response = {
   executionLog: [executionTurn],
 };
 
+const secondExecutionTurn = {
+  ...executionTurn,
+  turn: 2,
+  title: "Run tests",
+};
+
 test("buildTaskStreamItems groups a user command with the following assistant response", () => {
   assert.deepEqual(buildTaskStreamItems([command, response], [], false), [
     {
@@ -86,6 +92,30 @@ test("buildTaskStreamItems starts a new task for each user command", () => {
   assert.equal(items[1].response, null);
 });
 
+test("buildTaskStreamItems keeps system messages independent from command response slots", () => {
+  const systemMessage = {
+    id: "s-1",
+    role: "system",
+    content: "System notice",
+    time: "10:00",
+    executionLog: [],
+  };
+  const items = buildTaskStreamItems([command, systemMessage, response], [], false);
+
+  assert.equal(items.length, 2);
+  assert.equal(items[0].command, command);
+  assert.equal(items[0].response, response);
+  assert.equal(items[1].command, null);
+  assert.equal(items[1].response, systemMessage);
+});
+
+test("buildTaskStreamItems uses live execution log only for pending streaming assistant replies", () => {
+  const liveTurn = { ...executionTurn, turn: 9, title: "Live turn", state: "active" };
+  const items = buildTaskStreamItems([response], [liveTurn], true);
+
+  assert.deepEqual(items[0].executionLog, [executionTurn]);
+});
+
 test("chooseActiveInspectorTarget opens only for running or explicitly selected execution", () => {
   assert.equal(chooseActiveInspectorTarget([], false, null), null);
   assert.deepEqual(chooseActiveInspectorTarget([executionTurn], true, null), {
@@ -95,5 +125,22 @@ test("chooseActiveInspectorTarget opens only for running or explicitly selected 
   assert.deepEqual(chooseActiveInspectorTarget([executionTurn], false, { turnIndex: 0, toolIndex: 0 }), {
     turnIndex: 0,
     toolIndex: 0,
+  });
+});
+
+test("chooseActiveInspectorTarget normalizes out-of-range selected turns", () => {
+  const executionLog = [executionTurn, secondExecutionTurn];
+
+  assert.deepEqual(chooseActiveInspectorTarget(executionLog, true, { turnIndex: 99, toolIndex: 0 }), {
+    turnIndex: 1,
+    toolIndex: null,
+  });
+  assert.equal(chooseActiveInspectorTarget(executionLog, false, { turnIndex: 99, toolIndex: 0 }), null);
+});
+
+test("chooseActiveInspectorTarget clears out-of-range selected tool indexes", () => {
+  assert.deepEqual(chooseActiveInspectorTarget([executionTurn], false, { turnIndex: 0, toolIndex: 99 }), {
+    turnIndex: 0,
+    toolIndex: null,
   });
 });

@@ -44,11 +44,22 @@ export function buildTaskStreamItems(
       continue;
     }
 
-    const latest = items[items.length - 1];
-    if (latest && latest.command && !latest.response) {
-      latest.response = message;
-      latest.executionLog = executionForResponse(message, liveExecutionLog, streaming);
-      latest.pending = Boolean(message.pending);
+    if (message.role === "system") {
+      items.push({
+        id: `task-${message.id}`,
+        command: null,
+        response: message,
+        executionLog: executionForResponse(message, liveExecutionLog, streaming),
+        pending: Boolean(message.pending),
+      });
+      continue;
+    }
+
+    const pendingCommand = [...items].reverse().find((item) => item.command && !item.response);
+    if (pendingCommand) {
+      pendingCommand.response = message;
+      pendingCommand.executionLog = executionForResponse(message, liveExecutionLog, streaming);
+      pendingCommand.pending = Boolean(message.pending);
       continue;
     }
 
@@ -75,8 +86,18 @@ export function chooseActiveInspectorTarget(
   running: boolean,
   selectedTarget: InspectorTarget | null,
 ) {
-  if (selectedTarget && executionLog[selectedTarget.turnIndex]) {
-    return selectedTarget;
+  if (selectedTarget) {
+    const selectedTurn = executionLog[selectedTarget.turnIndex];
+    if (selectedTurn) {
+      const selectedToolIndex =
+        selectedTarget.toolIndex !== null && selectedTurn.tool_calls?.[selectedTarget.toolIndex]
+          ? selectedTarget.toolIndex
+          : null;
+      return {
+        turnIndex: selectedTarget.turnIndex,
+        toolIndex: selectedToolIndex,
+      };
+    }
   }
   if (!running || executionLog.length === 0) {
     return null;
