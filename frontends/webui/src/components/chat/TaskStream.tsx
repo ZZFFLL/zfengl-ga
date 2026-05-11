@@ -1,5 +1,4 @@
-import type { InspectorTarget, TaskStreamItem } from "../../state/task-stream-state";
-import type { ExecutionTurn } from "../../types";
+import type { TaskStreamItem } from "../../state/task-stream-state";
 import { InlineExecutionTurns } from "../execution/InlineExecutionTurns";
 import { CommandBlock } from "./CommandBlock";
 import { ResponsePanel } from "./ResponsePanel";
@@ -7,14 +6,10 @@ import { ResponsePanel } from "./ResponsePanel";
 export function TaskStream({
   items,
   streaming,
-  onSelectInspectorTarget,
 }: {
   items: TaskStreamItem[];
   streaming: boolean;
-  onSelectInspectorTarget: (turns: ExecutionTurn[], target: InspectorTarget) => void;
 }) {
-  void onSelectInspectorTarget;
-
   return (
     <div className="ga-task-stream">
       {items.map((item, index) => {

@@ -53,6 +53,78 @@
   gap: 0.75rem;
 }
 
+.ga-task-item .border-app-line {
+  border-color: #263246;
+}
+
+.ga-task-item .border-app-line\/70 {
+  border-color: rgba(38, 50, 70, 0.75);
+}
+
+.ga-task-item .text-app-text,
+.ga-task-item .text-app-textStrong {
+  color: #dbe7f5;
+}
+
+.ga-task-item .text-app-muted {
+  color: #8ea0b8;
+}
+
+.ga-task-item .bg-white {
+  background: #111827;
+}
+
+.ga-task-item .bg-app-surface {
+  background: #172033;
+}
+
+.ga-task-item .ring-\[\#e9f6ef\] {
+  --tw-ring-color: rgba(52, 211, 153, 0.2);
+}
+
+.ga-response-panel .markdown-content {
+  color: #dbe7f5;
+}
+
+.ga-response-panel .markdown-content a {
+  color: #6ee7b7;
+}
+
+.ga-response-panel .markdown-content blockquote {
+  border-left-color: #334155;
+  color: #8ea0b8;
+}
+
+.ga-response-panel .markdown-content code {
+  background: #020617;
+  color: #dbeafe;
+}
+
+.ga-response-panel .markdown-content pre {
+  border: 1px solid #263246;
+  background: #020617;
+  color: #dbeafe;
+}
+
+.ga-response-panel .markdown-content pre code {
+  background: transparent;
+  color: inherit;
+}
+
+.ga-response-panel .markdown-content table {
+  color: #dbe7f5;
+}
+
+.ga-response-panel .markdown-content th,
+.ga-response-panel .markdown-content td {
+  border-color: #334155;
+}
+
+.ga-response-panel .markdown-content th {
+  background: #172033;
+  color: #f8fafc;
+}
+
 .ga-composer-bar {
   background: rgba(248, 250, 251, 0.9);
 }

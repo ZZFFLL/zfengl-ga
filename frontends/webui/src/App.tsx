@@ -46,7 +46,6 @@ import { TopBar } from "./components/shell/TopBar";
 import { sanitizeDisplayText } from "./domain/message-text";
 import { formatMessageTime, nowLabel } from "./domain/time";
 import { nextSmoothContent, prefersReducedMotion, streamStepInterval } from "./domain/streaming-text";
-import type { InspectorTarget } from "./state/task-stream-state";
 import { buildTaskStreamItems } from "./state/task-stream-state";
 import { chooseWorkbenchContextTab } from "./state/workbench-context-state";
 import { gaTheme } from "./theme";
@@ -82,8 +81,6 @@ function GenericAgentWebUI() {
   const [contextDrawerOpen, setContextDrawerOpen] = useState(false);
   const [contextDrawerDesktop, setContextDrawerDesktop] = useState(false);
   const [contextTab, setContextTab] = useState<WorkbenchContextTab>("status");
-  const [selectedInspectorTurns, setSelectedInspectorTurns] = useState<ExecutionTurn[]>([]);
-  const [selectedInspectorTarget, setSelectedInspectorTarget] = useState<InspectorTarget | null>(null);
   const [continueDialogOpen, setContinueDialogOpen] = useState(false);
   const [continueCommand, setContinueCommand] = useState(DEFAULT_CONTINUE_COMMAND);
   const [continueLoading, setContinueLoading] = useState(false);
@@ -629,12 +626,6 @@ function GenericAgentWebUI() {
     }
   };
 
-  const selectInspectorTarget = (nextTurns: ExecutionTurn[], target: InspectorTarget) => {
-    setSelectedInspectorTurns(nextTurns);
-    setSelectedInspectorTarget(target);
-    setContextDrawerOpen(false);
-  };
-
   if (state && !state.configured) {
     return (
       <main className="flex h-screen h-dvh items-center justify-center overflow-hidden bg-app-bg p-6">
@@ -753,7 +744,6 @@ function GenericAgentWebUI() {
                       <TaskStream
                         items={taskItems}
                         streaming={streamAnimating}
-                        onSelectInspectorTarget={selectInspectorTarget}
                       />
                     </div>
                   )}

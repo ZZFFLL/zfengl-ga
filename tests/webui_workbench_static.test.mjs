@@ -79,4 +79,6 @@ test("chat workbench uses task stream instead of chat bubbles", async () => {
   assert.match(chatCss, /\.ga-task-stream/);
   assert.match(chatCss, /\.ga-command-block/);
   assert.match(chatCss, /\.ga-response-panel/);
+  assert.match(chatCss, /\.ga-task-item \.text-app-muted/);
+  assert.match(chatCss, /\.ga-response-panel \.markdown-content/);
 });
