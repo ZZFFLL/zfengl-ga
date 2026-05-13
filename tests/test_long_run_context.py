@@ -1,6 +1,7 @@
 import unittest
 from types import SimpleNamespace
 
+import agentmain
 from ga import GenericAgentHandler
 
 
@@ -34,10 +35,13 @@ class LongRunContextTests(unittest.TestCase):
         self.assertIn("已连续执行第 70 轮", prompt_70)
         self.assertIn("必须总结情况进行ask_user", prompt_70)
 
-    def test_normal_mode_checkpoint_every_25_turns(self):
+    def test_normal_mode_max_turns_is_240(self):
+        self.assertEqual(agentmain.NORMAL_RUNNER_MAX_TURNS, 240)
+
+    def test_normal_mode_checkpoint_every_30_turns(self):
         handler = self.make_handler()
 
-        prompt = self.callback_prompt(handler, 25)
+        prompt = self.callback_prompt(handler, 30)
 
         self.assertIn("update_working_checkpoint", prompt)
         self.assertIn("用户补充的关键约束", prompt)
@@ -50,16 +54,16 @@ class LongRunContextTests(unittest.TestCase):
         prompt_90 = self.callback_prompt(handler, 90, plan=True)
         prompt_100 = self.callback_prompt(handler, 100, plan=True)
 
-        self.assertEqual(handler.max_turns, 200)
+        self.assertEqual(handler.max_turns, 480)
         self.assertNotIn("Plan模式已运行 90 轮，已达上限", prompt_90)
         self.assertIn("Plan模式已运行 100 轮", prompt_100)
         self.assertIn("必须 ask_user 汇报进度并确认是否继续", prompt_100)
 
-    def test_plan_mode_checkpoint_every_35_turns(self):
+    def test_plan_mode_checkpoint_every_30_turns(self):
         handler = self.make_handler()
         handler.enter_plan_mode("./temp/plan.md")
 
-        prompt = self.callback_prompt(handler, 35, plan=True)
+        prompt = self.callback_prompt(handler, 30, plan=True)
 
         self.assertIn("update_working_checkpoint", prompt)
         self.assertIn("计划文件之外的用户关键约束", prompt)

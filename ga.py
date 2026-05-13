@@ -11,10 +11,10 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 
 NORMAL_WORKING_MEMORY_WINDOW = 60
 NORMAL_LONG_RUN_ASK_USER_TURN = 70
-NORMAL_CHECKPOINT_EVERY = 25
-PLAN_MAX_TURNS = 200
+NORMAL_CHECKPOINT_EVERY = 30
+PLAN_MAX_TURNS = 480
 PLAN_LONG_RUN_ASK_USER_TURN = 100
-PLAN_CHECKPOINT_EVERY = 35
+PLAN_CHECKPOINT_EVERY = 30
 
 def code_run(code, code_type="python", timeout=60, cwd=None, code_cwd=None, stop_signal=None, maxlen=10000):
     """代码执行器
