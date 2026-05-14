@@ -13,16 +13,16 @@
 ## File Map
 
 - Modify: `agentmain.py`
-  - Change the normal runtime call from `max_turns=70` to `max_turns=140`.
+  - Change the normal runtime call from `max_turns=140` to `max_turns=240`.
 
 - Modify: `ga.py`
   - Add module-level constants for long-run thresholds.
-  - Change Plan-mode max turns from `100` to `200`.
+  - Change Plan-mode max turns from `200` to `480`.
   - Change working-memory direct history window from `30` to `60`.
   - Change non-Plan `ask_user` pressure from turn `65` to `70`.
-  - Add non-Plan checkpoint reminder every `25` turns.
+  - Add non-Plan checkpoint reminder every `30` turns.
   - Change Plan-mode `ask_user` pressure from turn `90` to `100`.
-  - Add Plan-mode checkpoint reminder every `35` turns.
+  - Add Plan-mode checkpoint reminder every `30` turns.
   - Preserve every-5-turn Plan file read behavior.
 
 - Create: `tests/test_long_run_context.py`
@@ -46,6 +46,7 @@ Create `tests/test_long_run_context.py` with:
 import unittest
 from types import SimpleNamespace
 
+import agentmain
 from ga import GenericAgentHandler
 
 
@@ -79,10 +80,13 @@ class LongRunContextTests(unittest.TestCase):
         self.assertIn("已连续执行第 70 轮", prompt_70)
         self.assertIn("必须总结情况进行ask_user", prompt_70)
 
-    def test_normal_mode_checkpoint_every_25_turns(self):
+    def test_normal_mode_max_turns_is_240(self):
+        self.assertEqual(agentmain.NORMAL_RUNNER_MAX_TURNS, 240)
+
+    def test_normal_mode_checkpoint_every_30_turns(self):
         handler = self.make_handler()
 
-        prompt = self.callback_prompt(handler, 25)
+        prompt = self.callback_prompt(handler, 30)
 
         self.assertIn("update_working_checkpoint", prompt)
         self.assertIn("用户补充的关键约束", prompt)
@@ -95,16 +99,16 @@ class LongRunContextTests(unittest.TestCase):
         prompt_90 = self.callback_prompt(handler, 90, plan=True)
         prompt_100 = self.callback_prompt(handler, 100, plan=True)
 
-        self.assertEqual(handler.max_turns, 200)
+        self.assertEqual(handler.max_turns, 480)
         self.assertNotIn("Plan模式已运行 90 轮，已达上限", prompt_90)
         self.assertIn("Plan模式已运行 100 轮", prompt_100)
         self.assertIn("必须 ask_user 汇报进度并确认是否继续", prompt_100)
 
-    def test_plan_mode_checkpoint_every_35_turns(self):
+    def test_plan_mode_checkpoint_every_30_turns(self):
         handler = self.make_handler()
         handler.enter_plan_mode("./temp/plan.md")
 
-        prompt = self.callback_prompt(handler, 35, plan=True)
+        prompt = self.callback_prompt(handler, 30, plan=True)
 
         self.assertIn("update_working_checkpoint", prompt)
         self.assertIn("计划文件之外的用户关键约束", prompt)
@@ -137,7 +141,7 @@ python -m pytest tests/test_long_run_context.py -q
 
 Expected:
 
-- The new tests fail because the current code still uses normal `65`, Plan `90`, Plan max `100`, no checkpoint reminder at 25/35, and working-memory window `30`.
+- The new tests fail because the current code still uses the older long-run limits and checkpoint intervals.
 
 ---
 
@@ -153,7 +157,7 @@ In `agentmain.py`, change the `agent_runner_loop` call:
 
 ```python
 gen = agent_runner_loop(self.llmclient, sys_prompt, raw_query, 
-                    handler, TOOLS_SCHEMA, max_turns=140, verbose=self.verbose)
+                    handler, TOOLS_SCHEMA, max_turns=240, verbose=self.verbose)
 ```
 
 - [ ] **Step 2: Add constants near the top of `ga.py` after imports**
@@ -163,21 +167,15 @@ Add:
 ```python
 NORMAL_WORKING_MEMORY_WINDOW = 60
 NORMAL_LONG_RUN_ASK_USER_TURN = 70
-NORMAL_CHECKPOINT_EVERY = 25
-PLAN_MAX_TURNS = 200
+NORMAL_CHECKPOINT_EVERY = 30
+PLAN_MAX_TURNS = 480
 PLAN_LONG_RUN_ASK_USER_TURN = 100
-PLAN_CHECKPOINT_EVERY = 35
+PLAN_CHECKPOINT_EVERY = 30
 ```
 
 - [ ] **Step 3: Update Plan-mode max turns**
 
-Change `_enter_plan_mode` from:
-
-```python
-self.working['in_plan_mode'] = plan_path; self.max_turns = 100
-```
-
-to:
+Ensure `enter_plan_mode` uses the shared constant:
 
 ```python
 self.working['in_plan_mode'] = plan_path; self.max_turns = PLAN_MAX_TURNS
@@ -274,7 +272,7 @@ python -m pytest tests/test_long_run_context.py -q
 
 Expected:
 
-- `5 passed`
+- `6 passed`
 
 - [ ] **Step 2: Run relevant existing tests**
 
@@ -319,12 +317,12 @@ Expected:
 
 Spec coverage:
 
-- Normal `max_turns=140`: Task 2 Step 1.
+- Normal `max_turns=240`: Task 2 Step 1.
 - Normal `ask_user_at=70`: Task 2 Step 6, Task 1 test.
-- Normal `checkpoint_every=25`: Task 2 Step 6, Task 1 test.
-- Plan `max_turns=200`: Task 2 Step 3, Task 1 test.
+- Normal `checkpoint_every=30`: Task 2 Step 6, Task 1 test.
+- Plan `max_turns=480`: Task 2 Step 3, Task 1 test.
 - Plan `ask_user_at=100`: Task 2 Step 7, Task 1 test.
-- Plan `checkpoint_every=35`: Task 2 Step 7, Task 1 test.
+- Plan `checkpoint_every=30`: Task 2 Step 7, Task 1 test.
 - Working Memory `60`: Task 2 Step 4, Task 1 test.
 - Preserve Plan every-5-turn file-read rule: no changes to that branch.
 - Do not touch LibreChat: no frontend adapter files are listed.
