@@ -44,6 +44,7 @@ def test_chinese_schema_exposes_browser_tools():
 
     assert "索引" in state["description"]
     assert "真实 Chrome" in state["description"]
+    assert state["parameters"]["properties"]["include_invisible"]["default"] is False
     assert state["parameters"]["properties"]["max_elements"]["default"] == 120
     assert "index" in action["parameters"]["properties"]
     assert "selector" in action["parameters"]["properties"]
