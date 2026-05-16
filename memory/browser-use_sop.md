@@ -6,20 +6,20 @@
 
 ## 核心定位
 
-- `web_scan` / `web_execute_js`：低层网页观察与 JS/CDP 操作，适合调试、复杂页面、CDP、文件上传、iframe、截图等细节控制。
-- `browser_state` / `browser_action`：高层浏览器操作工具，适合像用户一样点击、输入、选择、按键、等待元素或文本。
-- 优先策略：普通网页交互先用 `browser_state` + `browser_action`；遇到 isTrusted、文件上传、跨域 iframe、复杂自定义组件、CDP 坐标点击时，再回到 `tmwebdriver_sop` 的 `web_execute_js` / CDP 桥方案。
+- `web_scan` / `web_execute_js`：低层网页观察与 JS/CDP 操作，适合调试、复杂页面、CDP、文件上传、跨域 iframe、截图等细节控制。
+- `browser_state` / `browser_action`：高层浏览器操作工具，适合像用户一样点击、输入、原生选择、按键、等待元素或文本，并能处理同源 iframe 中被索引的元素。
+- 优先策略：普通网页交互先用 `browser_state` + `browser_action`；遇到 isTrusted、文件上传、跨域 iframe、复杂自定义组件无法索引/点击、CDP 坐标点击时，再回到 `tmwebdriver_sop` 的 `web_execute_js` / CDP 桥方案。
 
 ## 两个工具的职责
 
 ### browser_state
 
-用途：读取真实 Chrome 当前标签页的可交互元素，生成稳定的短期索引。
+用途：读取真实 Chrome 当前标签页的可交互元素，生成稳定的短期索引；同源 iframe / frame 会递归索引，跨域 iframe 不会被高层工具穿透。
 
 返回重点：
 - `state_token`：本轮索引快照令牌，后续 indexed action 依赖它。
 - `tab_id`：当前标签页 ID，用于防止跨 tab 误操作。
-- `elements[]`：可交互元素列表，每个元素含 `index`、`tag`、`role`、`text`、`value`、`visible`、`disabled`、`bbox`、`selector_hint`。
+- `elements[]`：可交互元素列表，每个元素含 `index`、`tag`、`role`、`text`、`value`、`visible`、`disabled`、`bbox`、`selector_hint`、`frame_path`、`frame_depth`、`frame_url`、`frame_title`，以及 field/control/layer/table 等只读上下文。
 
 适用时机：
 - 要点击、输入、选择某个页面元素前。
@@ -42,6 +42,12 @@
 | `wait_index` | 是 | 等待 indexed 元素可见，支持节点 detached 后基于 identity 的 selector fallback |
 | `wait_text` | 否 | 等待页面出现指定文本 |
 | `wait_selector` | 否 | 等待 CSS selector 出现 |
+| `wait_dom_stable` | 否 | 等待 DOM 在有界时间内稳定 |
+| `wait_not_busy` | 否 | 等待页面或自定义 busy selector 不再忙 |
+| `wait_enabled` | 是 | 等待 indexed 元素变为可用 |
+| `wait_route` | 否 | 等待当前路由/URL 包含目标文本或 value |
+
+可选验证：`verify` 支持 `field_value`、`text`、`selector`、`element_text`。验证失败会返回 `status=failed` 且 `stage=verify_failed`。
 
 ## 基本编排原则
 
@@ -105,7 +111,7 @@
 ```
 应直接按 `suggested_args` 重试。
 
-### 4. 等待优先选 wait_text / wait_selector
+### 4. 等待优先选 wait_text / wait_selector / SPA waits
 
 页面提交、搜索、登录、跳转后，优先用：
 ```json
@@ -116,7 +122,23 @@
 {"action": "wait_selector", "selector": ".result-item", "timeout": 10}
 ```
 
+SPA 页面没有稳定文本或 selector 时，再按页面形态选有界等待：
+```json
+{"action": "wait_route", "value": "/results", "timeout": 10}
+{"action": "wait_dom_stable", "timeout": 10}
+{"action": "wait_not_busy", "selector": ".ant-spin-spinning", "timeout": 10}
+```
+
 `wait_index` 只适合等待刚刚通过 `browser_state` 得到的那个 indexed 元素变可见。它不是通用搜索工具。
+
+### 5. 标准输入/提交/等待/重扫顺序
+
+推荐顺序：
+1. `browser_state`
+2. `browser_action(input, index, text, verify="field_value", verify_value=text)`
+3. 提交/搜索时执行 `browser_action(keys, text="Enter")`，不要传 index
+4. 按页面变化选择 `wait_text` / `wait_selector` / `wait_route` / `wait_dom_stable` / `wait_not_busy`
+5. 下一次 indexed action 前重新 `browser_state`
 
 ## 常见场景流程
 
@@ -154,11 +176,11 @@
 {"action": "select", "index": 21, "value": "US"}
 ```
 
-如果是 Vue/AntD/MUI 自定义下拉，不要强行用 `select`。优先：
+如果是 React/Vue/AntD/MUI 自定义下拉，不要强行用 `select`。优先：
 1. `browser_action(click)` 打开下拉。
 2. `browser_state` 重新扫下拉选项。
 3. `browser_action(click)` 点选项。
-4. 若失败，读 `tmwebdriver_sop`，改用 vnode 或 CDP 坐标点击。
+4. 如果 `select` 返回 `control_unsupported` 或给出 click/state/click 的 hint，按 hint 改路径；若菜单项仍无法索引或点击，读 `tmwebdriver_sop`，改用 vnode 或 CDP 坐标点击。
 
 ### 关闭弹窗或菜单
 
@@ -239,30 +261,40 @@
 ### 当前实现事实
 
 - `browser_state` 只索引有限交互元素：链接、按钮、`input`、`textarea`、`select`、常见 ARIA role、`onclick`、`tabindex`、`contenteditable=true`。
+- `browser_state` 会递归索引同源 iframe / frame，并在元素快照中记录 `frame_path`、`frame_depth`、`frame_url`、`frame_title`。跨域 iframe 不会被高层工具穿透。
 - `browser_state` 默认只返回可见元素；只有显式设置 `include_invisible=true` 才会包含不可见元素。
 - 单次索引默认最多 120 个元素，代码允许的 `max_elements` 范围是 1-500。
 - 元素快照只保留短文本和短 value，文本/value 最多约 240 字符；密码 value 会被 `[REDACTED]`。
+- 元素快照包含 labels、attributes、validation、stable_key、field_context、table_context、layer、control_kind、action_hints 等只读上下文；表格上下文用于判断行/列/表头/单元格位置，不提供单元格编辑封装。
 - `selector_hint` 只是辅助提示，形式只有 `tag#id`、`tag[name="..."]` 或裸 `tag`，不是强定位保证。
-- `browser_action` 只支持 7 个动作：`click`、`input`、`select`、`keys`、`wait_index`、`wait_text`、`wait_selector`。
-- `click` / `input` / `select` / `wait_index` 必须依赖最近一次 `browser_state` 生成的 index 和 state token。
+- `browser_action` 支持 11 个动作：`click`、`input`、`select`、`keys`、`wait_index`、`wait_text`、`wait_selector`、`wait_dom_stable`、`wait_not_busy`、`wait_enabled`、`wait_route`。
+- `click` / `input` / `select` / `wait_index` / `wait_enabled` 必须依赖最近一次 `browser_state` 生成的 index 和 state token；同源 iframe 内元素通过 `frame_path` 关联到对应 frame。
 - `click` / `input` / `select` / `keys` 成功后会清空缓存 state，避免继续复用旧 index。
+- `input` 支持直接写入 contenteditable，也支持同源 iframe editor body；建议用 `verify="field_value"` + `verify_value` 确认实际值。它不保证调用编辑器私有 API，也不保证跨域 iframe。
+- `select` 只支持原生 `<select>`。React/AntD/MUI/Vue 自定义下拉应 click 触发器、重新 `browser_state`、再 click 可见选项。
+- SPA waits 都是有界等待：`wait_dom_stable`、`wait_not_busy`、`wait_enabled`、`wait_route` 不应被当成无限等待或业务成功保证。
 - 工具失败时会返回结构化结果：`status=failed`，并带 `stage`、`error`；部分场景会额外带 `hint` / `suggested_args`。
 
 ### 适合
 
 - 对用户真实 Chrome 当前页面做普通交互：点击、输入、原生 select、按 Enter/Escape/Tab、等待文本或 selector。
 - 已登录页面中的轻量操作，因为底层仍沿用 TMWebDriver / Chrome 扩展接管用户浏览器。
+- 同源 iframe 内已被 `browser_state` 索引出的元素操作。
 - 搜索框、评论框、普通表单等“输入后回车”的流程：`input(index)` 后直接 `keys(text="Enter")`，不要传 index。
 - SPA 中短暂重渲染后的等待：`wait_index` 可在原节点 detached 后基于 selector hint + tag/role/text 做受限 fallback。
+- SPA 加载、按钮启用、路由变化的有界等待：`wait_not_busy`、`wait_dom_stable`、`wait_enabled`、`wait_route`。
+- contenteditable 或同源 iframe editor body 的直接输入，并用 `field_value` 验证。
+- 表格上下文阅读：用 row/column/header/cell metadata 辅助判断目标，不把它当成编辑表格的高级 API。
 - 需要少写 JS、以高层动作完成的日常网页控制。
 
 ### 不适合
 
 - 大规模内容抽取、正文抓取、结构化爬取；`browser_state` 不是网页全文提取工具。
 - 文件上传、验证码截图、CDP 截图、网络抓包、Cookie/Tab/CDP 管理。
-- 跨域 iframe、closed Shadow DOM、复杂 iframe 坐标合成。
+- 跨域 iframe、closed Shadow DOM、复杂 iframe 坐标合成；这类场景走 `tmwebdriver_sop` / CDP bridge。
 - 需要 `isTrusted=true` 的敏感点击或浏览器级交互；当前 `click` 是 DOM `el.click()`。
-- 复杂自定义组件内部状态操作，例如 AntD/MUI/Vue 自定义 Select；`select` 只支持原生 `<select>`。
+- 复杂自定义组件内部状态操作，例如 AntD/MUI/Vue 自定义 Select；`select` 只支持原生 `<select>`，自定义下拉要按 click/state/click 路径处理。
+- 编辑器私有 API、跨域富文本 iframe、表格单元格编辑 wrapper；当前高层工具只提供直接 contenteditable/input 和只读 metadata。
 - 对任意 CSS selector 直接 `click` / `input`；当前 selector 只用于 `wait_selector`，`wait_index` fallback 也只由工具内部受限使用。
 - 多元素同名同文本且无法靠 tag/role/text 区分的页面，容易超出当前 identity check 能力。
 
@@ -275,6 +307,10 @@
 - `Control+A` / `Backspace` 只对 value-backed `input` / `textarea` 做确定性处理；contenteditable 上会拒绝，避免合成键盘事件假成功。
 - `wait_text` 只是判断 `document.body.innerText.includes(text)`，适合粗粒度等待，不适合精确语义判断。
 - `wait_selector` 只是等待 `document.querySelector(selector)` 出现，不判断可见性和业务语义。
+- `wait_not_busy` 只检查默认或指定 busy selector 的消失，不等于业务处理完成。
+- `wait_dom_stable` 只判断一段时间内 DOM 变化趋稳，不保证数据已加载正确。
+- `wait_route` 只匹配 URL/route 字符串，不保证页面数据完成渲染。
+- `wait_enabled` 依赖 indexed 元素；目标变化后仍应重新 `browser_state`。
 - `wait_index` 如果原 cached 节点仍 attached 但 hidden，不会 fallback 到其他元素；这能避免误匹配，但可能导致超时。
 - `wait_index` detached fallback 当前只用 `querySelector` 找第一个匹配，再做 tag/role/text 校验；页面上多个候选时可能等不到正确那个。
 - 后台标签页、页面节流、复杂加载状态仍受 Chrome 行为影响；必要时按 `tmwebdriver_sop` 用 CDP `Page.bringToFront`。
@@ -283,7 +319,7 @@
 
 遇到以下情况，不要继续反复调用 `browser_action`：
 - 同一目标连续失败两次。
-- 需要 CDP、截图、文件上传、iframe、Shadow DOM、网络/Cookie/Tab 操作。
+- 需要 CDP、截图、文件上传、跨域 iframe、Shadow DOM、网络/Cookie/Tab 操作。
 - 页面控件明显是复杂前端组件，普通 click/input/select 不能触发真实业务状态。
 - 需要直接执行 JS、读取复杂 DOM、调用页面框架实例或 vnode。
 - 需要绕过浏览器弹窗、自动下载限制、autofill 保护值等 Chrome 级问题。
@@ -296,7 +332,7 @@
 1. 只是看页面摘要或 DOM 文本：`web_scan`。
 2. 想执行普通用户动作：`browser_state` + `browser_action`。
 3. 想导航：`web_execute_js` 执行 `location.href='...'`，或在已有页面中点链接。
-4. 想执行复杂 JS / CDP / 上传 / 截图 / iframe：读 `tmwebdriver_sop`，用 `web_execute_js`。
+4. 想执行复杂 JS / CDP / 上传 / 截图 / 跨域 iframe：读 `tmwebdriver_sop`，用 `web_execute_js`。
 5. 新能力失败两次以上，不要原地反复试：切换到 `tmwebdriver_sop` 的低层调试路径。
 
 ## 禁止/反模式

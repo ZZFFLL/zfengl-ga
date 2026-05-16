@@ -7,11 +7,12 @@
 ## 测试目标
 
 - 验证 GA 能否用 `browser_state` 获取真实 Chrome 当前页面的可交互元素索引。
-- 验证 GA 能否正确编排 `browser_action` 的 7 类动作：`click`、`input`、`select`、`keys`、`wait_index`、`wait_text`、`wait_selector`。
+- 验证 GA 能否正确编排 `browser_action` 的动作：`click`、`input`、`select`、`keys`、`wait_index`、`wait_text`、`wait_selector`、`wait_dom_stable`、`wait_not_busy`、`wait_enabled`、`wait_route`。
+- 验证 GA 能否使用 `verify`、`verify_text`、`verify_value`、`verify_selector` 做动作后的结果验证。
 - 验证 GA 是否理解 state 生命周期：`click` / `input` / `select` / `keys` 成功后旧 index 作废。
 - 验证 GA 是否会处理失败结果中的 `stage`、`error`、`hint`、`suggested_args`。
 - 验证 GA 是否能处理动态 DOM、弹层、自定义组件、隐藏/只读/禁用控件等非表面场景。
-- 验证 GA 是否不会把新工具误用成通用 CDP / JS / 截图 / 文件上传 / iframe 工具。
+- 验证 GA 是否不会把新工具误用成通用 CDP / JS / 截图 / 文件上传 / 跨域 iframe 工具。
 
 ## 测试原则
 
@@ -61,6 +62,7 @@
       <section aria-label="basic controls">
         <button id="basic-click">Basic Click</button>
         <button id="disabled-click" disabled>Disabled Button</button>
+        <button id="enable-disabled">Enable Disabled Button</button>
         <button id="open-modal">Open Modal</button>
         <input id="search-input" name="q" placeholder="Search keyword" value="">
         <input id="readonly-input" value="locked" readonly>
@@ -94,6 +96,10 @@
         </div>
       </section>
 
+      <section aria-label="same origin iframe controls" style="margin-top: 18px;">
+        <iframe id="same-origin-frame" title="Same Origin Frame" srcdoc="<button id='frame-button'>Frame Button</button><input id='frame-input' placeholder='Frame input'><p id='frame-status'>frame-ready</p>"></iframe>
+      </section>
+
       <section id="modal" hidden role="dialog" aria-label="Test Modal" style="position: fixed; left: 40px; top: 40px; background: white; border: 2px solid #333; padding: 16px; box-shadow: 0 4px 12px #999;">
         <p>Modal Content</p>
         <button id="close-modal">Close Modal</button>
@@ -106,6 +112,10 @@
 
   $("basic-click").addEventListener("click", () => {
     status.textContent = "clicked:basic";
+  });
+  $("enable-disabled").addEventListener("click", () => {
+    $("disabled-click").disabled = false;
+    status.textContent = "disabled enabled";
   });
   $("role-button").addEventListener("click", () => {
     status.textContent = "clicked:role-button";
@@ -152,6 +162,16 @@
     status.textContent = "custom:two";
     $("custom-menu").hidden = true;
   });
+  const installFrameHandlers = () => {
+    const frameDoc = $("same-origin-frame").contentDocument;
+    if (!frameDoc || frameDoc.__gaFrameHandlersInstalled) return;
+    frameDoc.__gaFrameHandlersInstalled = true;
+    frameDoc.getElementById("frame-button").addEventListener("click", () => {
+      frameDoc.getElementById("frame-status").textContent = "frame-clicked";
+    });
+  };
+  $("same-origin-frame").addEventListener("load", installFrameHandlers);
+  setTimeout(installFrameHandlers, 0);
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !$("modal").hidden) {
       $("modal").hidden = true;
@@ -197,6 +217,7 @@
 | TC-16 ✅ | 原生 select | 重新 `browser_state` 找到 `native-select`，执行 `browser_action(select, index, value="beta")`，再 `wait_text("selected:beta")` | select 返回 `status=success`，result 为选中的 option value。 |
 | TC-17 ✅ | wait_selector | 在 TC-13 后执行 `browser_action(wait_selector, selector="#search-result")` | 返回 `status=success`，`result=selector_found`。 |
 | TC-18 ✅ | 搜索结果二次点击 | TC-17 后重新 `browser_state`，找到 `Search Result`，执行 click，再 `wait_text("clicked:search-result")` | 验证动态出现元素需要重新 state 后再按 index 操作。 |
+| TC-19 | input + field_value 验证 | 重新 `browser_state` 找到 `Search keyword`，执行 `browser_action(input, index, text="verifycase", verify="field_value", verify_value="verifycase")` | 返回 `status=success`；若页面未接受实际值，应返回 `stage=verify_failed`，不能把输入尝试误判为成功。 |
 
 ## P1 state 生命周期和错误恢复
 
@@ -217,6 +238,11 @@
 | TC-31 ✅ | wait_index detached fallback | `browser_state` 找到 `Detachable Wait Target` 并记住 index；用 `web_execute_js` 立即执行 `document.getElementById("wait-detach-target").outerHTML = "<button id='wait-detach-target'>Detachable Wait Target</button>";`；再执行 `wait_index(index, timeout=3)` | 原节点 detached 后，新节点 selector hint + tag/text 匹配，应返回 `element_visible`。 |
 | TC-32 ✅ | wait_index hidden attached 不 fallback | `browser_state` 找到 `Hidden Wait Target` 并记住 index；用 `web_execute_js` 执行 `const old=document.getElementById("wait-hidden-target"); old.style.display="none"; const clone=document.createElement("button"); clone.id="wait-hidden-target"; clone.textContent="Hidden Wait Target"; old.after(clone);`；再执行 `wait_index(index, timeout=2)` | 应超时，不应跳到 clone；这是当前实现为避免误匹配的安全边界。 |
 | TC-33 ✅ | 多同名文本元素风险 | `browser_state` 查看两个 `Same Text` 按钮 | 应记录存在同文本候选。不要用文本猜 index；必须按具体 index 和上下文判断。 |
+| TC-34 | wait_enabled | `browser_state` 找到 `Disabled Button` 记 index；另用 `browser_state` 找 `Enable Disabled Button` click；重新 state 后对 `Disabled Button` 执行 `wait_enabled(index, timeout=3)` | enabled 后返回 `status=success`；如果复用旧 index，应先看到 `state_missing` 并重新 state。 |
+| TC-35 | wait_dom_stable | 点击 `Create Delayed Result` 后执行 `wait_dom_stable(timeout=3)`，再 `browser_state` | 返回 `status=success` 或有界 timeout；不能无限等待，也不能把 timeout 当业务成功。 |
+| TC-36 | wait_not_busy | 用 `web_execute_js` 临时插入 `.busy` 后 500ms 移除，再执行 `wait_not_busy(selector=".busy", timeout=3)` | busy selector 消失后返回 `status=success`；若 selector 不消失应 timeout。 |
+| TC-37 | wait_route | 在本地 fixture URL 上用 hash 或 query 触发路由变化，执行 `wait_route(value="ga-browser-route", timeout=3)` | URL/route 命中后返回成功；它只验证路由字符串，不代表数据加载完成。 |
+| TC-38 | 同源 iframe 基础索引和操作 | 重新 `browser_state` 找 `Frame Button` 或 `Frame input`，确认元素带 `frame_path` / `frame_depth`；对 frame input 执行 `input(..., verify="field_value", verify_value="frame text")`，或 click `Frame Button` 后 `wait_text("frame-clicked")` | 同源 iframe 内 indexed 元素可被操作；不要把该结果推广到跨域 iframe。 |
 
 ## P1 边界失败用例
 
@@ -264,7 +290,7 @@
 | 文件上传 | 新工具无 upload action，应走 `tmwebdriver_sop` / JS / DataTransfer。 |
 | 截图、验证码视觉识别 | 新工具无截图能力。 |
 | 网络抓包、Cookie 管理、Tab/CDP 管理 | 新工具没有对应 action。 |
-| 跨域 iframe、closed Shadow DOM | 新工具没有穿透能力。 |
+| 跨域 iframe、closed Shadow DOM | 新工具没有穿透能力；同源 iframe 只按 `browser_state` 已索引元素处理。 |
 | isTrusted=true 点击 | 当前 click 是 DOM `el.click()`，不能伪装真实用户事件。 |
 | 任意 selector click/input | selector 只用于 `wait_selector`，以及 `wait_index` 内部受限 fallback。 |
 | 大规模内容抽取 | `browser_state` 只索引有限交互元素，不是全文爬取工具。 |
@@ -278,7 +304,7 @@
 | mutation 后续操作 | mutating action 成功后重新 `browser_state` | 连续用旧 index 点多个元素 |
 | 错误处理 | 读取 `stage`、`error`、`hint`、`suggested_args` 后调整 | 只看失败文本，重复同样调用 |
 | 复杂组件 | 先 click 展开，再 state 找可点击项；失败两次切旧工具 | 对自定义组件反复 `select` |
-| 边界判断 | 把文件上传/截图/CDP/iframe 明确切给旧工具 | 把新工具描述成万能浏览器自动化 |
+| 边界判断 | 把文件上传/截图/CDP/跨域 iframe 明确切给旧工具 | 把新工具描述成万能浏览器自动化 |
 
 ## 最终测试结论模板
 
@@ -309,6 +335,6 @@ Chrome 状态：用户真实 Chrome (tmwd_user_chrome backend)
 ## 结论
 
 - 是否建议 GA 默认优先使用新工具：**是**，P0/P1覆盖率高，可处理多数常规交互
-- 必须切回 `tmwebdriver_sop` 的场景：iframe内元素操作、日期控件、文件上传
-- 需要后续改进的工具链问题：AntD/MUI等自定义Select需要click+state替代；iframe穿透需要明确fallback策略
+- 必须切回 `tmwebdriver_sop` 的场景：跨域 iframe 内元素操作、日期控件、文件上传
+- 需要后续改进的工具链问题：AntD/MUI等自定义Select需要click+state替代；跨域 iframe 需要明确fallback策略
 ```

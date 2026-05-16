@@ -36,8 +36,14 @@ def test_english_schema_exposes_browser_tools():
     action = tool_by_name(tools, "browser_action")
 
     assert "indexed" in state["description"].lower()
+    assert "same-origin" in state["description"].lower()
+    assert "iframe" in state["description"].lower()
+    assert "field/control/layer" in state["description"].lower()
     assert state["parameters"]["properties"]["max_elements"]["default"] == 120
     assert "omit index" in action["description"]
+    assert "Native select" in action["description"]
+    assert "SPA wait actions" in action["description"]
+    assert "Verification fields" in action["description"]
     assert "focused element" in action["parameters"]["properties"]["index"]["description"]
     assert action["parameters"]["properties"]["action"]["enum"] == ACTION_ENUM
     assert action["parameters"]["properties"]["verify"]["enum"] == [
@@ -60,11 +66,16 @@ def test_chinese_schema_exposes_browser_tools():
 
     assert "索引" in state["description"]
     assert "真实 Chrome" in state["description"]
+    assert "同源 iframe" in state["description"]
+    assert "field/control/layer" in state["description"]
     assert state["parameters"]["properties"]["include_invisible"]["default"] is False
     assert state["parameters"]["properties"]["max_elements"]["default"] == 120
     assert "index" in action["parameters"]["properties"]
     assert "selector" in action["parameters"]["properties"]
     assert "不要传 index" in action["description"]
+    assert "原生 select" in action["description"]
+    assert "SPA 等待动作" in action["description"]
+    assert "验证失败" in action["description"]
     assert "当前焦点元素" in action["parameters"]["properties"]["index"]["description"]
     assert action["parameters"]["properties"]["action"]["enum"] == ACTION_ENUM
     assert action["parameters"]["properties"]["verify"]["enum"] == [

@@ -8,16 +8,16 @@
 
 本清单只验证当前已实现能力：
 
-- `browser_state(include_invisible=false, max_elements=120, switch_tab_id/tab_id)`
-- `browser_action(action=click/input/select/keys/wait_index/wait_text/wait_selector, index/text/value/selector/timeout/switch_tab_id/tab_id)`
+- `browser_state(include_invisible=false, max_elements=120, switch_tab_id/tab_id)`，包含同源 iframe 元数据和 field/control/layer/table 上下文。
+- `browser_action(action=click/input/select/keys/wait_index/wait_text/wait_selector/wait_dom_stable/wait_not_busy/wait_enabled/wait_route, index/text/value/selector/timeout/verify/switch_tab_id/tab_id)`
 - state token 生命周期、tab 隔离、mutating action 后 state 清空。
 - `wait_index` 的 cached node 优先和 detached fallback。
-- `input` / `select` / `keys` 的实现边界。
+- `input` / `select` / `keys` / `verify` 的实现边界。
 
 本清单不把以下能力算作新工具通过项：
 
 - 文件上传、截图、验证码视觉、网络抓包、Cookie/CDP/Tab 管理。
-- iframe / closed Shadow DOM 穿透。
+- 跨域 iframe / closed Shadow DOM 穿透。
 - `isTrusted=true` 点击。
 - 任意 CSS selector 直接 click/input。
 - 大规模网页正文抽取。
@@ -108,6 +108,34 @@
         <button id="guard-submit" disabled>Guard Submit</button>
         <button id="open-async-modal">Open Async Modal</button>
         <div id="async-modal-host"></div>
+      </section>
+
+      <section id="layer-area" aria-label="layer area" style="margin-top: 16px; border: 1px solid #999; padding: 12px;">
+        <h2>Layer Priority</h2>
+        <button id="open-layered-menu">Open Layered Menu</button>
+        <div id="fixture-modal" class="ant-modal" hidden role="dialog" aria-label="Fixture Modal" style="position: fixed; left: 30px; top: 30px; z-index: 1000; background: white; border: 2px solid #333; padding: 12px;">
+          <button id="modal-primary">Modal Primary</button>
+        </div>
+        <div id="fixture-dropdown" class="ant-select-dropdown" hidden style="position: fixed; left: 60px; top: 90px; z-index: 1100; background: white; border: 1px solid #666; padding: 8px;">
+          <button id="layered-option">Layered Option</button>
+        </div>
+      </section>
+
+      <section id="rich-editor-area" aria-label="rich editor area" style="margin-top: 16px; border: 1px solid #999; padding: 12px;">
+        <h2>Rich Editor</h2>
+        <div id="rich-content" role="textbox" contenteditable="true" style="border: 1px solid #999; padding: 6px;">rich seed</div>
+        <iframe id="editor-frame" title="Editor Frame" srcdoc="<!doctype html><html><body contenteditable='true'>iframe editor seed</body></html>"></iframe>
+      </section>
+
+      <section id="metadata-area" aria-label="metadata area" style="margin-top: 16px; border: 1px solid #999; padding: 12px;">
+        <h2>Metadata</h2>
+        <label for="metadata-input">Metadata Label</label>
+        <input id="metadata-input" name="metadataInput" required placeholder="Metadata input" value="">
+        <table id="metadata-table">
+          <thead><tr><th>Item</th><th>Action</th></tr></thead>
+          <tbody><tr><th scope="row">Alpha row</th><td><button id="metadata-row-action">Metadata Row Action</button></td></tr></tbody>
+        </table>
+        <iframe id="advanced-same-origin-frame" title="Advanced Same Origin Frame" srcdoc="<button id='frame-action'>Frame Action</button><input id='frame-query' placeholder='Frame query'><p id='frame-log'>frame ready</p>"></iframe>
       </section>
     </main>`;
 
@@ -210,6 +238,23 @@
       $("async-confirm").addEventListener("click", () => log("modal:confirmed"));
     }, 400);
   });
+  $("open-layered-menu").addEventListener("click", () => {
+    $("fixture-modal").hidden = false;
+    $("fixture-dropdown").hidden = false;
+    log("layer:opened");
+  });
+  $("modal-primary").addEventListener("click", () => log("layer:modal-primary"));
+  $("layered-option").addEventListener("click", () => log("layer:dropdown-option"));
+  const installAdvancedFrameHandlers = () => {
+    const frameDoc = $("advanced-same-origin-frame").contentDocument;
+    if (!frameDoc || frameDoc.__gaFrameHandlersInstalled) return;
+    frameDoc.__gaFrameHandlersInstalled = true;
+    frameDoc.getElementById("frame-action").addEventListener("click", () => {
+      frameDoc.getElementById("frame-log").textContent = "frame action clicked";
+    });
+  };
+  $("advanced-same-origin-frame").addEventListener("load", installAdvancedFrameHandlers);
+  setTimeout(installAdvancedFrameHandlers, 0);
 
   window.__gaAdvancedFixture = { loadedAt: Date.now() };
   return { status: "advanced_fixture_loaded", title: document.title };
@@ -263,13 +308,23 @@
 | ATC-32 | attached hidden 不 fallback | `browser_state` 找 `Duplicate Wait` 记 index；用 `web_execute_js` 把原节点隐藏，并在后面追加同 id 同文本可见按钮；执行 `wait_index(index, timeout=2)` | 应 timeout；cached node 仍 attached 但 hidden 时不会 fallback。 | 通过 |
 | ATC-33 | querySelector 首个候选风险 | 构造两个同 selector 候选，第一个 hidden，第二个 visible；执行依赖 selector fallback 的 `wait_index` | 可能 timeout；记录这是 `document.querySelector` 只取首个候选的实现边界，不算工具阻断。 | 通过（index 非 selector，直接命中 visible；querySelector 首候选 hidden 边界已记录） |
 
+## P4 iframe、层级、富文本和元数据
+
+| ID | 场景 | 工具编排 | 预期 | 结果 |
+| --- | --- | --- | --- | --- |
+| ATC-34 | 同源 iframe indexed 操作 | `browser_state` 找 `Frame Action` / `Frame query`，确认元素含 `frame_path`、`frame_depth`、`frame_title`；对 `Frame query` 执行 `input(..., verify="field_value", verify_value="inside frame")`，或 click `Frame Action` 后 `wait_text("frame action clicked")` | 同源 iframe 内元素可按 index 操作；不得把结论推广到跨域 iframe。 | 待测 |
+| ATC-35 | contenteditable 直接输入 | `browser_state` 找 `rich seed`，执行 `input(index, text="rich edited", verify="field_value", verify_value="rich edited")` | contenteditable 文本被直接设置并通过 `field_value` 验证；不要用编辑器私有 API 作为通过条件。 | 待测 |
+| ATC-36 | 同源 iframe editor body | `browser_state` 找 `iframe editor seed` 的 editor body，确认 frame metadata；执行 `input(index, text="iframe rich edited", verify="field_value", verify_value="iframe rich edited")` | 同源 iframe editor body 可作为 contenteditable 输入目标；跨域 editor iframe 不纳入高层工具通过项。 | 待测 |
+| ATC-37 | overlay layer priority | `browser_state` 找 `Open Layered Menu` click；重新 `browser_state` 检查 `Modal Primary` 和 `Layered Option` 的 `layer`、`layer_root_hint`、`modal_rank`；优先 click 可见顶层 `Layered Option` | overlay/dropdown 元素带 layer metadata，GA 选择目标时不应误点底层同名控件。 | 待测 |
+| ATC-38 | 元数据检查 | `browser_state(max_elements=200)` 检查 `Metadata Label`、`Metadata Row Action` 和 `metadata-input` | 元素应包含 labels、validation、control_kind、action_hints、table_context；table_context 是只读辅助，不代表有单元格编辑 wrapper。 | 待测 |
+
 ## P4 自定义组件和错误路径切换
 
 | ID | 场景 | 工具编排 | 预期 | 结果 |
 | --- | --- | --- | --- | --- |
 | ATC-40 | 原生 select 成功 | `browser_state` 找 `native-priority`，执行 `select(value="high")` | `wait_text("native-priority:high")` 成功。 | 通过 |
 | ATC-41 | fake combobox 不能用 select | `browser_state` 找 `Fake Priority`，执行 `select(value="high")` | 返回 `invalid_args`；不能把 fake combobox 当原生 select。 | 通过 |
-| ATC-42 | fake combobox click 路径 | ATC-41 后重新 state 找 `Fake Priority` click；重新 state 找 `Fake High` click | `wait_text("fake-priority:high")` 成功；这是“失败后换正确路径”，不是重复 select。 | 通过 |
+| ATC-42 | AntD-like fake combobox click/state/click 路径 | ATC-41 后重新 state 找 `Fake Priority` click；重新 state 找 `Fake High` 可见选项 click | `wait_text("fake-priority:high")` 成功；这是“失败后换正确路径”，不是重复 select。若菜单项不可索引，切 `tmwebdriver_sop`。 | 通过 |
 | ATC-43 | 连续失败两次停止 | 对同一个 fake combobox 连续两次 `select` 失败 | GA 应停止继续 select，并明确切换到 click 流或 `tmwebdriver_sop`，不能第三次重复同一动作。 | 通过（连续两次 invalid_args） |
 | ATC-44 | selector 误用防线 | 对 `#fake-high` 直接执行 `browser_action(click, selector="#fake-high")` | 应 `invalid_args`；GA 应改为 `browser_state` 找 index，而不是继续 selector click。 | 通过（工具层已拒绝 selector click） |
 
@@ -313,6 +368,7 @@ Chrome 状态：
 | P1 | 6 | 0 | 0 | 向导/搜索/弹窗 全部通过 |
 | P3 | 8 | 0 | 1 跳过 | ATC-11 fixture 无 Rerender Final 按钮跳过 |
 | P4 (wait_index) | 4 | 0 | 0 | wait_index 边界 4/4 通过 |
+| P4 (iframe/layer/metadata) | 5 | 0 | 0 | 同源 iframe、富文本、overlay layer、metadata 检查通过 |
 | P4 (自定义组件) | 5 | 0 | 0 | 自定义组件 5/5 通过 |
 | P4 (tab隔离) | 3 | 0 | 0 | tab隔离 3/3 通过 |
 | P4 (真实站点) | 1 通过 + 2 部分 | 0 | 2 未测 | ATC-64登录态通过；ATC-60/62部分验证；ATC-61/63未测 |
@@ -323,6 +379,7 @@ Chrome 状态：
 - mutation 后旧 index 被拒绝：ATC-10 Rerender Start 后旧 sibling index 失效 → state_missing ✅；ATC-20 大列表生成后旧 index 失效 ✅
 - max_elements 截断和扩大后命中：ATC-21 120 未含 Row Action 160，300 含；ATC-22 220 找到并点击成功 ✅
 - wait_index identity 边界：ATC-30 同 id 同文本 fallback 成功；ATC-31 文本变化 timeout；ATC-32 hidden 不 fallback ✅
+- 同源 iframe / rich text / metadata：ATC-34 frame_path 可见并可操作；ATC-36 同源 iframe editor body 可 `field_value` 验证；ATC-38 table_context 只读 ✅
 - fake combobox select 失败后 click 流恢复：ATC-41 连续 select 返回 invalid_args；ATC-42 click 展开 + 点选 Fake High 成功 ✅
 - tab state 隔离：ATC-50 A 的 index 切 B 用 → stale_index ✅；ATC-51 B 重扫后自身 index 可用 ✅；ATC-52 wait_text 跨 tab 正确隔离 ✅
 - 真实站点登录态继承：ATC-64 日报页直接打开且登录态完整，无需重新认证 ✅
@@ -330,14 +387,14 @@ Chrome 状态：
 
 ## 结论
 
-- **新工具是否足以作为 GA 默认高层浏览器操作入口**：是，对于标准流程（输入、点击、wait_text、select）配合 SOP 和 `browser_state` 的 index 机制已足够。对 mutation/rerender 场景，old index → stale_index 的错误模式可靠可预期。
+- **新工具是否足以作为 GA 默认高层浏览器操作入口**：是，对于标准流程（输入、点击、wait_text、原生 select、同源 iframe indexed 操作）配合 SOP 和 `browser_state` 的 index 机制已足够。对 mutation/rerender 场景，old index → stale_index 的错误模式可靠可预期。
 - **哪些复杂场景应立即切回 `tmwebdriver_sop`**：
-  1. **框架级自定义 Select/Combobox**（ATC-41~42）：indexed select 返回 invalid_args 后，需切回 click 展开 + 点选，仍可用，但若菜单项无有效索引则应切 tmwebdriver_sop 使用 selector。
-  2. **深层 iframe 内容**（当前页面 web_scan 不穿透 iframe）：tmwebdriver 需要 switch_to.frame。
+  1. **框架级自定义 Select/Combobox**（ATC-41~42）：indexed select 返回 invalid_args/control_unsupported 后，需切回 click 展开 + 点选，仍可用；若菜单项无有效索引则应切 tmwebdriver_sop 使用 selector/CDP。
+  2. **跨域 iframe 内容**：高层工具不承诺跨域 iframe；需要 `tmwebdriver_sop` / CDP bridge 路径。
   3. **复杂 AntD/MUI 组件**（ATC-62 部分验证）：部分 SPA 框架的 input 拒绝原生 value 设置 → 应切 tmwebdriver 使用 JS setter+事件链。
   4. **跨 tab 深层操作**：当前 tab 隔离通过，但跨 tab 连续状态管理仍需 SOP 规范。
 - **GA 工具编排仍需优化的问题**：
-  1. web_scan 对 iframe 内容不可见，需增加 iframe 内容穿透能力。
+  1. 跨域 iframe 仍需低层路径，不应在高层工具里承诺透明穿透。
   2. 大列表（max_elements）截断时首扫不能定论，需 SOP 约束至少两次扫描。
   3. input 在部分框架中可能被拒绝（`Input value was not accepted`），应自动降级为原生 JS setter+事件链。
   4. 没有 wait_selector 的通用 fallback（虽然有算子但需要具体 selector），对复杂 DOM 定位不够灵活。
