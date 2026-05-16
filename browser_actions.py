@@ -6,8 +6,20 @@ from typing import Any
 from browser_indexer import build_browser_state_script, normalize_state_result
 
 
-SUPPORTED_ACTIONS = {"click", "input", "select", "keys", "wait_index", "wait_text", "wait_selector"}
-INDEX_REQUIRED_ACTIONS = {"click", "input", "select", "wait_index"}
+SUPPORTED_ACTIONS = {
+    "click",
+    "input",
+    "select",
+    "keys",
+    "wait_index",
+    "wait_text",
+    "wait_selector",
+    "wait_dom_stable",
+    "wait_not_busy",
+    "wait_enabled",
+    "wait_route",
+}
+INDEX_REQUIRED_ACTIONS = {"click", "input", "select", "wait_index", "wait_enabled"}
 STATE_MUTATING_ACTIONS = {"click", "input", "select", "keys"}
 KEYS_AFTER_INPUT_HINT = (
     "For keys after a successful input, retry browser_action without index to use the focused element."
@@ -190,6 +202,7 @@ def build_browser_action_script(
       return {{ error: fail("stale_index", "Element index is stale. Run browser_state again.") }};
     }}
     if (!elementDocumentContains(el)) {{
+      if (allowDetached === "keep") return {{ el }};
       if (allowDetached) return {{ el: null }};
       return {{ error: fail("stale_index", "Element index is stale. Run browser_state again.") }};
     }}
@@ -434,6 +447,44 @@ def build_browser_action_script(
     return "";
   }}
 
+  function boundedDomSignature() {{
+    const parts = [];
+    for (const doc of readableDocuments(document)) {{
+      let elements = [];
+      try {{
+        elements = Array.from(doc.querySelectorAll("*")).slice(0, 300);
+      }} catch (e) {{
+        elements = [];
+      }}
+      const bodyText = documentReadableText(doc).trim().replace(/\\s+/g, " ").slice(0, 500);
+      parts.push(`body:${{bodyText.length}}:${{bodyText}}`);
+      parts.push(`count:${{elements.length}}`);
+      for (const element of elements) {{
+        const id = element.id || "";
+        const className = typeof element.className === "string" ? element.className : "";
+        const text = (element.innerText || element.textContent || "").trim().replace(/\\s+/g, " ").slice(0, 40);
+        parts.push(`${{tagOf(element)}}#${{id}}.${{className}}:${{text}}`);
+      }}
+    }}
+    return parts.join("|").slice(0, 20000);
+  }}
+
+  function visibleBusyElements(selector) {{
+    const matches = [];
+    for (const doc of readableDocuments(document)) {{
+      let elements = [];
+      try {{
+        elements = Array.from(doc.querySelectorAll(selector));
+      }} catch (e) {{
+        return {{ error: fail("invalid_args", "Busy selector is invalid.") }};
+      }}
+      for (const element of elements) {{
+        if (visible(element)) matches.push(element);
+      }}
+    }}
+    return {{ elements: matches }};
+  }}
+
   try {{
     if (request.action === "wait_text") {{
       if (!request.text) return fail("invalid_args", "text is required for wait_text.");
@@ -457,9 +508,57 @@ def build_browser_action_script(
       return {{ status: "success", action: "wait_selector", result: "selector_found" }};
     }}
 
+    if (request.action === "wait_dom_stable") {{
+      let lastSignature = null;
+      let stableTicks = 0;
+      const waited = await waitFor(
+        () => {{
+          const signature = boundedDomSignature();
+          if (signature === lastSignature) {{
+            stableTicks += 1;
+          }} else {{
+            lastSignature = signature;
+            stableTicks = 0;
+          }}
+          return stableTicks >= 3 ? true : null;
+        }},
+        "dom_unstable",
+        "Timed out waiting for DOM to become stable."
+      );
+      if (waited && waited.error) return waited.error;
+      return {{ status: "success", action: "wait_dom_stable", result: "dom_stable" }};
+    }}
+
+    if (request.action === "wait_not_busy") {{
+      const busySelector = request.selector || "[aria-busy='true'], [data-loading='true'], .loading, .spinner, .ant-spin-spinning, .ant-spin-dot, .el-loading-mask";
+      const waited = await waitFor(
+        () => {{
+          const visibleBusy = visibleBusyElements(busySelector);
+          if (visibleBusy.error) return visibleBusy;
+          return visibleBusy.elements.length === 0 ? true : null;
+        }},
+        "timeout",
+        "Timed out waiting for loading indicators to disappear."
+      );
+      if (waited && waited.error) return waited.error;
+      return {{ status: "success", action: "wait_not_busy", result: "not_busy" }};
+    }}
+
+    if (request.action === "wait_route") {{
+      const expected = String(request.text || request.value || "");
+      if (!expected) return fail("invalid_args", "text or value is required for wait_route.");
+      const waited = await waitFor(
+        () => location.href.includes(expected) || location.pathname.includes(expected),
+        "timeout",
+        "Timed out waiting for route."
+      );
+      if (waited && waited.error) return waited.error;
+      return {{ status: "success", action: "wait_route", result: "route_matched" }};
+    }}
+
     let el = null;
     if (request.index !== null && request.index !== undefined) {{
-      const located = cachedElement(request.action === "wait_index" && Boolean(request.selector));
+      const located = cachedElement(request.action === "wait_enabled" ? "keep" : request.action === "wait_index" && Boolean(request.selector));
       if (located.error) return located.error;
       el = located.el;
     }}
@@ -488,6 +587,16 @@ def build_browser_action_script(
       if (waited && waited.error && waited.error.stage === "frame_unavailable") return waited.error;
       if (waited && waited.error) return waited.error;
       return {{ status: "success", action: "wait_index", index: request.index, result: "element_visible" }};
+    }}
+
+    if (request.action === "wait_enabled") {{
+      const waited = await waitFor(
+        () => ownerDocumentContains(el) && visible(el) && !blockedForAction(el, "input") ? el : null,
+        "timeout",
+        "Timed out waiting for element to become enabled."
+      );
+      if (waited && waited.error) return waited.error;
+      return {{ status: "success", action: "wait_enabled", index: request.index, result: "element_enabled" }};
     }}
 
     if (el) {{
@@ -675,6 +784,8 @@ class BrowserActionLayer:
             return failed_result(action, "invalid_args", "selector is required for wait_selector.")
         if action == "wait_text" and not text:
             return failed_result(action, "invalid_args", "text is required for wait_text.")
+        if action == "wait_route" and not (text or value):
+            return failed_result(action, "invalid_args", "text or value is required for wait_route.")
 
         unavailable = self._ensure_driver(driver)
         if unavailable:

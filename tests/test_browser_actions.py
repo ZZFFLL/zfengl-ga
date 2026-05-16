@@ -1,7 +1,7 @@
 import json
 import subprocess
 
-from browser_actions import BrowserActionLayer, build_browser_action_script
+from browser_actions import BrowserActionLayer, SUPPORTED_ACTIONS, build_browser_action_script
 
 
 NODE_ACTION_RUNTIME = r"""
@@ -355,6 +355,59 @@ def test_run_action_allows_wait_text_without_cached_state():
     assert '"text": "Ready"' in driver.calls[0]["script"]
 
 
+def test_supported_actions_includes_spa_waits():
+    assert {"wait_dom_stable", "wait_not_busy", "wait_enabled", "wait_route"} <= SUPPORTED_ACTIONS
+
+
+def test_run_action_allows_wait_dom_stable_without_cached_state():
+    layer = BrowserActionLayer()
+    driver = FakeDriver([{"data": {"status": "success", "action": "wait_dom_stable", "result": "dom_stable"}}])
+
+    result = layer.run_action(driver, action="wait_dom_stable", timeout=2)
+
+    assert result["status"] == "success"
+    assert result["tab_id"] == "7"
+    assert '"action": "wait_dom_stable"' in driver.calls[0]["script"]
+
+
+def test_run_action_allows_wait_not_busy_without_cached_state():
+    layer = BrowserActionLayer()
+    driver = FakeDriver([{"data": {"status": "success", "action": "wait_not_busy", "result": "not_busy"}}])
+
+    result = layer.run_action(driver, action="wait_not_busy", selector=".busy", timeout=2)
+
+    assert result["status"] == "success"
+    assert result["tab_id"] == "7"
+    assert '"selector": ".busy"' in driver.calls[0]["script"]
+
+
+def test_run_action_wait_route_without_cached_state_requires_text_or_value():
+    layer = BrowserActionLayer()
+    driver = FakeDriver([{"data": {"status": "success", "action": "wait_route", "result": "route_matched"}}])
+
+    missing = layer.run_action(driver, action="wait_route", timeout=2)
+    result = layer.run_action(driver, action="wait_route", value="/dashboard", timeout=2)
+
+    assert missing["status"] == "failed"
+    assert missing["stage"] == "invalid_args"
+    assert "text or value is required" in missing["error"]
+    assert result["status"] == "success"
+    assert result["tab_id"] == "7"
+    assert '"value": "/dashboard"' in driver.calls[0]["script"]
+
+
+def test_run_action_wait_enabled_requires_state_when_indexed():
+    layer = BrowserActionLayer()
+    driver = FakeDriver()
+
+    result = layer.run_action(driver, action="wait_enabled", index=1, timeout=2)
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "state_missing"
+    assert result["error"] == "Run browser_state before browser_action wait_enabled."
+    assert driver.calls == []
+
+
 def test_run_action_wait_index_uses_cached_selector_hint():
     layer = BrowserActionLayer()
     driver = FakeDriver(
@@ -491,6 +544,25 @@ def test_build_browser_action_script_contains_stale_index_check():
     assert "stale_index" in script
     assert "dom_event" in script
     assert '"action": "input"' in script
+
+
+def test_build_browser_action_script_contains_spa_wait_branches():
+    script = build_browser_action_script(
+        action="wait_dom_stable",
+        index=None,
+        text="/dashboard",
+        value=None,
+        timeout=4,
+        state_token=None,
+        selector=None,
+    )
+
+    assert "dom_unstable" in script
+    assert "busySelector" in script
+    assert "[aria-busy='true'], [data-loading='true'], .loading, .spinner, .ant-spin-spinning, .ant-spin-dot, .el-loading-mask" in script
+    assert "location.href" in script
+    assert "location.pathname" in script
+    assert 'request.action === "wait_enabled"' in script
 
 
 def test_build_browser_action_script_rejects_unsupported_keys():

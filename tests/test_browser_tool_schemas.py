@@ -14,6 +14,10 @@ ACTION_ENUM = [
     "wait_index",
     "wait_text",
     "wait_selector",
+    "wait_dom_stable",
+    "wait_not_busy",
+    "wait_enabled",
+    "wait_route",
 ]
 
 
