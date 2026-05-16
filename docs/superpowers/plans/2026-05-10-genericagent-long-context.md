@@ -18,12 +18,15 @@
 - Modify: `ga.py`
   - Add module-level constants for long-run thresholds.
   - Change Plan-mode max turns from `200` to `480`.
-  - Change working-memory direct history window from `30` to `60`.
-  - Change non-Plan `ask_user` pressure from turn `65` to `70`.
+  - Change normal working-memory direct history window to `80`.
+  - Add Plan working-memory direct history window of `120`.
+  - Change non-Plan `ask_user` pressure to turn `120`, then repeat every `60` turns.
   - Add non-Plan checkpoint reminder every `30` turns.
-  - Change Plan-mode `ask_user` pressure from turn `90` to `100`.
+  - Change non-Plan stall warning to every `10` turns.
+  - Change non-Plan global memory refresh to every `20` turns.
+  - Change Plan-mode `ask_user` pressure to turn `180`, then repeat every `90` turns.
   - Add Plan-mode checkpoint reminder every `30` turns.
-  - Preserve every-5-turn Plan file read behavior.
+  - Change Plan file read hint to every `10` turns starting at turn `10`.
 
 - Create: `tests/test_long_run_context.py`
   - Test normal-mode threshold prompt behavior.
@@ -70,15 +73,19 @@ class LongRunContextTests(unittest.TestCase):
             {},
         )
 
-    def test_normal_mode_long_run_ask_user_pressure_moves_to_turn_70(self):
+    def test_normal_mode_long_run_ask_user_pressure_starts_at_turn_120_then_repeats_every_60(self):
         handler = self.make_handler()
 
-        prompt_65 = self.callback_prompt(handler, 65)
         prompt_70 = self.callback_prompt(handler, 70)
+        prompt_120 = self.callback_prompt(handler, 120)
+        prompt_121 = self.callback_prompt(handler, 121)
+        prompt_180 = self.callback_prompt(handler, 180)
 
-        self.assertNotIn("必须总结情况进行ask_user", prompt_65)
-        self.assertIn("已连续执行第 70 轮", prompt_70)
-        self.assertIn("必须总结情况进行ask_user", prompt_70)
+        self.assertNotIn("必须总结情况进行ask_user", prompt_70)
+        self.assertIn("已连续执行第 120 轮", prompt_120)
+        self.assertIn("必须总结情况进行ask_user", prompt_120)
+        self.assertNotIn("必须总结情况进行ask_user", prompt_121)
+        self.assertIn("已连续执行第 180 轮", prompt_180)
 
     def test_normal_mode_max_turns_is_240(self):
         self.assertEqual(agentmain.NORMAL_RUNNER_MAX_TURNS, 240)
@@ -92,17 +99,21 @@ class LongRunContextTests(unittest.TestCase):
         self.assertIn("用户补充的关键约束", prompt)
         self.assertIn("已验证结论", prompt)
 
-    def test_plan_mode_max_turns_and_ask_user_pressure_move_up(self):
+    def test_plan_mode_max_turns_and_ask_user_pressure_starts_at_180_then_repeats_every_90(self):
         handler = self.make_handler()
         handler.enter_plan_mode("./temp/plan.md")
 
-        prompt_90 = self.callback_prompt(handler, 90, plan=True)
         prompt_100 = self.callback_prompt(handler, 100, plan=True)
+        prompt_180 = self.callback_prompt(handler, 180, plan=True)
+        prompt_181 = self.callback_prompt(handler, 181, plan=True)
+        prompt_270 = self.callback_prompt(handler, 270, plan=True)
 
         self.assertEqual(handler.max_turns, 480)
-        self.assertNotIn("Plan模式已运行 90 轮，已达上限", prompt_90)
-        self.assertIn("Plan模式已运行 100 轮", prompt_100)
-        self.assertIn("必须 ask_user 汇报进度并确认是否继续", prompt_100)
+        self.assertNotIn("必须 ask_user 汇报进度并确认是否继续", prompt_100)
+        self.assertIn("Plan模式已运行 180 轮", prompt_180)
+        self.assertIn("必须 ask_user 汇报进度并确认是否继续", prompt_180)
+        self.assertNotIn("必须 ask_user 汇报进度并确认是否继续", prompt_181)
+        self.assertIn("Plan模式已运行 270 轮", prompt_270)
 
     def test_plan_mode_checkpoint_every_30_turns(self):
         handler = self.make_handler()
@@ -114,15 +125,28 @@ class LongRunContextTests(unittest.TestCase):
         self.assertIn("计划文件之外的用户关键约束", prompt)
         self.assertIn("已验证执行状态", prompt)
 
-    def test_working_memory_keeps_latest_60_lines_directly(self):
-        history = [f"[Agent] step {i}" for i in range(70)]
+    def test_normal_working_memory_keeps_latest_80_lines_directly(self):
+        history = [f"[Agent] step {i}" for i in range(90)]
         handler = GenericAgentHandler(SimpleNamespace(verbose=False, task_dir=None), history, "./temp")
         handler.current_turn = 1
 
         prompt = handler._get_anchor_prompt()
 
         self.assertIn("[Agent] step 10", prompt)
-        self.assertIn("[Agent] step 69", prompt)
+        self.assertIn("[Agent] step 89", prompt)
+        self.assertIn("<earlier_context>", prompt)
+        self.assertNotIn("[Agent] step 9\n[Agent] step 10", prompt)
+
+    def test_plan_working_memory_keeps_latest_120_lines_directly(self):
+        history = [f"[Agent] step {i}" for i in range(130)]
+        handler = GenericAgentHandler(SimpleNamespace(verbose=False, task_dir=None), history, "./temp")
+        handler.current_turn = 1
+        handler.working["in_plan_mode"] = "./temp/plan.md"
+
+        prompt = handler._get_anchor_prompt()
+
+        self.assertIn("[Agent] step 10", prompt)
+        self.assertIn("[Agent] step 129", prompt)
         self.assertIn("<earlier_context>", prompt)
         self.assertNotIn("[Agent] step 9\n[Agent] step 10", prompt)
 
@@ -165,12 +189,19 @@ gen = agent_runner_loop(self.llmclient, sys_prompt, raw_query,
 Add:
 
 ```python
-NORMAL_WORKING_MEMORY_WINDOW = 60
-NORMAL_LONG_RUN_ASK_USER_TURN = 70
+NORMAL_WORKING_MEMORY_WINDOW = 80
+PLAN_WORKING_MEMORY_WINDOW = 120
+NORMAL_LONG_RUN_ASK_USER_TURN = 120
+NORMAL_ASK_USER_REPEAT_EVERY = 60
 NORMAL_CHECKPOINT_EVERY = 30
+NORMAL_STALL_WARNING_EVERY = 10
+NORMAL_GLOBAL_MEMORY_EVERY = 20
 PLAN_MAX_TURNS = 480
-PLAN_LONG_RUN_ASK_USER_TURN = 100
+PLAN_LONG_RUN_ASK_USER_TURN = 180
+PLAN_ASK_USER_REPEAT_EVERY = 90
 PLAN_CHECKPOINT_EVERY = 30
+PLAN_HINT_START_TURN = 10
+PLAN_HINT_EVERY = 10
 ```
 
 - [ ] **Step 3: Update Plan-mode max turns**
@@ -192,7 +223,8 @@ h = self.history_info; W = 30
 to:
 
 ```python
-h = self.history_info; W = NORMAL_WORKING_MEMORY_WINDOW
+h = self.history_info
+W = PLAN_WORKING_MEMORY_WINDOW if self._in_plan_mode() else NORMAL_WORKING_MEMORY_WINDOW
 ```
 
 - [ ] **Step 5: Add checkpoint prompt helper**
@@ -227,11 +259,15 @@ elif turn % 10 == 0: next_prompt += get_global_memory()
 with:
 
 ```python
-if not _plan and turn % NORMAL_LONG_RUN_ASK_USER_TURN == 0:
+if (
+    not _plan
+    and turn >= NORMAL_LONG_RUN_ASK_USER_TURN
+    and (turn - NORMAL_LONG_RUN_ASK_USER_TURN) % NORMAL_ASK_USER_REPEAT_EVERY == 0
+):
     next_prompt += f"\n\n[DANGER] 已连续执行第 {turn} 轮。必须总结情况进行ask_user，不允许继续重试。"
-elif turn % 7 == 0:
+elif not _plan and turn % NORMAL_STALL_WARNING_EVERY == 0:
     next_prompt += f"\n\n[DANGER] 已连续执行第 {turn} 轮。禁止无效重试。若无有效进展，必须切换策略：1. 探测物理边界 2. 请求用户协助。如有需要，可调用 update_working_checkpoint 保存关键上下文。"
-elif turn % 10 == 0:
+elif not _plan and turn % NORMAL_GLOBAL_MEMORY_EVERY == 0:
     next_prompt += get_global_memory()
 if not _plan and turn % NORMAL_CHECKPOINT_EVERY == 0:
     next_prompt += self._checkpoint_prompt(plan=False)
@@ -242,7 +278,8 @@ if not _plan and turn % NORMAL_CHECKPOINT_EVERY == 0:
 Replace:
 
 ```python
-if _plan and turn >= 90: next_prompt += f"\n\n[DANGER] Plan模式已运行 {turn} 轮，已达上限。必须 ask_user 汇报进度并确认是否继续。"
+if _plan and turn >= PLAN_HINT_START_TURN and turn % PLAN_HINT_EVERY == 0:
+    next_prompt = f"[Plan Hint] 正在计划模式。必须 file_read({_plan}) 确认当前步骤，回复开头引用：📌 当前步骤：...\n\n" + next_prompt
 ```
 
 with:
@@ -250,7 +287,11 @@ with:
 ```python
 if _plan and turn % PLAN_CHECKPOINT_EVERY == 0:
     next_prompt += self._checkpoint_prompt(plan=True)
-if _plan and turn >= PLAN_LONG_RUN_ASK_USER_TURN:
+if (
+    _plan
+    and turn >= PLAN_LONG_RUN_ASK_USER_TURN
+    and (turn - PLAN_LONG_RUN_ASK_USER_TURN) % PLAN_ASK_USER_REPEAT_EVERY == 0
+):
     next_prompt += f"\n\n[DANGER] Plan模式已运行 {turn} 轮，已达上限。必须 ask_user 汇报进度并确认是否继续。"
 ```
 
@@ -318,13 +359,16 @@ Expected:
 Spec coverage:
 
 - Normal `max_turns=240`: Task 2 Step 1.
-- Normal `ask_user_at=70`: Task 2 Step 6, Task 1 test.
+- Normal `ask_user_at=120` and repeat every `60`: Task 2 Step 6, Task 1 test.
 - Normal `checkpoint_every=30`: Task 2 Step 6, Task 1 test.
+- Normal `stall_warning_every=10`: Task 2 Step 6.
+- Normal `global_memory_every=20`: Task 2 Step 6.
 - Plan `max_turns=480`: Task 2 Step 3, Task 1 test.
-- Plan `ask_user_at=100`: Task 2 Step 7, Task 1 test.
+- Plan `ask_user_at=180` and repeat every `90`: Task 2 Step 7, Task 1 test.
 - Plan `checkpoint_every=30`: Task 2 Step 7, Task 1 test.
-- Working Memory `60`: Task 2 Step 4, Task 1 test.
-- Preserve Plan every-5-turn file-read rule: no changes to that branch.
+- Normal Working Memory `80`: Task 2 Step 4, Task 1 test.
+- Plan Working Memory `120`: Task 2 Step 4, Task 1 test.
+- Plan file-read hint every `10` turns starting at turn `10`: Task 2 Step 7.
 - Do not touch LibreChat: no frontend adapter files are listed.
 
 Placeholder scan:

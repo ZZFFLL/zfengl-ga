@@ -2,7 +2,7 @@
 
 Date: 2026-05-10
 Branch: zfengl-ga-long
-Status: Draft for user review
+Status: Updated with 2026-05-16 threshold tuning
 
 ## Goal
 
@@ -15,12 +15,12 @@ The target use case is an Agent task that may require more than 100 tool/action 
 GenericAgent already has a layered runtime design:
 
 - `agent_loop.py` defines the low-level loop default as `max_turns=40`.
-- `agentmain.py` is the normal runtime entry and currently calls `agent_runner_loop(..., max_turns=140)`.
-- `ga.py` raises the handler limit to `200` when Plan mode starts.
-- Non-Plan mode currently warns at turn `65` that the Agent must summarize and call `ask_user`.
-- Plan mode currently warns at turn `90` that the Agent has reached its limit and must call `ask_user`.
-- Plan mode also keeps the existing rule that every 5 turns, the Agent must read the plan file and quote the current step.
-- `ga.py` injects `[WORKING MEMORY]` each turn and keeps the latest `30` history lines directly visible.
+- `agentmain.py` is the normal runtime entry and calls `agent_runner_loop(..., max_turns=240)`.
+- `ga.py` raises the handler limit to `480` when Plan mode starts.
+- Non-Plan mode starts `ask_user` pressure at turn `120`, then repeats every `60` turns.
+- Plan mode starts `ask_user` pressure at turn `180`, then repeats every `90` turns.
+- Plan mode reads the plan file every `10` turns starting at turn `10`.
+- `ga.py` injects `[WORKING MEMORY]` each turn and keeps the latest `80` normal-mode history lines or latest `120` Plan-mode history lines directly visible.
 - Older `history_info` lines are folded into `<earlier_context>` through the existing `_fold_earlier(...)` mechanism.
 
 This design should preserve that structure. The change is a proportional upward adjustment plus periodic checkpoint pressure, not a new context architecture.
@@ -31,9 +31,11 @@ Use a low-intrusion update to existing thresholds and prompts.
 
 ### Non-Plan Mode
 
-- Raise normal runtime `max_turns` from `140` to `240`.
-- Move the long-run `ask_user` pressure point from turn `65` to turn `70`.
+- Keep normal runtime `max_turns` at `240`.
+- Move the long-run `ask_user` pressure point to turn `120`, then repeat every `60` turns.
 - Add a periodic checkpoint reminder every `30` turns.
+- Use a normal-mode stall warning every `10` turns.
+- Refresh global memory every `20` turns.
 
 The checkpoint reminder should not stop execution by itself. It should tell the Agent to update `update_working_checkpoint` when useful, focusing on:
 
@@ -45,17 +47,18 @@ The checkpoint reminder should not stop execution by itself. It should tell the 
 
 ### Plan Mode
 
-- Raise Plan mode `max_turns` from `200` to `480`.
-- Move the Plan-mode `ask_user` pressure point from turn `90` to turn `100`.
+- Keep Plan mode `max_turns` at `480`.
+- Move the Plan-mode `ask_user` pressure point to turn `180`, then repeat every `90` turns.
 - Add a periodic checkpoint reminder every `30` turns.
-- Keep the existing Plan-mode every-5-turn plan-read rule unchanged.
+- Read the plan file every `10` turns starting at turn `10`.
 
 The Plan checkpoint should complement the plan file, not replace it. It should preserve the user's extra constraints and execution facts that may not be represented in the plan checklist.
 
 ### Working Memory Window
 
-- Raise the directly visible working-memory history window from `30` to `60`.
-- Keep `_fold_earlier(... parts[-150:])` unchanged in this pass.
+- Keep the directly visible normal working-memory history window at `80`.
+- Use a larger Plan working-memory history window of `120`.
+- Keep `_fold_earlier(... parts[-100:])` unchanged in this pass.
 
 This gives recent user corrections and Agent findings more room without allowing old low-signal history to dominate each prompt.
 
@@ -79,15 +82,15 @@ Do not change the global `context_win` default in `llmcore.py` in this pass.
 For normal long tasks:
 
 - The Agent can continue beyond the old 140-turn ceiling.
-- Around turn 70, the Agent is pushed to ask the user if progress is uncertain.
+- Around turn 120, the Agent is pushed to ask the user if progress is uncertain; after that, the pressure repeats every 60 turns.
 - Every 30 turns, the Agent is reminded to checkpoint durable task state.
 - Recent user details survive longer in direct working memory.
 
 For Plan-mode tasks:
 
 - The Agent can continue up to 480 turns.
-- It still rereads the plan every 5 turns.
-- Around turn 100, it is pushed to report progress and ask whether to continue.
+- It rereads the plan every 10 turns starting at turn 10.
+- Around turn 180, it is pushed to report progress and ask whether to continue; after that, the pressure repeats every 90 turns.
 - Every 30 turns, it is reminded to checkpoint user constraints and verified execution state.
 
 ## Files Expected To Change
@@ -115,12 +118,16 @@ Minimum verification after implementation:
 - Run existing relevant backend tests that cover `ask_user` and `update_working_checkpoint` display/projection if touched indirectly.
 - Manually inspect source to confirm:
   - normal mode uses `240`
-  - normal `ask_user` pressure is `70`
+  - normal `ask_user` pressure starts at `120` and repeats every `60`
   - normal checkpoint interval is `30`
+  - normal stall warning interval is `10`
+  - normal global memory refresh interval is `20`
   - Plan mode uses `480`
-  - Plan `ask_user` pressure is `100`
+  - Plan `ask_user` pressure starts at `180` and repeats every `90`
   - Plan checkpoint interval is `30`
-  - working-memory window is `60`
+  - Plan hint starts at `10` and repeats every `10`
+  - normal working-memory window is `80`
+  - Plan working-memory window is `120`
 
 ## Open Risks
 
