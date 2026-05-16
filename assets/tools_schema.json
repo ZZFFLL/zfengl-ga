@@ -69,6 +69,10 @@
       "text": {"type": "string", "description": "Text for input, keys, wait_text, or matching"},
       "value": {"type": "string", "description": "Value for select or input actions"},
       "selector": {"type": "string", "description": "CSS selector for wait_selector only"},
+      "verify": {"type": "string", "enum": ["field_value", "text", "selector", "element_text"], "description": "Verification type. Failed verification returns status failed with stage verify_failed."},
+      "verify_text": {"type": "string", "description": "Expected text for text or element_text verification"},
+      "verify_value": {"type": "string", "description": "Expected value for field_value verification"},
+      "verify_selector": {"type": "string", "description": "Expected selector for selector verification"},
       "timeout": {"type": "integer", "description": "Timeout in seconds for wait actions", "default": 10},
       "switch_tab_id": {"type": "string", "description": "[Optional] Tab ID to switch to before acting"}}}
   }},

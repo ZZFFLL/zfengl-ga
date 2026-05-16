@@ -36,6 +36,16 @@ def test_english_schema_exposes_browser_tools():
     assert "omit index" in action["description"]
     assert "focused element" in action["parameters"]["properties"]["index"]["description"]
     assert action["parameters"]["properties"]["action"]["enum"] == ACTION_ENUM
+    assert action["parameters"]["properties"]["verify"]["enum"] == [
+        "field_value",
+        "text",
+        "selector",
+        "element_text",
+    ]
+    assert "verify_failed" in action["parameters"]["properties"]["verify"]["description"]
+    assert "verify_text" in action["parameters"]["properties"]
+    assert "verify_value" in action["parameters"]["properties"]
+    assert "verify_selector" in action["parameters"]["properties"]
 
 
 def test_chinese_schema_exposes_browser_tools():
@@ -53,4 +63,14 @@ def test_chinese_schema_exposes_browser_tools():
     assert "不要传 index" in action["description"]
     assert "当前焦点元素" in action["parameters"]["properties"]["index"]["description"]
     assert action["parameters"]["properties"]["action"]["enum"] == ACTION_ENUM
+    assert action["parameters"]["properties"]["verify"]["enum"] == [
+        "field_value",
+        "text",
+        "selector",
+        "element_text",
+    ]
+    assert "verify_failed" in action["parameters"]["properties"]["verify"]["description"]
+    assert "verify_text" in action["parameters"]["properties"]
+    assert "verify_value" in action["parameters"]["properties"]
+    assert "verify_selector" in action["parameters"]["properties"]
     assert action["parameters"]["properties"]["timeout"]["default"] == 10

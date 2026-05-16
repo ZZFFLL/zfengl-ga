@@ -69,6 +69,10 @@
       "text": {"type": "string", "description": "用于输入、按键、等待文本或匹配的文本"},
       "value": {"type": "string", "description": "用于 select 或 input 动作的值"},
       "selector": {"type": "string", "description": "仅用于 wait_selector 的 CSS selector"},
+      "verify": {"type": "string", "enum": ["field_value", "text", "selector", "element_text"], "description": "验证类型。验证失败时返回 status failed，stage 为 verify_failed。"},
+      "verify_text": {"type": "string", "description": "text 或 element_text 验证的期望文本"},
+      "verify_value": {"type": "string", "description": "field_value 验证的期望值"},
+      "verify_selector": {"type": "string", "description": "selector 验证的期望选择器"},
       "timeout": {"type": "integer", "description": "等待动作的超时时间（秒）", "default": 10},
       "switch_tab_id": {"type": "string", "description": "可选的标签页 ID，执行动作前切换到该标签页"}}}
   }},
