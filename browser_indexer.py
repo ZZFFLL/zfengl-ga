@@ -60,8 +60,8 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
     return tag;
   }};
 
-  const isVisible = (element, rect) => {{
-    const style = window.getComputedStyle(element);
+  const isVisible = (element, rect, elementWindow) => {{
+    const style = elementWindow.getComputedStyle(element);
     return Boolean(
       rect.width &&
       rect.height &&
@@ -101,21 +101,51 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
   }};
 
   const elements = [];
-  for (const element of document.querySelectorAll(selector)) {{
+  const collectDocument = (doc, framePath, frameWindow) => {{
+    for (const element of doc.querySelectorAll(selector)) {{
+      if (elements.length >= maxElements) {{
+        break;
+      }}
+
+      const rect = element.getBoundingClientRect();
+      const visible = isVisible(element, rect, frameWindow);
+      if (!includeInvisible && !visible) {{
+        continue;
+      }}
+
+      elements.push({{ element, framePath, frameWindow }});
+    }}
+
     if (elements.length >= maxElements) {{
-      break;
+      return;
     }}
 
-    const rect = element.getBoundingClientRect();
-    const visible = isVisible(element, rect);
-    if (!includeInvisible && !visible) {{
-      continue;
+    const frames = doc.querySelectorAll("iframe, frame");
+    for (let frameIndex = 0; frameIndex < frames.length; frameIndex += 1) {{
+      if (elements.length >= maxElements) {{
+        break;
+      }}
+
+      const frame = frames[frameIndex];
+      try {{
+        const frameDocument = frame.contentDocument;
+        const childWindow = frame.contentWindow;
+        if (!frameDocument || !childWindow) {{
+          continue;
+        }}
+        collectDocument(frameDocument, framePath.concat(frameIndex), childWindow);
+      }} catch (error) {{
+        continue;
+      }}
     }}
+  }};
 
-    elements.push(element);
-  }}
+  collectDocument(document, [], window);
 
-  const snapshots = elements.map((element, index) => {{
+  const snapshots = elements.map((entry, index) => {{
+    const element = entry.element;
+    const frameWindow = entry.frameWindow || window;
+    const framePath = entry.framePath || [];
     const rect = element.getBoundingClientRect();
     const tag = element.tagName.toLowerCase();
     const type = element.getAttribute("type") || "";
@@ -129,7 +159,7 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
       type,
       text: boundedText(textOf(element)),
       value: boundedText(value),
-      visible: isVisible(element, rect),
+      visible: isVisible(element, rect, frameWindow),
       disabled: Boolean(element.disabled || element.getAttribute("aria-disabled") === "true"),
       bbox: {{
         x: rect.x,
@@ -138,13 +168,18 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
         height: rect.height,
       }},
       selector_hint: selectorHint(element),
+      frame_path: framePath,
+      frame_depth: framePath.length,
+      frame_url: frameWindow.location.href,
+      frame_title: element.ownerDocument.title,
     }};
   }});
 
   window.__GA_BROWSER_STATE_COUNTER__ = (window.__GA_BROWSER_STATE_COUNTER__ || 0) + 1;
   const randomPart = Math.random().toString(36).slice(2);
   const stateToken = `${{Date.now()}}:${{window.__GA_BROWSER_STATE_COUNTER__}}:${{randomPart}}:${{elements.length}}`;
-  window.__GA_BROWSER_ACTION_STATE__ = {{ token: stateToken, elements }};
+  const actionElements = elements.map(entry => entry.element);
+  window.__GA_BROWSER_ACTION_STATE__ = {{ token: stateToken, elements: actionElements }};
   return {{
     status: "success",
     backend: "tmwd_user_chrome",
@@ -205,6 +240,21 @@ def normalize_state_result(result):
         normalized.setdefault("disabled", False)
         normalized.setdefault("bbox", {})
         normalized.setdefault("selector_hint", "")
+        normalized.setdefault("frame_path", [])
+        normalized.setdefault("frame_depth", 0)
+        normalized.setdefault("frame_url", "")
+        normalized.setdefault("frame_title", "")
+        normalized.setdefault("labels", [])
+        normalized.setdefault("attributes", {})
+        normalized.setdefault("validation", {})
+        normalized.setdefault("stable_key", "")
+        normalized.setdefault("field_context", {})
+        normalized.setdefault("table_context", {})
+        normalized.setdefault("layer", "main")
+        normalized.setdefault("layer_root_hint", "")
+        normalized.setdefault("modal_rank", 0)
+        normalized.setdefault("control_kind", "")
+        normalized.setdefault("action_hints", [])
 
         if str(normalized.get("type", "")).lower() == "password" and normalized.get("value"):
             normalized["value"] = "[REDACTED]"

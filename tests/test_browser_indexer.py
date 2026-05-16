@@ -47,9 +47,10 @@ def test_build_browser_state_script_includes_placeholder_text():
 def test_build_browser_state_script_separates_cached_nodes_from_snapshots():
     script = build_browser_state_script()
 
-    assert "const snapshots = elements.map((element, index) =>" in script
+    assert "const snapshots = elements.map((entry, index) =>" in script
+    assert "const actionElements = elements.map(entry => entry.element);" in script
     assert "const stateToken =" in script
-    assert "window.__GA_BROWSER_ACTION_STATE__ = { token: stateToken, elements };" in script
+    assert "window.__GA_BROWSER_ACTION_STATE__ = { token: stateToken, elements: actionElements };" in script
     assert 'status: "success",' in script
     assert 'backend: "tmwd_user_chrome",' in script
     assert "url: location.href," in script
@@ -61,6 +62,18 @@ def test_build_browser_state_script_separates_cached_nodes_from_snapshots():
     assert "scroll_y: window.scrollY," in script
     assert "state_token: stateToken," in script
     assert "elements: snapshots," in script
+
+
+def test_build_browser_state_script_traverses_same_origin_frames():
+    script = build_browser_state_script()
+
+    assert "collectDocument(document, [], window)" in script
+    assert 'querySelectorAll("iframe, frame")' in script
+    assert "frame.contentDocument" in script
+    assert "frame_path" in script
+    assert "frame_depth" in script
+    assert "frame_url" in script
+    assert "frame_title" in script
 
 
 def test_build_browser_state_script_uses_collision_resistant_token():
@@ -133,7 +146,42 @@ def test_normalize_state_result_fills_element_defaults():
         "disabled": False,
         "bbox": {},
         "selector_hint": "",
+        "frame_path": [],
+        "frame_depth": 0,
+        "frame_url": "",
+        "frame_title": "",
+        "labels": [],
+        "attributes": {},
+        "validation": {},
+        "stable_key": "",
+        "field_context": {},
+        "table_context": {},
+        "layer": "main",
+        "layer_root_hint": "",
+        "modal_rank": 0,
+        "control_kind": "",
+        "action_hints": [],
     }
+
+
+def test_normalize_state_result_fills_new_element_metadata_defaults():
+    element = normalize_state_result({"elements": [{"tag": "button"}]})["elements"][0]
+
+    assert element["frame_path"] == []
+    assert element["frame_depth"] == 0
+    assert element["frame_url"] == ""
+    assert element["frame_title"] == ""
+    assert element["labels"] == []
+    assert element["attributes"] == {}
+    assert element["validation"] == {}
+    assert element["stable_key"] == ""
+    assert element["field_context"] == {}
+    assert element["table_context"] == {}
+    assert element["layer"] == "main"
+    assert element["layer_root_hint"] == ""
+    assert element["modal_rank"] == 0
+    assert element["control_kind"] == ""
+    assert element["action_hints"] == []
 
 
 def test_normalize_state_result_rejects_non_dict():
