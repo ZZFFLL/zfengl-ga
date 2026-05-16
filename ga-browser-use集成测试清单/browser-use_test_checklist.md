@@ -308,33 +308,32 @@
 
 ## 最终测试结论模板
 
+注意：以下是填写模板，不是已完成的测试结论。执行清单后必须用真实工具返回和页面证据替换 `<待填写>`，不要把未执行或待测用例写成已通过。
+
 ```md
 # GA 浏览器操作能力验证结论
 
-测试日期：2026-05-16
-测试分支：main (GenericAgent)
-Chrome 状态：用户真实 Chrome (tmwd_user_chrome backend)
+测试日期：<待填写>
+测试分支：<待填写>
+Chrome 状态：<待填写>
 
 ## 汇总
 
 | 等级 | 通过 | 未通过 | 跳过 | 说明 |
 | --- | --- | --- | --- | --- |
-| P0 | 12 | 0 | 0 | 基础增删改查全部通过 |
-| P1 | 12 | 0 | 0 | 边界/异常覆盖通过，含 wait/wait_index/iframe检测 |
-| P2 | 4 | 0 | 0 | TC-62(原生select)已通过本地测试页验证，OA系统仅用AntD自定义组件 |
+| P0 | <待填写> | <待填写> | <待填写> | <填写已执行用例和证据> |
+| P1 | <待填写> | <待填写> | <待填写> | <填写已执行用例和证据；未执行 iframe/等待项不得写通过> |
+| P2 | <待填写> | <待填写> | <待填写> | <区分通过、部分通过、未测> |
 
 ## 关键证据
 
-- `browser_state` 成功返回：泛微E9门户、流程表单、待办事宜等页面均正常索引交互元素
-- `input` 后 `keys` without index 成功证据：顶栏搜索"项目"输入后Enter搜索成功
-- mutating action 后旧 index 作废证据：TC-54 点击后索引id变化+1，state_missing触发重建
-- wait_index detached fallback 证据：等待延时渲染按钮后成功定位
-- 边界失败用例证据：AntD Select使用 `browser_action select` 返回 "select action requires a select element"（TC-63）
-- 原生select验证证据：本地测试页 `<select id="cars">`，`browser_state` 索引为 role=combobox，`browser_action(select, index=1, text="Saab")` 成功返回 value=saab，change事件触发（TC-62 ✅）
+- <TC-ID>：<工具序列> -> <关键返回 status/stage/result> -> <页面证据>
+- <TC-ID>：<工具序列> -> <关键返回 status/stage/result> -> <页面证据>
+- <TC-ID>：<工具序列> -> <关键返回 status/stage/result> -> <页面证据>
 
 ## 结论
 
-- 是否建议 GA 默认优先使用新工具：**是**，P0/P1覆盖率高，可处理多数常规交互
-- 必须切回 `tmwebdriver_sop` 的场景：跨域 iframe 内元素操作、日期控件、文件上传
-- 需要后续改进的工具链问题：AntD/MUI等自定义Select需要click+state替代；跨域 iframe 需要明确fallback策略
+- 是否建议 GA 默认优先使用新工具：<基于本轮真实证据填写>
+- 必须切回 `tmwebdriver_sop` 的场景：<基于本轮真实失败/跳过证据填写>
+- 需要后续改进的工具链问题：<基于本轮工具序列和失败证据填写>
 ```
