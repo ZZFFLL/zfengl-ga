@@ -1,0 +1,82 @@
+import json
+from types import SimpleNamespace
+
+import ga
+from ga import GenericAgentHandler
+
+
+def run_generator(gen):
+    chunks = []
+    while True:
+        try:
+            chunks.append(next(gen))
+        except StopIteration as stop:
+            return chunks, stop.value
+
+
+def make_handler():
+    return GenericAgentHandler(SimpleNamespace(verbose=False, task_dir=None), [], "./temp")
+
+
+def test_browser_state_wrapper_initializes_driver(monkeypatch):
+    calls = []
+    fake_driver = SimpleNamespace(default_session_id="9", get_all_sessions=lambda: [{"id": "9"}])
+
+    def fake_init():
+        calls.append("init")
+        ga.driver = fake_driver
+
+    class FakeLayer:
+        def get_state(self, driver, **kwargs):
+            return {"status": "success", "tab_id": driver.default_session_id, "elements": []}
+
+    monkeypatch.setattr(ga, "driver", None)
+    monkeypatch.setattr(ga, "first_init_driver", fake_init)
+    monkeypatch.setattr(ga, "browser_action_layer", FakeLayer())
+
+    result = ga.browser_state(max_elements=2)
+
+    assert calls == ["init"]
+    assert result == {"status": "success", "tab_id": "9", "elements": []}
+
+
+def test_do_browser_state_formats_execution_output(monkeypatch):
+    monkeypatch.setattr(
+        ga,
+        "browser_state",
+        lambda **kwargs: {
+            "status": "success",
+            "tab_id": "7",
+            "elements": [{"index": 1, "tag": "button", "text": "Login"}],
+        },
+    )
+    handler = make_handler()
+
+    chunks, outcome = run_generator(handler.do_browser_state({"max_elements": 10}, SimpleNamespace(content="")))
+
+    assert "Browser state:" in "".join(chunks)
+    data = json.loads(outcome.result)
+    assert data["status"] == "success"
+    assert data["elements"][0]["text"] == "Login"
+
+
+def test_do_browser_action_formats_execution_output(monkeypatch):
+    monkeypatch.setattr(
+        ga,
+        "browser_action",
+        lambda **kwargs: {
+            "status": "success",
+            "action": kwargs["action"],
+            "index": kwargs["index"],
+            "result": "clicked",
+        },
+    )
+    handler = make_handler()
+
+    chunks, outcome = run_generator(
+        handler.do_browser_action({"action": "click", "index": 1}, SimpleNamespace(content=""))
+    )
+
+    assert "Browser action result:" in "".join(chunks)
+    data = json.loads(outcome.result)
+    assert data == {"status": "success", "action": "click", "index": 1, "result": "clicked"}

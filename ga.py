@@ -7,6 +7,7 @@ if sys.stderr is None: sys.stderr = open(os.devnull, "w")
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from agent_loop import BaseHandler, StepOutcome, json_default
+from browser_actions import BrowserActionLayer
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 NORMAL_WORKING_MEMORY_WINDOW = 80
@@ -112,6 +113,7 @@ def ask_user(question, candidates=None):
 
 import simphtml
 driver = None
+browser_action_layer = BrowserActionLayer()
 def first_init_driver():
     global driver
     from TMWebDriver import TMWebDriver
@@ -185,6 +187,48 @@ def web_execute_js(script, switch_tab_id=None, no_monitor=False):
         result = simphtml.execute_js_rich(script, driver, no_monitor=no_monitor)
         return result
     except Exception as e: return {"status": "error", "msg": format_error(e)}
+
+def browser_state(switch_tab_id=None, include_invisible=False, max_elements=120):
+    """Return indexed interactive elements from the current real Chrome tab."""
+    global driver
+    try:
+        if driver is None:
+            first_init_driver()
+        return browser_action_layer.get_state(
+            driver,
+            switch_tab_id=switch_tab_id,
+            include_invisible=include_invisible,
+            max_elements=max_elements,
+        )
+    except Exception as e:
+        return {"status": "failed", "stage": "browser_unavailable", "error": format_error(e)}
+
+def browser_action(
+    action,
+    index=None,
+    text=None,
+    value=None,
+    selector=None,
+    timeout=10,
+    switch_tab_id=None,
+):
+    """Run a bounded browser action against the latest browser_state snapshot."""
+    global driver
+    try:
+        if driver is None:
+            first_init_driver()
+        return browser_action_layer.run_action(
+            driver,
+            action=action,
+            index=index,
+            text=text,
+            value=value,
+            selector=selector,
+            timeout=timeout,
+            switch_tab_id=switch_tab_id,
+        )
+    except Exception as e:
+        return {"status": "failed", "action": action, "stage": "dom_event", "error": format_error(e)}
 
 def expand_file_refs(text, base_dir=None):
     """展开文本中的 {{file:路径:起始行:结束行}} 引用为实际文件内容。
@@ -368,6 +412,34 @@ class GenericAgentHandler(BaseHandler):
         result = json.dumps(result, ensure_ascii=False, default=json_default)
         maxlen = 8000 // args.get('_tool_num', 1)
         return StepOutcome(smart_format(result, max_str_len=maxlen), next_prompt=next_prompt)
+
+    def do_browser_state(self, args, response):
+        result = browser_state(
+            switch_tab_id=args.get("switch_tab_id"),
+            include_invisible=args.get("include_invisible", False),
+            max_elements=args.get("max_elements", 120),
+        )
+        yield "Browser state:\n"
+        result_json = json.dumps(result, ensure_ascii=False, default=json_default)
+        outcome = StepOutcome(result_json, next_prompt="\n")
+        outcome.result = result_json
+        return outcome
+
+    def do_browser_action(self, args, response):
+        result = browser_action(
+            action=args.get("action"),
+            index=args.get("index"),
+            text=args.get("text"),
+            value=args.get("value"),
+            selector=args.get("selector"),
+            timeout=args.get("timeout", 10),
+            switch_tab_id=args.get("switch_tab_id"),
+        )
+        yield "Browser action result:\n"
+        result_json = json.dumps(result, ensure_ascii=False, default=json_default)
+        outcome = StepOutcome(result_json, next_prompt="\n")
+        outcome.result = result_json
+        return outcome
     
     def do_file_patch(self, args, response):
         path = self._get_abs_path(args.get("path", ""))
