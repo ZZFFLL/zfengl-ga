@@ -234,19 +234,61 @@
 
 ## 能力边界
 
-适合：
-- 已登录真实 Chrome 页面上的普通交互。
-- 搜索、表单填写、点击按钮、等待结果。
-- 简单 SPA 页面操作。
-- 避免写大量 JS 的日常网页控制。
+本节按当前代码实现总结，不按理想能力描述。
 
-不适合：
-- 文件上传、验证码截图、跨域 iframe、closed Shadow DOM。
-- 需要 isTrusted=true 的敏感点击。
-- 复杂自定义组件内部状态操作。
-- 大规模内容抽取、网络抓包、CDP 截图。
+### 当前实现事实
 
-这些场景继续读 `tmwebdriver_sop`，用 `web_execute_js` 的 CDP 桥、vnode、DataTransfer、截图等方案。
+- `browser_state` 只索引有限交互元素：链接、按钮、`input`、`textarea`、`select`、常见 ARIA role、`onclick`、`tabindex`、`contenteditable=true`。
+- `browser_state` 默认只返回可见元素；只有显式设置 `include_invisible=true` 才会包含不可见元素。
+- 单次索引默认最多 120 个元素，代码允许的 `max_elements` 范围是 1-500。
+- 元素快照只保留短文本和短 value，文本/value 最多约 240 字符；密码 value 会被 `[REDACTED]`。
+- `selector_hint` 只是辅助提示，形式只有 `tag#id`、`tag[name="..."]` 或裸 `tag`，不是强定位保证。
+- `browser_action` 只支持 7 个动作：`click`、`input`、`select`、`keys`、`wait_index`、`wait_text`、`wait_selector`。
+- `click` / `input` / `select` / `wait_index` 必须依赖最近一次 `browser_state` 生成的 index 和 state token。
+- `click` / `input` / `select` / `keys` 成功后会清空缓存 state，避免继续复用旧 index。
+- 工具失败时会返回结构化结果：`status=failed`，并带 `stage`、`error`；部分场景会额外带 `hint` / `suggested_args`。
+
+### 适合
+
+- 对用户真实 Chrome 当前页面做普通交互：点击、输入、原生 select、按 Enter/Escape/Tab、等待文本或 selector。
+- 已登录页面中的轻量操作，因为底层仍沿用 TMWebDriver / Chrome 扩展接管用户浏览器。
+- 搜索框、评论框、普通表单等“输入后回车”的流程：`input(index)` 后直接 `keys(text="Enter")`，不要传 index。
+- SPA 中短暂重渲染后的等待：`wait_index` 可在原节点 detached 后基于 selector hint + tag/role/text 做受限 fallback。
+- 需要少写 JS、以高层动作完成的日常网页控制。
+
+### 不适合
+
+- 大规模内容抽取、正文抓取、结构化爬取；`browser_state` 不是网页全文提取工具。
+- 文件上传、验证码截图、CDP 截图、网络抓包、Cookie/Tab/CDP 管理。
+- 跨域 iframe、closed Shadow DOM、复杂 iframe 坐标合成。
+- 需要 `isTrusted=true` 的敏感点击或浏览器级交互；当前 `click` 是 DOM `el.click()`。
+- 复杂自定义组件内部状态操作，例如 AntD/MUI/Vue 自定义 Select；`select` 只支持原生 `<select>`。
+- 对任意 CSS selector 直接 `click` / `input`；当前 selector 只用于 `wait_selector`，`wait_index` fallback 也只由工具内部受限使用。
+- 多元素同名同文本且无法靠 tag/role/text 区分的页面，容易超出当前 identity check 能力。
+
+### 关键限制
+
+- `input` 只允许 `input` / `textarea` / `contenteditable`。对 button/link/普通 div 会返回 `invalid_args`。
+- `select` 只允许原生 `<select>`，不支持自定义下拉。
+- `keys` 只支持 `Enter`、`Escape`、`Tab`、`Control+A`、`Backspace`。
+- `keys` 不传 index 时，会作用在 `document.activeElement || document.body`；这是 `input` 后提交搜索/表单的推荐路径。
+- `Control+A` / `Backspace` 只对 value-backed `input` / `textarea` 做确定性处理；contenteditable 上会拒绝，避免合成键盘事件假成功。
+- `wait_text` 只是判断 `document.body.innerText.includes(text)`，适合粗粒度等待，不适合精确语义判断。
+- `wait_selector` 只是等待 `document.querySelector(selector)` 出现，不判断可见性和业务语义。
+- `wait_index` 如果原 cached 节点仍 attached 但 hidden，不会 fallback 到其他元素；这能避免误匹配，但可能导致超时。
+- `wait_index` detached fallback 当前只用 `querySelector` 找第一个匹配，再做 tag/role/text 校验；页面上多个候选时可能等不到正确那个。
+- 后台标签页、页面节流、复杂加载状态仍受 Chrome 行为影响；必要时按 `tmwebdriver_sop` 用 CDP `Page.bringToFront`。
+
+### 何时切回 tmwebdriver_sop
+
+遇到以下情况，不要继续反复调用 `browser_action`：
+- 同一目标连续失败两次。
+- 需要 CDP、截图、文件上传、iframe、Shadow DOM、网络/Cookie/Tab 操作。
+- 页面控件明显是复杂前端组件，普通 click/input/select 不能触发真实业务状态。
+- 需要直接执行 JS、读取复杂 DOM、调用页面框架实例或 vnode。
+- 需要绕过浏览器弹窗、自动下载限制、autofill 保护值等 Chrome 级问题。
+
+这些场景继续读 `tmwebdriver_sop`，使用 `web_execute_js`、CDP 桥、vnode、DataTransfer、截图等低层方案。
 
 ## 和旧工具的配合
 
