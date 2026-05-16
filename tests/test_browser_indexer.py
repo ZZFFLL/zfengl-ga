@@ -19,6 +19,12 @@ def test_build_browser_state_script_includes_custom_select_roles():
     assert "[role=\"listbox\"]" in script
 
 
+def test_build_browser_state_script_includes_aria_haspopup_listbox_trigger():
+    script = build_browser_state_script()
+
+    assert '[aria-haspopup="listbox"]' in script
+
+
 def test_build_browser_state_script_defaults_to_visible_elements_only():
     script = build_browser_state_script()
 
