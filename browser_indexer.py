@@ -1,0 +1,145 @@
+DEFAULT_MAX_ELEMENTS = 120
+MIN_MAX_ELEMENTS = 1
+MAX_MAX_ELEMENTS = 500
+
+INTERACTIVE_SELECTOR = (
+    'a[href], button, input, textarea, select, [role="button"], [role="link"], '
+    '[role="textbox"], [role="checkbox"], [role="radio"], [role="combobox"], '
+    '[role="menuitem"], [tabindex], [contenteditable="true"]'
+)
+
+
+def _clamp_int(value, default, minimum, maximum):
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+
+    return max(minimum, min(maximum, parsed))
+
+
+def build_browser_state_script(include_invisible=True, max_elements=DEFAULT_MAX_ELEMENTS):
+    max_elements = _clamp_int(max_elements, DEFAULT_MAX_ELEMENTS, MIN_MAX_ELEMENTS, MAX_MAX_ELEMENTS)
+    include_invisible_value = "true" if include_invisible else "false"
+
+    return f"""
+(() => {{
+  const maxElements = {max_elements};
+  const includeInvisible = {include_invisible_value};
+  const selector = `{INTERACTIVE_SELECTOR}`;
+
+  const cssEscape = (value) => {{
+    if (window.CSS && window.CSS.escape) {{
+      return window.CSS.escape(value);
+    }}
+    return String(value).replace(/["\\\\]/g, "\\\\$&");
+  }};
+
+  const textOf = (element) => {{
+    const aria = element.getAttribute("aria-label") || "";
+    const title = element.getAttribute("title") || "";
+    const text = element.innerText || element.textContent || "";
+    return (aria || title || text).trim().replace(/\\s+/g, " ");
+  }};
+
+  const selectorHint = (element) => {{
+    const tag = element.tagName.toLowerCase();
+    const id = element.getAttribute("id");
+    const name = element.getAttribute("name");
+    if (id) {{
+      return `${{tag}}#${{cssEscape(id)}}`;
+    }}
+    if (name) {{
+      return `${{tag}}[name="${{cssEscape(name)}}"]`;
+    }}
+    return tag;
+  }};
+
+  const isVisible = (element, rect) => {{
+    const style = window.getComputedStyle(element);
+    return Boolean(
+      rect.width &&
+      rect.height &&
+      style.visibility !== "hidden" &&
+      style.display !== "none" &&
+      Number(style.opacity || "1") > 0
+    );
+  }};
+
+  const elements = [];
+  for (const element of document.querySelectorAll(selector)) {{
+    if (elements.length >= maxElements) {{
+      break;
+    }}
+
+    const rect = element.getBoundingClientRect();
+    const visible = isVisible(element, rect);
+    if (!includeInvisible && !visible) {{
+      continue;
+    }}
+
+    const tag = element.tagName.toLowerCase();
+    const type = element.getAttribute("type") || "";
+    const rawValue = "value" in element ? element.value : "";
+    const value = type.toLowerCase() === "password" && rawValue ? "[REDACTED]" : rawValue;
+
+    elements.push({{
+      index: elements.length + 1,
+      tag,
+      role: element.getAttribute("role") || "",
+      type,
+      text: textOf(element),
+      value,
+      visible,
+      disabled: Boolean(element.disabled || element.getAttribute("aria-disabled") === "true"),
+      bbox: {{
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+      }},
+      selector_hint: selectorHint(element),
+    }});
+  }}
+
+  const token = `${{Date.now()}}:${{elements.length}}`;
+  window.__GA_BROWSER_ACTION_STATE__ = {{ token, elements }};
+  return window.__GA_BROWSER_ACTION_STATE__;
+}})();
+""".strip()
+
+
+def normalize_state_result(result):
+    if not isinstance(result, dict):
+        return {
+            "status": "failed",
+            "stage": "dom_event",
+            "error": "browser_state returned a non-object result",
+        }
+
+    if result.get("status") == "failed":
+        return dict(result)
+
+    state = dict(result)
+    state.setdefault("status", "success")
+    elements = result.get("elements")
+    if not isinstance(elements, list):
+        elements = []
+
+    normalized_elements = []
+    for position, element in enumerate(elements, start=1):
+        if not isinstance(element, dict):
+            continue
+
+        normalized = dict(element)
+        normalized.setdefault("index", position)
+        normalized.setdefault("visible", True)
+        normalized.setdefault("disabled", False)
+
+        if str(normalized.get("type", "")).lower() == "password" and normalized.get("value"):
+            normalized["value"] = "[REDACTED]"
+
+        normalized_elements.append(normalized)
+
+    state["elements"] = normalized_elements
+    return state
