@@ -1,6 +1,6 @@
 # GA 浏览器操作能力高级测试清单
 
-本文是 `tests/browser-use_test_checklist.md` 的进阶版。基础能力已经验证无阻断后，再执行本清单。
+本文是 `browser-use_test_checklist.md` 的进阶版。基础能力已经验证无阻断后，再执行本清单。
 
 难度定义：比基础清单高 2 级，重点不是再验证“能不能点、能不能输”，而是验证 GA 在复杂页面变化中是否会正确编排 `browser_state` / `browser_action`，并在当前实现边界内及时停止错误路径。
 

@@ -69,12 +69,6 @@
 - Modify: `tests/test_browser_tool_schemas.py`
   - Update action enum and assert verification properties exist in both schema files.
 
-- Modify: `tests/browser-use_test_checklist.md`
-  - Update base checklist for new waits and verification.
-
-- Modify: `tests/browser-use_advanced_test_checklist.md`
-  - Update advanced checklist for same-origin iframe, AntD-style custom select, overlays, and contenteditable.
-
 - Modify: `memory/browser-use_sop.md`
   - Update SOP with current code-backed capability boundaries and tool sequencing.
 
@@ -1370,15 +1364,13 @@ git commit -m "feat: support rich text browser input basics"
 
 ---
 
-### Task 7: Tool Schema, Handler Contract, SOP, And Checklists
+### Task 7: Tool Schema, Handler Contract, And SOP
 
 **Files:**
 - Modify: `assets/tools_schema.json`
 - Modify: `assets/tools_schema_cn.json`
 - Modify: `tests/test_browser_tool_schemas.py`
 - Modify: `memory/browser-use_sop.md`
-- Modify: `tests/browser-use_test_checklist.md`
-- Modify: `tests/browser-use_advanced_test_checklist.md`
 
 - [ ] **Step 1: Update schema tests first**
 
@@ -1503,27 +1495,7 @@ Update the sequencing section with:
 5. 需要下一步 indexed 操作时重新 `browser_state`
 ```
 
-- [ ] **Step 5: Update manual test checklists**
-
-In `tests/browser-use_test_checklist.md`, add basic cases for:
-
-```markdown
-| 动作后校验 | input 后传 `verify=field_value`，确认成功回填；再用错误 `verify_value` 确认返回 `verify_failed`。 |
-| SPA 等待 | 点击异步按钮后用 `wait_not_busy` / `wait_dom_stable` 等待，再重新 state。 |
-| wait_enabled | 输入 unlock 后等待 disabled 按钮恢复可点。 |
-```
-
-In `tests/browser-use_advanced_test_checklist.md`, update scope boundaries and cases for:
-
-```markdown
-| 同源 iframe | 注入 same-origin iframe，确认 iframe 内 input/button 出现在 `browser_state`，且带 `frame_path`。 |
-| iframe 操作 | 对 iframe 内 input 执行 `input + verify=field_value`，再 click iframe 内 button。 |
-| AntD 下拉 | 对 role=combobox 的假下拉尝试 `select`，期望 `control_unsupported`；再按 click/state/click option 流程完成。 |
-| 浮层优先 | 打开 modal/drawer/dropdown 后，确认 elements 标注 `layer`，并优先选择浮层内元素。 |
-| 富文本 | 对 contenteditable 与同源 iframe editor body 执行 `input + verify=field_value`。 |
-```
-
-- [ ] **Step 6: Run and commit Task 7**
+- [ ] **Step 5: Run and commit Task 7**
 
 Run:
 
@@ -1540,7 +1512,7 @@ all tests passed
 Commit:
 
 ```powershell
-git add assets/tools_schema.json assets/tools_schema_cn.json tests/test_browser_tool_schemas.py tests/test_browser_tool_handlers.py memory/browser-use_sop.md tests/browser-use_test_checklist.md tests/browser-use_advanced_test_checklist.md
+git add assets/tools_schema.json assets/tools_schema_cn.json tests/test_browser_tool_schemas.py tests/test_browser_tool_handlers.py memory/browser-use_sop.md
 git commit -m "docs: update browser tool sop and schemas"
 ```
 
@@ -1585,7 +1557,7 @@ Run:
 
 ```powershell
 git diff --stat
-git diff -- browser_indexer.py browser_actions.py ga.py assets/tools_schema.json assets/tools_schema_cn.json tests/test_browser_indexer.py tests/test_browser_actions.py tests/test_browser_tool_handlers.py tests/test_browser_tool_schemas.py memory/browser-use_sop.md tests/browser-use_test_checklist.md tests/browser-use_advanced_test_checklist.md
+git diff -- browser_indexer.py browser_actions.py ga.py assets/tools_schema.json assets/tools_schema_cn.json tests/test_browser_indexer.py tests/test_browser_actions.py tests/test_browser_tool_handlers.py tests/test_browser_tool_schemas.py memory/browser-use_sop.md
 ```
 
 Expected:
