@@ -103,6 +103,7 @@ def build_browser_action_script(
   function ownerFrameChainAttached(el) {{
     try {{
       let currentWindow = el && el.ownerDocument && el.ownerDocument.defaultView;
+      if (!currentWindow) return false;
       while (currentWindow && currentWindow.frameElement) {{
         const frame = currentWindow.frameElement;
         if (!frame.ownerDocument || !frame.ownerDocument.contains || !frame.ownerDocument.contains(frame)) {{
@@ -116,14 +117,17 @@ def build_browser_action_script(
     }}
   }}
 
-  function ownerDocumentContains(el) {{
+  function elementDocumentContains(el) {{
     return Boolean(
       el &&
       el.ownerDocument &&
       el.ownerDocument.contains &&
-      el.ownerDocument.contains(el) &&
-      ownerFrameChainAttached(el)
+      el.ownerDocument.contains(el)
     );
+  }}
+
+  function ownerDocumentContains(el) {{
+    return elementDocumentContains(el) && ownerFrameChainAttached(el);
   }}
 
   function frameStepIndex(step) {{
@@ -169,7 +173,14 @@ def build_browser_action_script(
     if (!state || !state.token) return {{ error: fail("state_missing", "Run browser_state before indexed browser_action.") }};
     if (state.token !== request.state_token) return {{ error: fail("stale_index", "Element index is stale. Run browser_state again.") }};
     const el = state.elements && state.elements[Number(request.index) - 1];
-    if (!el || !ownerDocumentContains(el)) {{
+    if (!el) {{
+      if (allowDetached) return {{ el: null }};
+      return {{ error: fail("stale_index", "Element index is stale. Run browser_state again.") }};
+    }}
+    if (!ownerFrameChainAttached(el)) {{
+      return {{ error: fail("stale_index", "Element index is stale. Run browser_state again.") }};
+    }}
+    if (!elementDocumentContains(el)) {{
       if (allowDetached) return {{ el: null }};
       return {{ error: fail("stale_index", "Element index is stale. Run browser_state again.") }};
     }}

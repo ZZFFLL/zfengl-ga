@@ -779,6 +779,99 @@ window.__GA_BROWSER_ACTION_STATE__ = {{ token: "tok-2", elements: [{target_js}] 
         assert result["stage"] == "stale_index"
 
 
+def test_browser_action_script_rejects_cached_target_with_null_owner_window():
+    for action, target_js, action_kwargs in [
+        (
+            "click",
+            'makeElement({ tag: "button", role: "button", text: "Go", ownerDocument: frameDocument })',
+            {"text": None, "value": None},
+        ),
+        (
+            "input",
+            'makeElement({ tag: "input", type: "text", value: "", ownerDocument: frameDocument })',
+            {"text": "openai", "value": None},
+        ),
+    ]:
+        script = build_browser_action_script(
+            action=action,
+            index=1,
+            timeout=1,
+            state_token="tok-2",
+            selector=None,
+            **action_kwargs,
+        )
+
+        result = run_browser_action_script(
+            script,
+            f"""
+const frameDocument = {{
+  defaultView: null,
+  contains: (el) => Boolean(el && el.attached !== false && el.ownerDocument === frameDocument),
+  querySelector: (_selector) => null,
+  querySelectorAll: (_selector) => [],
+}};
+window.__GA_BROWSER_ACTION_STATE__ = {{ token: "tok-2", elements: [{target_js}] }};
+""",
+        )
+
+        assert result["status"] == "failed"
+        assert result["stage"] == "stale_index"
+
+
+def test_browser_action_script_wait_index_rejects_replaced_iframe_path():
+    script = build_browser_action_script(
+        action="wait_index",
+        index=1,
+        text=None,
+        value=None,
+        timeout=1,
+        state_token="tok-2",
+        selector='button[name="go"]',
+        selector_tag="button",
+        selector_role="button",
+        selector_text="Go",
+        frame_path=[0],
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+const originalIframe = { attached: false, ownerDocument: document };
+const originalFrameWindow = { ...window, frameElement: originalIframe, parent: window };
+const originalFrameDocument = {
+  defaultView: originalFrameWindow,
+  contains: (el) => Boolean(el && el.attached !== false && el.ownerDocument === originalFrameDocument),
+  querySelector: (_selector) => null,
+  querySelectorAll: (_selector) => [],
+};
+const replacementFrameDocument = {
+  defaultView: window,
+  contains: (el) => Boolean(el && el.attached !== false && el.ownerDocument === replacementFrameDocument),
+  querySelector: (_selector) => makeElement({
+    tag: "button",
+    role: "button",
+    text: "Go",
+    visible: true,
+    ownerDocument: replacementFrameDocument
+  }),
+  querySelectorAll: (_selector) => [],
+};
+const replacementIframe = { attached: true, ownerDocument: document, contentDocument: replacementFrameDocument };
+const cached = makeElement({
+  tag: "button",
+  role: "button",
+  text: "Go",
+  ownerDocument: originalFrameDocument
+});
+window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [cached] };
+document.querySelectorAll = (selector) => selector === "iframe, frame" ? [replacementIframe] : [];
+""",
+    )
+
+    assert result["status"] == "failed"
+    assert result["stage"] in {"stale_index", "frame_unavailable"}
+
+
 def test_browser_action_script_keys_rejects_contenteditable_editing_key():
     script = build_browser_action_script(
         action="keys",
