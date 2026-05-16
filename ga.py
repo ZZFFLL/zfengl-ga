@@ -214,9 +214,11 @@ def browser_action(
 ):
     """Run a bounded browser action against the latest browser_state snapshot."""
     global driver
+    stage = "browser_unavailable"
     try:
         if driver is None:
             first_init_driver()
+        stage = "dom_event"
         return browser_action_layer.run_action(
             driver,
             action=action,
@@ -228,7 +230,7 @@ def browser_action(
             switch_tab_id=switch_tab_id,
         )
     except Exception as e:
-        return {"status": "failed", "action": action, "stage": "dom_event", "error": format_error(e)}
+        return {"status": "failed", "action": action, "stage": stage, "error": format_error(e)}
 
 def expand_file_refs(text, base_dir=None):
     """展开文本中的 {{file:路径:起始行:结束行}} 引用为实际文件内容。
@@ -421,8 +423,10 @@ class GenericAgentHandler(BaseHandler):
         )
         yield "Browser state:\n"
         result_json = json.dumps(result, ensure_ascii=False, default=json_default)
-        outcome = StepOutcome(result_json, next_prompt="\n")
-        outcome.result = result_json
+        maxlen = 12000 // args.get('_tool_num', 1)
+        formatted_result = smart_format(result_json, max_str_len=maxlen)
+        outcome = StepOutcome(formatted_result, next_prompt="\n")
+        outcome.result = formatted_result
         return outcome
 
     def do_browser_action(self, args, response):
@@ -437,8 +441,10 @@ class GenericAgentHandler(BaseHandler):
         )
         yield "Browser action result:\n"
         result_json = json.dumps(result, ensure_ascii=False, default=json_default)
-        outcome = StepOutcome(result_json, next_prompt="\n")
-        outcome.result = result_json
+        maxlen = 8000 // args.get('_tool_num', 1)
+        formatted_result = smart_format(result_json, max_str_len=maxlen)
+        outcome = StepOutcome(formatted_result, next_prompt="\n")
+        outcome.result = formatted_result
         return outcome
     
     def do_file_patch(self, args, response):

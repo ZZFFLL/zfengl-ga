@@ -55,9 +55,28 @@ def test_do_browser_state_formats_execution_output(monkeypatch):
     chunks, outcome = run_generator(handler.do_browser_state({"max_elements": 10}, SimpleNamespace(content="")))
 
     assert "Browser state:" in "".join(chunks)
-    data = json.loads(outcome.result)
+    data = json.loads(outcome.data)
     assert data["status"] == "success"
     assert data["elements"][0]["text"] == "Login"
+
+
+def test_do_browser_state_truncates_large_output(monkeypatch):
+    large_result = {
+        "status": "success",
+        "tab_id": "7",
+        "elements": [{"index": i, "tag": "button", "text": "Login " + ("x" * 80)} for i in range(200)],
+    }
+    raw_json = json.dumps(large_result, ensure_ascii=False, default=ga.json_default)
+    monkeypatch.setattr(ga, "browser_state", lambda **kwargs: large_result)
+    handler = make_handler()
+
+    chunks, outcome = run_generator(
+        handler.do_browser_state({"max_elements": 200, "_tool_num": 2}, SimpleNamespace(content=""))
+    )
+
+    assert "Browser state:" in "".join(chunks)
+    assert " ... " in outcome.data
+    assert len(outcome.data) < len(raw_json)
 
 
 def test_do_browser_action_formats_execution_output(monkeypatch):
@@ -78,5 +97,20 @@ def test_do_browser_action_formats_execution_output(monkeypatch):
     )
 
     assert "Browser action result:" in "".join(chunks)
-    data = json.loads(outcome.result)
+    data = json.loads(outcome.data)
     assert data == {"status": "success", "action": "click", "index": 1, "result": "clicked"}
+
+
+def test_browser_action_init_failure_reports_browser_unavailable(monkeypatch):
+    def fail_init():
+        raise RuntimeError("Chrome unavailable")
+
+    monkeypatch.setattr(ga, "driver", None)
+    monkeypatch.setattr(ga, "first_init_driver", fail_init)
+
+    result = ga.browser_action(action="click", index=1)
+
+    assert result["status"] == "failed"
+    assert result["action"] == "click"
+    assert result["stage"] == "browser_unavailable"
+    assert "Chrome unavailable" in result["error"]
