@@ -269,6 +269,45 @@ def test_run_action_rejects_invalid_verify_type():
     assert driver.calls == []
 
 
+def test_run_action_requires_expected_text_for_text_verification():
+    layer = BrowserActionLayer()
+    driver = FakeDriver()
+
+    result = layer.run_action(driver, action="click", index=1, verify="text")
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "invalid_args"
+    assert "verify_text is required" in result["error"]
+    assert result["index"] == 1
+    assert driver.calls == []
+
+
+def test_run_action_requires_expected_text_for_element_text_verification():
+    layer = BrowserActionLayer()
+    driver = FakeDriver()
+
+    result = layer.run_action(driver, action="click", index=1, verify="element_text", verify_text="  ")
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "invalid_args"
+    assert "verify_text is required" in result["error"]
+    assert result["index"] == 1
+    assert driver.calls == []
+
+
+def test_run_action_requires_expected_selector_for_selector_verification():
+    layer = BrowserActionLayer()
+    driver = FakeDriver()
+
+    result = layer.run_action(driver, action="click", index=1, verify="selector")
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "invalid_args"
+    assert "verify_selector is required" in result["error"]
+    assert result["index"] == 1
+    assert driver.calls == []
+
+
 def test_run_action_executes_click_with_cached_token_and_invalidates_state():
     layer = BrowserActionLayer()
     layer._last_state = {"tab_id": "7", "state_token": "tok-1"}
@@ -734,6 +773,47 @@ def test_build_browser_action_script_keys_checks_active_target_readonly_state():
 
     assert 'const blocked = blockedForAction(target, request.action);' in script
     assert 'if (blocked) return fail("visibility", blocked);' in script
+
+
+def test_browser_action_script_keys_uses_same_origin_frame_active_element():
+    script = build_browser_action_script(
+        action="keys",
+        index=None,
+        text="Enter",
+        value=None,
+        timeout=1,
+        state_token=None,
+        selector=None,
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+const iframe = makeElement({ tag: "iframe" });
+const frameInput = makeElement({ tag: "input", type: "text", value: "" });
+const frameDocument = {
+  defaultView: window,
+  activeElement: frameInput,
+  body: makeElement({ tag: "body" }),
+  contains: (el) => Boolean(el && el.attached !== false && el.ownerDocument === frameDocument),
+  querySelectorAll: (_selector) => [],
+};
+frameInput.ownerDocument = frameDocument;
+iframe.contentDocument = frameDocument;
+document.activeElement = iframe;
+global.__GA_TEST_PROBE__ = () => ({
+  frameEvents: frameInput.dispatched || [],
+  iframeEvents: iframe.dispatched || [],
+});
+""",
+    )
+
+    probe = result["probe"]
+    result = result["result"]
+    assert result["status"] == "success"
+    assert result["result"] == "Enter"
+    assert probe["frameEvents"] == ["keydown", "keyup"]
+    assert probe["iframeEvents"] == []
 
 
 def test_build_browser_action_script_wait_index_uses_selector_hint_when_available():

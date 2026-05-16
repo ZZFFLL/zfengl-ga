@@ -303,10 +303,10 @@ SPA 页面没有稳定文本或 selector 时，再按页面形态选有界等待
 - `input` 只允许 `input` / `textarea` / `contenteditable`。对 button/link/普通 div 会返回 `invalid_args`。
 - `select` 只允许原生 `<select>`，不支持自定义下拉。
 - `keys` 只支持 `Enter`、`Escape`、`Tab`、`Control+A`、`Backspace`。
-- `keys` 不传 index 时，会作用在 `document.activeElement || document.body`；这是 `input` 后提交搜索/表单的推荐路径。
+- `keys` 不传 index 时，会优先作用在顶层文档或同源 iframe 内的当前焦点元素；这是 `input` 后提交搜索/表单的推荐路径。
 - `Control+A` / `Backspace` 只对 value-backed `input` / `textarea` 做确定性处理；contenteditable 上会拒绝，避免合成键盘事件假成功。
-- `wait_text` 只是判断 `document.body.innerText.includes(text)`，适合粗粒度等待，不适合精确语义判断。
-- `wait_selector` 只是等待 `document.querySelector(selector)` 出现，不判断可见性和业务语义。
+- `wait_text` 在顶层文档和可读同源 iframe 文档中查找文本，适合粗粒度等待，不适合精确语义判断。
+- `wait_selector` 在顶层文档和可读同源 iframe 文档中等待 selector 出现，不判断可见性和业务语义。
 - `wait_not_busy` 只检查默认或指定 busy selector 的消失，不等于业务处理完成。
 - `wait_dom_stable` 只判断一段时间内 DOM 变化趋稳，不保证数据已加载正确。
 - `wait_route` 只匹配 URL/route 字符串，不保证页面数据完成渲染。

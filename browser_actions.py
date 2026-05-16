@@ -303,6 +303,30 @@ def build_browser_action_script(
     return docs;
   }}
 
+  function focusedElementInDocument(rootDocument) {{
+    function descend(doc) {{
+      if (!doc) return null;
+      let active = null;
+      try {{
+        active = doc.activeElement;
+      }} catch (e) {{
+        return null;
+      }}
+      if (!active) return null;
+      const tag = tagOf(active);
+      if (tag === "iframe" || tag === "frame") {{
+        try {{
+          const child = descend(active.contentDocument);
+          return child || active;
+        }} catch (e) {{
+          return active;
+        }}
+      }}
+      return active;
+    }}
+    return descend(rootDocument || document);
+  }}
+
   function documentReadableText(doc) {{
     try {{
       return (doc.body && (doc.body.innerText || doc.body.textContent || "")) || "";
@@ -759,7 +783,7 @@ def build_browser_action_script(
       if (!key) return fail("invalid_args", "text or value is required for keys.");
       const allowedKeys = ["Enter", "Escape", "Tab", "Control+A", "Backspace"];
       if (!allowedKeys.includes(key)) return fail("invalid_args", "Unsupported key action.");
-      const target = el || document.activeElement || document.body;
+      const target = el || focusedElementInDocument(document) || document.body;
       if (!target) return fail("locate", "No keyboard target found.");
       const blocked = blockedForAction(target, request.action);
       if (blocked) return fail("visibility", blocked);
@@ -875,6 +899,10 @@ class BrowserActionLayer:
             return failed_result(action or None, "invalid_args", f"Unsupported browser action: {action}", safe_index)
         if verify and verify not in valid_verify:
             return failed_result(action or None, "invalid_args", f"Unsupported verification type: {verify}", safe_index)
+        if verify in {"text", "element_text"} and not str(verify_text or "").strip():
+            return failed_result(action or None, "invalid_args", f"verify_text is required for {verify} verification.", safe_index)
+        if verify == "selector" and not str(verify_selector or "").strip():
+            return failed_result(action or None, "invalid_args", "verify_selector is required for selector verification.", safe_index)
         if action in {"wait_text", "wait_selector", "wait_dom_stable", "wait_not_busy", "wait_route"}:
             safe_index = None
         if action in INDEX_REQUIRED_ACTIONS and safe_index is None:
