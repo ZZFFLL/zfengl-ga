@@ -222,6 +222,50 @@ def build_browser_action_script(
     el.dispatchEvent(new Event("change", {{ bubbles: true }}));
   }}
 
+  function inputEventConstructorFor(el) {{
+    const ownerWindow = ownerWindowOf(el);
+    if (ownerWindow && typeof ownerWindow.InputEvent === "function") return ownerWindow.InputEvent;
+    if (typeof InputEvent === "function") return InputEvent;
+    return null;
+  }}
+
+  function contentEditableRejectedInputResult() {{
+    const result = fail("dom_event", "Contenteditable editor rejected synthetic DOM input.");
+    result.hint = "The editor rejected synthetic DOM input; it may require lower-level CDP or component-specific handling.";
+    result.retryable = true;
+    return result;
+  }}
+
+  function dispatchContentEditableBeforeInput(el, nextValue) {{
+    const InputEventConstructor = inputEventConstructorFor(el);
+    if (!InputEventConstructor) return null;
+
+    const beforeInputEvent = new InputEventConstructor("beforeinput", {{
+      inputType: "insertText",
+      data: nextValue,
+      bubbles: true,
+      cancelable: true,
+    }});
+    if (el.dispatchEvent(beforeInputEvent) === false) {{
+      return contentEditableRejectedInputResult();
+    }}
+    return null;
+  }}
+
+  function dispatchContentEditableInputEvents(el, nextValue) {{
+    const InputEventConstructor = inputEventConstructorFor(el);
+    if (InputEventConstructor) {{
+      el.dispatchEvent(new InputEventConstructor("input", {{
+        inputType: "insertText",
+        data: nextValue,
+        bubbles: true,
+      }}));
+    }} else {{
+      el.dispatchEvent(new Event("input", {{ bubbles: true }}));
+    }}
+    el.dispatchEvent(new Event("change", {{ bubbles: true }}));
+  }}
+
   function tagOf(el) {{
     return el && el.tagName ? el.tagName.toLowerCase() : "";
   }}
@@ -617,6 +661,7 @@ def build_browser_action_script(
       if (!editableForInput(el)) return fail("invalid_args", "input action requires an editable text element.");
       const nextValue = String(request.text !== null ? request.text : request.value);
       el.focus({{ preventScroll: true }});
+      const isContentEditable = isContentEditableTarget(el);
       if ("value" in el) {{
         const valueSetter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), "value")?.set;
         if (valueSetter) {{
@@ -624,13 +669,16 @@ def build_browser_action_script(
         }} else {{
           el.value = nextValue;
         }}
-      }} else if (isContentEditableTarget(el)) {{
+        dispatchInputEvents(el);
+      }} else if (isContentEditable) {{
+        const beforeInputFailure = dispatchContentEditableBeforeInput(el, nextValue);
+        if (beforeInputFailure) return beforeInputFailure;
         el.textContent = nextValue;
         if ("innerText" in el) el.innerText = nextValue;
+        dispatchContentEditableInputEvents(el, nextValue);
       }} else {{
         return fail("invalid_args", "input action requires an editable text element.");
       }}
-      dispatchInputEvents(el);
       if ("value" in el && el.value !== nextValue) {{
         return fail("dom_event", "Input value was not accepted.");
       }}

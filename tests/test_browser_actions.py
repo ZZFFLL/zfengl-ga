@@ -96,7 +96,11 @@ def run_browser_action_script(script, setup_js):
             """
 (async () => {
   const result = await eval(script);
-  console.log(JSON.stringify(result));
+  if (typeof __GA_TEST_PROBE__ === "function") {
+    console.log(JSON.stringify({ result, probe: __GA_TEST_PROBE__() }));
+  } else {
+    console.log(JSON.stringify(result));
+  }
 })().catch((error) => {
   console.error(error && error.stack ? error.stack : String(error));
   process.exit(1);
@@ -105,7 +109,8 @@ def run_browser_action_script(script, setup_js):
         ]
     )
     completed = subprocess.run(
-        ["node", "-e", node_code],
+        ["node", "-"],
+        input=node_code,
         check=True,
         capture_output=True,
         text=True,
@@ -738,7 +743,7 @@ def test_build_browser_action_script_input_rejects_non_editable_targets():
 
     assert "function editableForInput(el)" in script
     assert 'return fail("invalid_args", "input action requires an editable text element.");' in script
-    assert "else if (isContentEditableTarget(el))" in script
+    assert "const isContentEditable = isContentEditableTarget(el);" in script
 
 
 def test_build_browser_action_script_keys_requires_editable_target_for_editing_keys():
@@ -1357,17 +1362,99 @@ def test_browser_action_script_input_contenteditable_verify_field_value_success(
     result = run_browser_action_script(
         script,
         """
+global.InputEvent = function InputEvent(type, options = {}) {
+  this.type = type;
+  this.inputType = options.inputType || "";
+  this.data = options.data || null;
+  this.options = options;
+};
 const editor = makeElement({ tag: "div", text: "seed", contentEditable: true });
+const events = [];
+editor.dispatchEvent = (event) => {
+  events.push({
+    type: event.type,
+    inputType: event.inputType || "",
+    data: event.data || null,
+    bubbles: Boolean(event.options && event.options.bubbles),
+    cancelable: Boolean(event.options && event.options.cancelable),
+  });
+  return true;
+};
+global.__GA_TEST_PROBE__ = () => ({ events, innerText: editor.innerText, textContent: editor.textContent });
 window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [editor] };
 """,
     )
 
+    probe = result["probe"]
+    result = result["result"]
     assert result["status"] == "success"
     assert result["verification"] == {
         "type": "field_value",
         "observed": "rich text update",
         "expected": "rich text update",
         "passed": True,
+    }
+    assert probe["innerText"] == "rich text update"
+    assert probe["textContent"] == "rich text update"
+    assert [event["type"] for event in probe["events"]] == ["beforeinput", "input", "change"]
+    assert probe["events"][0] == {
+        "type": "beforeinput",
+        "inputType": "insertText",
+        "data": "rich text update",
+        "bubbles": True,
+        "cancelable": True,
+    }
+    assert probe["events"][1] == {
+        "type": "input",
+        "inputType": "insertText",
+        "data": "rich text update",
+        "bubbles": True,
+        "cancelable": False,
+    }
+
+
+def test_browser_action_script_input_contenteditable_fails_when_beforeinput_canceled():
+    script = build_browser_action_script(
+        action="input",
+        index=1,
+        text="rich text update",
+        value=None,
+        timeout=1,
+        state_token="tok-2",
+        selector=None,
+        verify="field_value",
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+global.InputEvent = function InputEvent(type, options = {}) {
+  this.type = type;
+  this.inputType = options.inputType || "";
+  this.data = options.data || null;
+  this.options = options;
+};
+const editor = makeElement({ tag: "div", text: "seed", contentEditable: true });
+const events = [];
+editor.dispatchEvent = (event) => {
+  events.push(event.type);
+  return event.type !== "beforeinput";
+};
+global.__GA_TEST_PROBE__ = () => ({ events, innerText: editor.innerText, textContent: editor.textContent });
+window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [editor] };
+""",
+    )
+
+    probe = result["probe"]
+    result = result["result"]
+    assert result["status"] == "failed"
+    assert result["stage"] == "dom_event"
+    assert "rejected synthetic DOM input" in result["error"]
+    assert "lower-level CDP" in result["hint"]
+    assert probe == {
+        "events": ["beforeinput"],
+        "innerText": "seed",
+        "textContent": "seed",
     }
 
 
