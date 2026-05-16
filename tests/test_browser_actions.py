@@ -55,6 +55,36 @@ def test_get_state_executes_indexer_and_caches_state_token():
     assert "const maxElements = 5;" in driver.calls[0]["script"]
 
 
+def test_get_state_failed_payload_clears_cached_state_and_blocks_stale_action():
+    layer = BrowserActionLayer()
+    layer._last_state = {"tab_id": "7", "state_token": "old-token"}
+    driver = FakeDriver([{"data": {"status": "failed", "stage": "dom_event", "error": "scan failed"}}])
+
+    state = layer.get_state(driver)
+    action = layer.run_action(driver, action="click", index=1)
+
+    assert state["status"] == "failed"
+    assert layer.last_state_token is None
+    assert action["status"] == "failed"
+    assert action["stage"] == "state_missing"
+    assert len(driver.calls) == 1
+
+
+def test_get_state_exception_clears_cached_state_and_blocks_stale_action():
+    layer = BrowserActionLayer()
+    layer._last_state = {"tab_id": "7", "state_token": "old-token"}
+    driver = RaisingDriver()
+
+    state = layer.get_state(driver)
+    action = layer.run_action(driver, action="click", index=1)
+
+    assert state["status"] == "failed"
+    assert layer.last_state_token is None
+    assert action["status"] == "failed"
+    assert action["stage"] == "state_missing"
+    assert len(driver.calls) == 1
+
+
 def test_run_action_requires_state_for_index_action():
     layer = BrowserActionLayer()
     driver = FakeDriver()
@@ -104,6 +134,21 @@ def test_run_action_execute_js_exception_includes_tab_id():
 
     assert result["status"] == "failed"
     assert result["stage"] == "dom_event"
+    assert result["tab_id"] == "7"
+
+
+def test_run_action_non_object_result_fails_with_tab_id():
+    layer = BrowserActionLayer()
+    layer._last_state = {"tab_id": "7", "state_token": "tok-1"}
+    driver = FakeDriver([{"data": None}])
+
+    result = layer.run_action(driver, action="click", index=1)
+
+    assert result["status"] == "failed"
+    assert result["action"] == "click"
+    assert result["index"] == 1
+    assert result["stage"] == "dom_event"
+    assert result["error"] == "browser_action returned a non-object result"
     assert result["tab_id"] == "7"
 
 

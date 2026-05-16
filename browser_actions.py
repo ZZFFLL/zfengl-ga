@@ -262,12 +262,15 @@ class BrowserActionLayer:
         try:
             raw = _response_payload(driver.execute_js(script, timeout=10))
         except Exception as exc:
+            self._last_state = None
             return failed_result(None, "dom_event", str(exc))
 
         state = normalize_state_result(raw)
         if state.get("status") == "success":
             state["tab_id"] = state.get("tab_id") or driver.default_session_id
             self._last_state = {"tab_id": state["tab_id"], "state_token": state.get("state_token")}
+        else:
+            self._last_state = None
         return state
 
     def run_action(
@@ -336,10 +339,12 @@ class BrowserActionLayer:
             result["tab_id"] = driver.default_session_id
             return result
 
-        if isinstance(raw, dict):
-            result = dict(raw)
-        else:
-            result = {"status": "success", "action": action, "result": raw}
+        if not isinstance(raw, dict):
+            result = failed_result(action, "dom_event", "browser_action returned a non-object result", safe_index)
+            result["tab_id"] = driver.default_session_id
+            return result
+
+        result = dict(raw)
         result.setdefault("tab_id", driver.default_session_id)
 
         if action in STATE_MUTATING_ACTIONS and result.get("status") == "success":
