@@ -251,6 +251,19 @@ def test_run_action_rejects_unknown_action():
     assert "Unsupported browser action" in result["error"]
 
 
+def test_run_action_rejects_invalid_verify_type():
+    layer = BrowserActionLayer()
+    driver = FakeDriver()
+
+    result = layer.run_action(driver, action="click", index=1, verify="url")
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "invalid_args"
+    assert result["error"] == "Unsupported verification type: url"
+    assert result["index"] == 1
+    assert driver.calls == []
+
+
 def test_run_action_executes_click_with_cached_token_and_invalidates_state():
     layer = BrowserActionLayer()
     layer._last_state = {"tab_id": "7", "state_token": "tok-1"}
@@ -262,6 +275,30 @@ def test_run_action_executes_click_with_cached_token_and_invalidates_state():
     assert result["tab_id"] == "7"
     assert '"state_token": "tok-1"' in driver.calls[0]["script"]
     assert '"action": "click"' in driver.calls[0]["script"]
+    assert layer.last_state_token is None
+
+
+def test_run_action_verify_failed_invalidates_state():
+    layer = BrowserActionLayer()
+    layer._last_state = {"tab_id": "7", "state_token": "tok-1"}
+    driver = FakeDriver(
+        [
+            {
+                "data": {
+                    "status": "failed",
+                    "action": "input",
+                    "index": 1,
+                    "stage": "verify_failed",
+                    "error": "Verification failed.",
+                }
+            }
+        ]
+    )
+
+    result = layer.run_action(driver, action="input", index=1, text="openai", verify="field_value")
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "verify_failed"
     assert layer.last_state_token is None
 
 
@@ -1009,6 +1046,70 @@ window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [input] };
     assert "without index" in result["next_action_hint"]
     assert "focused element" in result["next_action_hint"]
     assert result["suggested_next_action"] == {"action": "keys", "text": "Enter"}
+
+
+def test_browser_action_script_input_verify_field_value_success():
+    script = build_browser_action_script(
+        action="input",
+        index=1,
+        text="openai",
+        value=None,
+        timeout=1,
+        state_token="tok-2",
+        selector=None,
+        verify="field_value",
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+const input = makeElement({ tag: "input", type: "text", value: "" });
+window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [input] };
+""",
+    )
+
+    assert result["status"] == "success"
+    assert result["verification"] == {
+        "type": "field_value",
+        "observed": "openai",
+        "expected": "openai",
+        "passed": True,
+    }
+    assert "verify_hint" not in result
+
+
+def test_browser_action_script_input_verify_field_value_failure():
+    script = build_browser_action_script(
+        action="input",
+        index=1,
+        text="openai",
+        value=None,
+        timeout=1,
+        state_token="tok-2",
+        selector=None,
+        verify="field_value",
+        verify_value="expected",
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+const input = makeElement({ tag: "input", type: "text", value: "" });
+window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [input] };
+""",
+    )
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "verify_failed"
+    assert result["observed"] == "openai"
+    assert result["expected"] == "expected"
+    assert result["retryable"] is True
+    assert result["verification"] == {
+        "type": "field_value",
+        "observed": "openai",
+        "expected": "expected",
+        "passed": False,
+    }
 
 
 def test_build_browser_action_script_input_uses_native_setter_and_verifies_value():

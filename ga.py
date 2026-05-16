@@ -209,6 +209,10 @@ def browser_action(
     text=None,
     value=None,
     selector=None,
+    verify=None,
+    verify_text=None,
+    verify_value=None,
+    verify_selector=None,
     timeout=10,
     switch_tab_id=None,
 ):
@@ -226,6 +230,10 @@ def browser_action(
             text=text,
             value=value,
             selector=selector,
+            verify=verify,
+            verify_text=verify_text,
+            verify_value=verify_value,
+            verify_selector=verify_selector,
             timeout=timeout,
             switch_tab_id=switch_tab_id,
         )
@@ -436,6 +444,10 @@ class GenericAgentHandler(BaseHandler):
             text=args.get("text"),
             value=args.get("value"),
             selector=args.get("selector"),
+            verify=args.get("verify"),
+            verify_text=args.get("verify_text"),
+            verify_value=args.get("verify_value"),
+            verify_selector=args.get("verify_selector"),
             timeout=args.get("timeout", 10),
             switch_tab_id=args.get("switch_tab_id") or args.get("tab_id"),
         )

@@ -139,6 +139,37 @@ def test_do_browser_action_forwards_tab_id_alias(monkeypatch):
     assert json.loads(outcome.data)["tab_id"] == "tab-3"
 
 
+def test_do_browser_action_forwards_verify_args(monkeypatch):
+    calls = []
+
+    def fake_browser_action(**kwargs):
+        calls.append(kwargs)
+        return {"status": "success", "action": kwargs["action"]}
+
+    monkeypatch.setattr(ga, "browser_action", fake_browser_action)
+    handler = make_handler()
+
+    run_generator(
+        handler.do_browser_action(
+            {
+                "action": "input",
+                "index": 1,
+                "text": "openai",
+                "verify": "field_value",
+                "verify_text": "Ready",
+                "verify_value": "openai",
+                "verify_selector": "#ready",
+            },
+            SimpleNamespace(content=""),
+        )
+    )
+
+    assert calls[0]["verify"] == "field_value"
+    assert calls[0]["verify_text"] == "Ready"
+    assert calls[0]["verify_value"] == "openai"
+    assert calls[0]["verify_selector"] == "#ready"
+
+
 def test_browser_action_init_failure_reports_browser_unavailable(monkeypatch):
     def fail_init():
         raise RuntimeError("Chrome unavailable")

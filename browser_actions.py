@@ -66,6 +66,10 @@ def build_browser_action_script(
     timeout: int,
     state_token: str | None,
     selector: str | None,
+    verify: str | None = None,
+    verify_text: str | None = None,
+    verify_value: str | None = None,
+    verify_selector: str | None = None,
     selector_tag: str | None = None,
     selector_role: str | None = None,
     selector_text: str | None = None,
@@ -79,6 +83,10 @@ def build_browser_action_script(
         "timeout": timeout,
         "state_token": state_token,
         "selector": selector,
+        "verify": verify,
+        "verify_text": verify_text,
+        "verify_value": verify_value,
+        "verify_selector": verify_selector,
         "selector_tag": selector_tag,
         "selector_role": selector_role,
         "selector_text": selector_text,
@@ -212,6 +220,145 @@ def build_browser_action_script(
     const title = element.getAttribute("title") || "";
     const text = element.innerText || element.textContent || "";
     return [aria, placeholder, title, text].filter(Boolean).join(" ").trim().replace(/\\s+/g, " ");
+  }}
+
+  function readableDocuments(rootDocument) {{
+    const docs = [];
+    const seen = new Set();
+    function visit(doc) {{
+      if (!doc || seen.has(doc)) return;
+      seen.add(doc);
+      docs.push(doc);
+      let frames = [];
+      try {{
+        frames = Array.from(doc.querySelectorAll("iframe, frame"));
+      }} catch (e) {{
+        frames = [];
+      }}
+      for (const frame of frames) {{
+        try {{
+          if (frame.contentDocument) visit(frame.contentDocument);
+        }} catch (e) {{
+          // Cross-origin frames are intentionally skipped.
+        }}
+      }}
+    }}
+    visit(rootDocument || document);
+    return docs;
+  }}
+
+  function documentReadableText(doc) {{
+    try {{
+      return (doc.body && (doc.body.innerText || doc.body.textContent || "")) || "";
+    }} catch (e) {{
+      return "";
+    }}
+  }}
+
+  function readElementValue(el) {{
+    if (!el) return "";
+    if ("value" in el) {{
+      const inputType = String(el.getAttribute("type") || "").toLowerCase();
+      if (inputType === "password") return "[REDACTED]";
+      return String(el.value ?? "");
+    }}
+    if (isContentEditableTarget(el)) {{
+      return String(el.innerText || el.textContent || "");
+    }}
+    return String(el.innerText || el.textContent || "");
+  }}
+
+  function verifySuccess(type, observed, expected) {{
+    return {{ type, observed, expected, passed: true }};
+  }}
+
+  function verifyFailure(type, observed, expected) {{
+    return {{
+      status: "failed",
+      action: request.action,
+      index: request.index,
+      stage: "verify_failed",
+      error: "Verification failed.",
+      verification: {{ type, observed, expected, passed: false }},
+      observed,
+      expected,
+      retryable: true
+    }};
+  }}
+
+  function verifyAction(el) {{
+    const type = request.verify;
+    if (!type) return null;
+
+    if (type === "field_value") {{
+      const expected = String(request.verify_value !== null && request.verify_value !== undefined
+        ? request.verify_value
+        : (request.value !== null && request.value !== undefined ? request.value : (request.text || "")));
+      const observed = readElementValue(el);
+      return observed === expected
+        ? verifySuccess(type, observed, expected)
+        : verifyFailure(type, observed, expected);
+    }}
+
+    if (type === "element_text") {{
+      const expected = String(request.verify_text !== null && request.verify_text !== undefined
+        ? request.verify_text
+        : (request.text || ""));
+      const observed = readElementValue(el);
+      return observed.includes(expected)
+        ? verifySuccess(type, observed, expected)
+        : verifyFailure(type, observed, expected);
+    }}
+
+    if (type === "text") {{
+      const expected = String(request.verify_text !== null && request.verify_text !== undefined
+        ? request.verify_text
+        : (request.text || ""));
+      const observed = readableDocuments(document).map(documentReadableText).join("\\n");
+      return observed.includes(expected)
+        ? verifySuccess(type, observed, expected)
+        : verifyFailure(type, observed, expected);
+    }}
+
+    if (type === "selector") {{
+      const expected = String(request.verify_selector || request.selector || "");
+      let found = false;
+      for (const doc of readableDocuments(document)) {{
+        try {{
+          if (expected && doc.querySelector(expected)) {{
+            found = true;
+            break;
+          }}
+        }} catch (e) {{
+          found = false;
+        }}
+      }}
+      const observed = found ? expected : null;
+      return found
+        ? verifySuccess(type, observed, expected)
+        : verifyFailure(type, observed, expected);
+    }}
+
+    return verifyFailure(type, "", "");
+  }}
+
+  function verifyHintFor(action) {{
+    if (action === "input") return "Use verify='field_value' with verify_value to require the field value after input.";
+    if (action === "select") return "Use verify='field_value' with verify_value to require the selected value.";
+    if (action === "click") return "Use verify='text' or verify='selector' to require the expected post-click page state.";
+    if (action === "keys") return "Use verify='text', verify='selector', or verify='field_value' to require the expected post-key state.";
+    return "";
+  }}
+
+  function finalizeMutatingAction(result, target) {{
+    if (request.verify) {{
+      const verification = verifyAction(target);
+      if (verification && verification.status === "failed") return verification;
+      if (verification) result.verification = verification;
+    }} else {{
+      result.verify_hint = verifyHintFor(request.action);
+    }}
+    return result;
   }}
 
   function nativeRoleOf(element, tag, type) {{
@@ -355,7 +502,7 @@ def build_browser_action_script(
     if (request.action === "click") {{
       el.focus({{ preventScroll: true }});
       el.click();
-      return {{ status: "success", action: "click", index: request.index, result: "clicked", page_changed: true }};
+      return finalizeMutatingAction({{ status: "success", action: "click", index: request.index, result: "clicked", page_changed: true }}, el);
     }}
 
     if (request.action === "input") {{
@@ -380,7 +527,7 @@ def build_browser_action_script(
         return fail("dom_event", "Input value was not accepted.");
       }}
       const inputType = String(el.getAttribute("type") || "").toLowerCase();
-      return {{
+      return finalizeMutatingAction({{
         status: "success",
         action: "input",
         index: request.index,
@@ -388,7 +535,7 @@ def build_browser_action_script(
         next_action_hint: "To submit/search after input, call browser_action with action='keys', text='Enter' and without index; this uses the focused element.",
         suggested_next_action: {{ action: "keys", text: "Enter" }},
         page_changed: true
-      }};
+      }}, el);
     }}
 
     if (request.action === "select") {{
@@ -399,7 +546,7 @@ def build_browser_action_script(
       if (!option) return fail("locate", "No matching option found.");
       el.value = option.value;
       dispatchInputEvents(el);
-      return {{ status: "success", action: "select", index: request.index, result: option.value, page_changed: true }};
+      return finalizeMutatingAction({{ status: "success", action: "select", index: request.index, result: option.value, page_changed: true }}, el);
     }}
 
     if (request.action === "keys") {{
@@ -424,7 +571,7 @@ def build_browser_action_script(
         keyboardEvent(target, "keydown", key);
         keyboardEvent(target, "keyup", key);
       }}
-      return {{ status: "success", action: "keys", index: request.index, result: key, page_changed: true }};
+      return finalizeMutatingAction({{ status: "success", action: "keys", index: request.index, result: key, page_changed: true }}, target);
     }}
 
     return fail("invalid_args", "Unsupported browser action.");
@@ -506,15 +653,23 @@ class BrowserActionLayer:
         text: str | None = None,
         value: str | None = None,
         selector: str | None = None,
+        verify: str | None = None,
+        verify_text: str | None = None,
+        verify_value: str | None = None,
+        verify_selector: str | None = None,
         timeout: int = 10,
         switch_tab_id: str | None = None,
     ) -> dict[str, Any]:
         action = str(action or "").strip()
         safe_index = _safe_index(index)
         safe_timeout = _safe_timeout(timeout)
+        valid_verify = {"field_value", "text", "selector", "element_text"}
+        verify = str(verify or "").strip() or None
 
         if action not in SUPPORTED_ACTIONS:
             return failed_result(action or None, "invalid_args", f"Unsupported browser action: {action}", safe_index)
+        if verify and verify not in valid_verify:
+            return failed_result(action or None, "invalid_args", f"Unsupported verification type: {verify}", safe_index)
         if action in INDEX_REQUIRED_ACTIONS and safe_index is None:
             return failed_result(action, "invalid_args", f"index is required for {action}.")
         if action == "wait_selector" and not selector:
@@ -578,6 +733,10 @@ class BrowserActionLayer:
             timeout=safe_timeout,
             state_token=state_token,
             selector=effective_selector,
+            verify=verify,
+            verify_text=verify_text,
+            verify_value=verify_value,
+            verify_selector=verify_selector,
             selector_tag=selector_tag,
             selector_role=selector_role,
             selector_text=selector_text,
@@ -599,6 +758,10 @@ class BrowserActionLayer:
         result = dict(raw)
         result.setdefault("tab_id", driver.default_session_id)
 
-        if action in STATE_MUTATING_ACTIONS and result.get("status") == "success":
+        if action in STATE_MUTATING_ACTIONS and (
+            result.get("status") == "success"
+            or result.get("stage") == "verify_failed"
+            or result.get("page_changed") is True
+        ):
             self._last_state = None
         return result
