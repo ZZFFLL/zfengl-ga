@@ -1,5 +1,3 @@
-import pytest
-
 from browser_indexer import build_browser_state_script, normalize_state_result
 
 
@@ -44,10 +42,26 @@ def test_build_browser_state_script_separates_cached_nodes_from_snapshots():
     script = build_browser_state_script()
 
     assert "const snapshots = elements.map((element, index) =>" in script
-    assert "const stateToken = `${Date.now()}:${elements.length}`;" in script
+    assert "const stateToken =" in script
     assert "window.__GA_BROWSER_ACTION_STATE__ = { token: stateToken, elements };" in script
     assert "state_token: stateToken," in script
     assert "elements: snapshots," in script
+
+
+def test_build_browser_state_script_uses_collision_resistant_token():
+    script = build_browser_state_script()
+
+    assert "window.__GA_BROWSER_STATE_COUNTER__" in script
+    assert "Math.random().toString(36).slice(2)" in script
+    assert "const stateToken = `${Date.now()}:${window.__GA_BROWSER_STATE_COUNTER__}:${randomPart}:${elements.length}`;" in script
+
+
+def test_build_browser_state_script_bounds_snapshot_text_and_value():
+    script = build_browser_state_script()
+
+    assert "return String(value || \"\").slice(0, 240);" in script
+    assert "text: boundedText(textOf(element))," in script
+    assert "value: boundedText(value)," in script
 
 
 def test_normalize_state_result_adds_indices_and_defaults():

@@ -42,6 +42,10 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
     return (aria || title || text).trim().replace(/\\s+/g, " ");
   }};
 
+  const boundedText = (value) => {{
+    return String(value || "").slice(0, 240);
+  }};
+
   const selectorHint = (element) => {{
     const tag = element.tagName.toLowerCase();
     const id = element.getAttribute("id");
@@ -122,8 +126,8 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
       tag,
       role: element.getAttribute("role") || nativeRoleOf(element, tag, type),
       type,
-      text: textOf(element),
-      value,
+      text: boundedText(textOf(element)),
+      value: boundedText(value),
       visible: isVisible(element, rect),
       disabled: Boolean(element.disabled || element.getAttribute("aria-disabled") === "true"),
       bbox: {{
@@ -136,7 +140,9 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
     }};
   }});
 
-  const stateToken = `${{Date.now()}}:${{elements.length}}`;
+  window.__GA_BROWSER_STATE_COUNTER__ = (window.__GA_BROWSER_STATE_COUNTER__ || 0) + 1;
+  const randomPart = Math.random().toString(36).slice(2);
+  const stateToken = `${{Date.now()}}:${{window.__GA_BROWSER_STATE_COUNTER__}}:${{randomPart}}:${{elements.length}}`;
   window.__GA_BROWSER_ACTION_STATE__ = {{ token: stateToken, elements }};
   return {{
     state_token: stateToken,
