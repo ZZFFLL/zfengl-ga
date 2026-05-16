@@ -40,6 +40,16 @@ def test_build_browser_state_script_infers_native_roles():
     assert 'role: element.getAttribute("role") || nativeRoleOf(element, tag, type),' in script
 
 
+def test_build_browser_state_script_separates_cached_nodes_from_snapshots():
+    script = build_browser_state_script()
+
+    assert "const snapshots = elements.map((element, index) =>" in script
+    assert "const stateToken = `${Date.now()}:${elements.length}`;" in script
+    assert "window.__GA_BROWSER_ACTION_STATE__ = { token: stateToken, elements };" in script
+    assert "state_token: stateToken," in script
+    assert "elements: snapshots," in script
+
+
 def test_normalize_state_result_adds_indices_and_defaults():
     raw = {
         "status": "success",

@@ -107,19 +107,24 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
       continue;
     }}
 
+    elements.push(element);
+  }}
+
+  const snapshots = elements.map((element, index) => {{
+    const rect = element.getBoundingClientRect();
     const tag = element.tagName.toLowerCase();
     const type = element.getAttribute("type") || "";
     const rawValue = "value" in element ? element.value : "";
     const value = type.toLowerCase() === "password" && rawValue ? "[REDACTED]" : rawValue;
 
-    elements.push({{
-      index: elements.length + 1,
+    return {{
+      index: index + 1,
       tag,
       role: element.getAttribute("role") || nativeRoleOf(element, tag, type),
       type,
       text: textOf(element),
       value,
-      visible,
+      visible: isVisible(element, rect),
       disabled: Boolean(element.disabled || element.getAttribute("aria-disabled") === "true"),
       bbox: {{
         x: rect.x,
@@ -128,12 +133,15 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
         height: rect.height,
       }},
       selector_hint: selectorHint(element),
-    }});
-  }}
+    }};
+  }});
 
-  const token = `${{Date.now()}}:${{elements.length}}`;
-  window.__GA_BROWSER_ACTION_STATE__ = {{ token, elements }};
-  return window.__GA_BROWSER_ACTION_STATE__;
+  const stateToken = `${{Date.now()}}:${{elements.length}}`;
+  window.__GA_BROWSER_ACTION_STATE__ = {{ token: stateToken, elements }};
+  return {{
+    state_token: stateToken,
+    elements: snapshots,
+  }};
 }})();
 """.strip()
 
