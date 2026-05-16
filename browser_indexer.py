@@ -72,6 +72,10 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
     );
   }};
 
+  const isContentEditableTarget = (element) => {{
+    return Boolean(element && (element.isContentEditable || element.getAttribute("contenteditable") === "true"));
+  }};
+
   const nativeRoleOf = (element, tag, type) => {{
     if (tag === "a" && element.hasAttribute("href")) {{
       return "link";
@@ -255,7 +259,7 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
     if (normalizedRole === "combobox" || hasListboxPopup) return "custom_select";
     if (normalizedRole === "option" || tag === "option") return "option";
     if (tag === "textarea") return "textarea";
-    if (element.isContentEditable || element.getAttribute("contenteditable") === "true") return "contenteditable";
+    if (isContentEditableTarget(element)) return "contenteditable";
     if (tag === "input" && ["date", "datetime-local", "month", "time", "week"].includes(normalizedType)) return "date_input";
     if (tag === "input") return "native_input";
     if (tag === "button" || normalizedRole === "button") return "button";
@@ -267,25 +271,35 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
     if (controlKind === "custom_select") return ["click_to_open", "state_after_open", "select_option_by_click"];
     if (controlKind === "native_select") return ["select_by_value_or_text"];
     if (controlKind === "option") return ["click_to_select"];
-    if (["native_input", "textarea", "contenteditable", "date_input"].includes(controlKind)) return ["input_text", "keys_after_input"];
+    if (["native_input", "textarea", "contenteditable", "date_input"].includes(controlKind)) return ["input", "verify_field_value", "keys_after_input"];
     if (["button", "link"].includes(controlKind)) return ["click"];
     return [];
   }};
 
   const elements = [];
+  const seenElements = new WeakSet();
+  const addElement = (element, framePath, frameWindow) => {{
+    if (!element || seenElements.has(element) || elements.length >= maxElements) {{
+      return;
+    }}
+
+    const rect = element.getBoundingClientRect();
+    const visible = isVisible(element, rect, frameWindow);
+    if (!includeInvisible && !visible) {{
+      return;
+    }}
+
+    seenElements.add(element);
+    elements.push({{ element, framePath, frameWindow }});
+  }};
+
   const collectDocument = (doc, framePath, frameWindow) => {{
     for (const element of doc.querySelectorAll(selector)) {{
       if (elements.length >= maxElements) {{
         break;
       }}
 
-      const rect = element.getBoundingClientRect();
-      const visible = isVisible(element, rect, frameWindow);
-      if (!includeInvisible && !visible) {{
-        continue;
-      }}
-
-      elements.push({{ element, framePath, frameWindow }});
+      addElement(element, framePath, frameWindow);
     }}
 
     if (elements.length >= maxElements) {{
@@ -304,6 +318,13 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
         const childWindow = frame.contentWindow;
         if (!frameDocument || !childWindow) {{
           continue;
+        }}
+        const editorBodyCandidate = frameDocument.body;
+        if (
+          editorBodyCandidate &&
+          (isContentEditableTarget(frameDocument.body) || String(frameDocument.designMode || "").toLowerCase() === "on")
+        ) {{
+          addElement(editorBodyCandidate, framePath.concat(frameIndex), childWindow);
         }}
         collectDocument(frameDocument, framePath.concat(frameIndex), childWindow);
       }} catch (error) {{

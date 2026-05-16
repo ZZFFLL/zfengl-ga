@@ -1342,6 +1342,35 @@ window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [input] };
     assert result["verify_hint"] == "Use verify='field_value' with verify_value to require the field value after input."
 
 
+def test_browser_action_script_input_contenteditable_verify_field_value_success():
+    script = build_browser_action_script(
+        action="input",
+        index=1,
+        text="rich text update",
+        value=None,
+        timeout=1,
+        state_token="tok-2",
+        selector=None,
+        verify="field_value",
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+const editor = makeElement({ tag: "div", text: "seed", contentEditable: true });
+window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [editor] };
+""",
+    )
+
+    assert result["status"] == "success"
+    assert result["verification"] == {
+        "type": "field_value",
+        "observed": "rich text update",
+        "expected": "rich text update",
+        "passed": True,
+    }
+
+
 def test_browser_action_script_input_verify_field_value_failure():
     script = build_browser_action_script(
         action="input",

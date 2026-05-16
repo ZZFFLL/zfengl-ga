@@ -626,6 +626,7 @@ def build_browser_action_script(
         }}
       }} else if (isContentEditableTarget(el)) {{
         el.textContent = nextValue;
+        if ("innerText" in el) el.innerText = nextValue;
       }} else {{
         return fail("invalid_args", "input action requires an editable text element.");
       }}

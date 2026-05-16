@@ -10,6 +10,18 @@ def test_build_browser_state_script_contains_index_state_and_limit():
     assert "a[href]" in script
     assert "[onclick]" in script
     assert "[contenteditable=\"true\"]" in script
+    assert "const isContentEditableTarget = (element) =>" in script
+    assert "contenteditable" in script
+    assert '"input"' in script
+    assert '"verify_field_value"' in script
+
+
+def test_build_browser_state_script_indexes_same_origin_editor_frame_body():
+    script = build_browser_state_script()
+
+    assert "editorBodyCandidate" in script
+    assert "frameDocument.designMode" in script
+    assert "isContentEditableTarget(frameDocument.body)" in script
 
 
 def test_build_browser_state_script_includes_custom_select_roles():
