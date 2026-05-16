@@ -33,6 +33,7 @@ mykey.py
 tasks/
 
 *.zip
+*.exe
 
 memory/*
 !memory/memory_management_sop.md
@@ -94,6 +95,9 @@ memory/L4_raw_sessions/*
 
 # Memory management
 !memory/memory_cleanup_sop.md
+
+# Code Review Principles
+!memory/code_review_principles.md
 
 # Visual Studio
 .vs/

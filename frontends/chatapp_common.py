@@ -1,5 +1,10 @@
 import ast, asyncio, glob, json, os, queue as Q, re, socket, sys, time
 
+# 确保能导入上级目录的模块（如 agentmain）
+_parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _parent_dir not in sys.path:
+    sys.path.insert(0, _parent_dir)
+
 HELP_COMMANDS = (
     ("/help", "显示帮助"),
     ("/status", "查看状态"),
@@ -19,6 +24,7 @@ TELEGRAM_MENU_COMMANDS = (
     ("new", "开启新对话并清空当前上下文"),
     ("restore", "恢复上次对话历史"),
     ("continue", "列出可恢复会话；/continue n 恢复第 n 个"),
+    ("btw", "临时插问主 agent 进展，不打断主线"),
     ("llm", "查看模型列表；/llm n 切换到指定模型"),
 )
 
