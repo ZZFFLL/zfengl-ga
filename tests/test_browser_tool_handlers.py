@@ -55,6 +55,7 @@ def test_do_browser_state_formats_execution_output(monkeypatch):
     chunks, outcome = run_generator(handler.do_browser_state({"max_elements": 10}, SimpleNamespace(content="")))
 
     assert "Browser state:" in "".join(chunks)
+    assert '"text": "Login"' in "".join(chunks)
     data = json.loads(outcome.data)
     assert data["status"] == "success"
     assert data["elements"][0]["text"] == "Login"
@@ -114,6 +115,7 @@ def test_do_browser_action_formats_execution_output(monkeypatch):
     )
 
     assert "Browser action result:" in "".join(chunks)
+    assert '"result": "clicked"' in "".join(chunks)
     data = json.loads(outcome.data)
     assert data == {"status": "success", "action": "click", "index": 1, "result": "clicked"}
 

@@ -421,10 +421,10 @@ class GenericAgentHandler(BaseHandler):
             include_invisible=args.get("include_invisible", False),
             max_elements=args.get("max_elements", 120),
         )
-        yield "Browser state:\n"
         result_json = json.dumps(result, ensure_ascii=False, default=json_default)
         maxlen = 12000 // args.get('_tool_num', 1)
         formatted_result = smart_format(result_json, max_str_len=maxlen)
+        yield f"Browser state:\n{formatted_result}\n"
         outcome = StepOutcome(formatted_result, next_prompt="\n")
         outcome.result = formatted_result
         return outcome
@@ -439,10 +439,10 @@ class GenericAgentHandler(BaseHandler):
             timeout=args.get("timeout", 10),
             switch_tab_id=args.get("switch_tab_id") or args.get("tab_id"),
         )
-        yield "Browser action result:\n"
         result_json = json.dumps(result, ensure_ascii=False, default=json_default)
         maxlen = 8000 // args.get('_tool_num', 1)
         formatted_result = smart_format(result_json, max_str_len=maxlen)
+        yield f"Browser action result:\n{formatted_result}\n"
         outcome = StepOutcome(formatted_result, next_prompt="\n")
         outcome.result = formatted_result
         return outcome

@@ -37,9 +37,10 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
 
   const textOf = (element) => {{
     const aria = element.getAttribute("aria-label") || "";
+    const placeholder = element.getAttribute("placeholder") || "";
     const title = element.getAttribute("title") || "";
     const text = element.innerText || element.textContent || "";
-    return (aria || title || text).trim().replace(/\\s+/g, " ");
+    return [aria, placeholder, title, text].filter(Boolean).join(" ").trim().replace(/\\s+/g, " ");
   }};
 
   const boundedText = (value) => {{

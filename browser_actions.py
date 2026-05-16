@@ -114,6 +114,18 @@ def build_browser_action_script(
     target.dispatchEvent(new KeyboardEvent(type, {{ key, bubbles: true, cancelable: true }}));
   }}
 
+  function blockedForAction(el, action) {{
+    if (!el) return "";
+    if (el.disabled || el.getAttribute("aria-disabled") === "true") {{
+      return "Element is disabled.";
+    }}
+    if (["input", "select", "keys"].includes(action) &&
+        (el.readOnly || el.getAttribute("aria-readonly") === "true")) {{
+      return "Element is read-only.";
+    }}
+    return "";
+  }}
+
   try {{
     if (request.action === "wait_text") {{
       if (!request.text) return fail("invalid_args", "text is required for wait_text.");
@@ -158,6 +170,8 @@ def build_browser_action_script(
       el.scrollIntoView({{ block: "center", inline: "center", behavior: "instant" }});
       await sleep(50);
       if (!visible(el)) return fail("visibility", "Element is not visible.");
+      const blocked = blockedForAction(el, request.action);
+      if (blocked) return fail("visibility", blocked);
     }}
 
     if (request.action === "click") {{
@@ -208,6 +222,8 @@ def build_browser_action_script(
     if (request.action === "keys") {{
       const key = String(request.text || request.value || "");
       if (!key) return fail("invalid_args", "text or value is required for keys.");
+      const allowedKeys = ["Enter", "Escape", "Tab", "Control+A", "Backspace"];
+      if (!allowedKeys.includes(key)) return fail("invalid_args", "Unsupported key action.");
       const target = el || document.activeElement || document.body;
       if (!target) return fail("locate", "No keyboard target found.");
       target.focus && target.focus({{ preventScroll: true }});

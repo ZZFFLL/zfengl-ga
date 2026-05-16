@@ -206,6 +206,37 @@ def test_build_browser_action_script_contains_stale_index_check():
     assert '"action": "input"' in script
 
 
+def test_build_browser_action_script_rejects_unsupported_keys():
+    script = build_browser_action_script(
+        action="keys",
+        index=None,
+        text="hello",
+        value=None,
+        timeout=4,
+        state_token=None,
+        selector=None,
+    )
+
+    assert 'const allowedKeys = ["Enter", "Escape", "Tab", "Control+A", "Backspace"];' in script
+    assert 'if (!allowedKeys.includes(key)) return fail("invalid_args", "Unsupported key action.");' in script
+
+
+def test_build_browser_action_script_rejects_disabled_and_readonly_controls():
+    script = build_browser_action_script(
+        action="input",
+        index=3,
+        text="hello",
+        value=None,
+        timeout=4,
+        state_token="tok-2",
+        selector=None,
+    )
+
+    assert "function blockedForAction(el, action)" in script
+    assert 'return "Element is disabled.";' in script
+    assert 'return "Element is read-only.";' in script
+
+
 def test_build_browser_action_script_input_uses_native_setter_and_verifies_value():
     script = build_browser_action_script(
         action="input",

@@ -38,6 +38,12 @@ def test_build_browser_state_script_infers_native_roles():
     assert 'role: element.getAttribute("role") || nativeRoleOf(element, tag, type),' in script
 
 
+def test_build_browser_state_script_includes_placeholder_text():
+    script = build_browser_state_script()
+
+    assert 'element.getAttribute("placeholder") || ""' in script
+
+
 def test_build_browser_state_script_separates_cached_nodes_from_snapshots():
     script = build_browser_state_script()
 
