@@ -308,6 +308,15 @@ class BrowserActionLayer:
         if action in INDEX_REQUIRED_ACTIONS or safe_index is not None:
             if not self._last_state:
                 return failed_result(action, "state_missing", f"Run browser_state before browser_action {action}.", safe_index)
+            if str(self._last_state.get("tab_id") or "") != str(driver.default_session_id):
+                result = failed_result(
+                    action,
+                    "stale_index",
+                    "Run browser_state before browser_action for the current tab.",
+                    safe_index,
+                )
+                result["tab_id"] = driver.default_session_id
+                return result
             state_token = self._last_state.get("state_token")
 
         script = build_browser_action_script(
@@ -323,7 +332,9 @@ class BrowserActionLayer:
         try:
             raw = _response_payload(driver.execute_js(script, timeout=safe_timeout + 3))
         except Exception as exc:
-            return failed_result(action, "dom_event", str(exc), safe_index)
+            result = failed_result(action, "dom_event", str(exc), safe_index)
+            result["tab_id"] = driver.default_session_id
+            return result
 
         if isinstance(raw, dict):
             result = dict(raw)

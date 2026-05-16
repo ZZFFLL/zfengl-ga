@@ -16,6 +16,12 @@ class FakeDriver:
         return self.responses.pop(0)
 
 
+class RaisingDriver(FakeDriver):
+    def execute_js(self, script, timeout=15, session_id=None):
+        self.calls.append({"script": script, "timeout": timeout, "session_id": session_id})
+        raise RuntimeError("bridge failed")
+
+
 def test_get_state_returns_browser_unavailable_when_no_sessions():
     layer = BrowserActionLayer()
     driver = FakeDriver(sessions=[])
@@ -87,6 +93,33 @@ def test_run_action_executes_click_with_cached_token_and_invalidates_state():
     assert '"state_token": "tok-1"' in driver.calls[0]["script"]
     assert '"action": "click"' in driver.calls[0]["script"]
     assert layer.last_state_token is None
+
+
+def test_run_action_execute_js_exception_includes_tab_id():
+    layer = BrowserActionLayer()
+    layer._last_state = {"tab_id": "7", "state_token": "tok-1"}
+    driver = RaisingDriver()
+
+    result = layer.run_action(driver, action="click", index=1)
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "dom_event"
+    assert result["tab_id"] == "7"
+
+
+def test_run_action_rejects_indexed_action_when_cached_tab_mismatches_switch():
+    layer = BrowserActionLayer()
+    layer._last_state = {"tab_id": "7", "state_token": "tok-1"}
+    driver = FakeDriver([{"data": {"status": "success"}}])
+
+    result = layer.run_action(driver, action="click", index=1, switch_tab_id="8")
+
+    assert result["status"] == "failed"
+    assert result["stage"] in {"state_missing", "stale_index"}
+    assert "Run browser_state" in result["error"]
+    assert result["tab_id"] == "8"
+    assert driver.calls == []
+    assert len(driver.responses) == 1
 
 
 def test_run_action_allows_wait_text_without_cached_state():
