@@ -11,6 +11,8 @@ from agent_loop import agent_runner_loop
 from ga import GenericAgentHandler, smart_format, get_global_memory, format_error, consume_file
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
+
+NORMAL_RUNNER_MAX_TURNS = 240
 def load_tool_schema(suffix=''):
     global TOOLS_SCHEMA
     TS = open(os.path.join(script_dir, f'assets/tools_schema{suffix}.json'), 'r', encoding='utf-8').read()
@@ -144,7 +146,7 @@ class GenericAgent:
             self.handler = handler  # although new handler, the **full** history is in llmclient, so it is full history!
             self.llmclient.log_path = self.log_path
             gen = agent_runner_loop(self.llmclient, sys_prompt, raw_query, 
-                                handler, TOOLS_SCHEMA, max_turns=140, verbose=self.verbose)
+                                handler, TOOLS_SCHEMA, max_turns=NORMAL_RUNNER_MAX_TURNS, verbose=self.verbose)
             try:
                 full_resp = ""; last_pos = 0
                 for chunk in gen:

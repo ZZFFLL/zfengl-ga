@@ -1,0 +1,109 @@
+.ga-context-panel {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  flex-direction: column;
+  border-left: 0.0625rem solid #d9e0e8;
+  background: #f8fafb;
+}
+
+.ga-context-header {
+  display: flex;
+  min-height: 3.625rem;
+  align-items: center;
+  gap: 0.75rem;
+  border-bottom: 0.0625rem solid #d9e0e8;
+  padding: 0.75rem;
+}
+
+.ga-context-section {
+  border: 0.0625rem solid #d9e0e8;
+  border-radius: 0.625rem;
+  background: #ffffff;
+  padding: 0.875rem;
+}
+
+.ga-context-summary-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.75rem;
+  border-radius: 0.5rem;
+  background: #f7f9fb;
+  padding: 0.625rem 0.75rem;
+}
+
+.ga-context-summary-icon {
+  display: inline-flex;
+  width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+  color: #0f766e;
+  background: #e7f5f2;
+}
+
+.ga-context-timeline.ant-timeline {
+  margin-top: 0.75rem;
+}
+
+.ga-context-timeline .ant-timeline-item {
+  padding-bottom: 0.875rem;
+}
+
+.ga-context-timeline-dot {
+  display: inline-flex;
+  width: 1.75rem;
+  height: 1.75rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999rem;
+  color: #0f766e;
+  background: #e7f5f2;
+}
+
+.ga-context-activity-item {
+  min-width: 0;
+  border-radius: 0.5rem;
+  background: #f7f9fb;
+  padding: 0.625rem 0.75rem;
+}
+
+.ga-run-inspector {
+  display: flex;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  border-left: 0.0625rem solid #e3e1dc;
+  background: #f8f8f6;
+}
+
+.ga-run-inspector-header {
+  display: flex;
+  min-height: 4rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-bottom: 0.0625rem solid #e3e1dc;
+  padding: 0.875rem 1rem;
+}
+
+.ga-run-inspector-section {
+  border: 0.0625rem solid #e3e1dc;
+  border-radius: 0.75rem;
+  background: #ffffff;
+  padding: 0.875rem;
+}
+
+.ga-run-inspector .text-app-text,
+.ga-run-inspector .text-app-textStrong {
+  color: #242424;
+}
+
+.ga-run-inspector .text-app-muted {
+  color: #6f6f6b;
+}

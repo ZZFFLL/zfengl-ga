@@ -143,7 +143,7 @@ export function streamTask(
   const handle = (event: MessageEvent) => {
     const payload = JSON.parse(event.data) as StreamEvent;
     handlers.onEvent(payload);
-    if (payload.event === "message_done" || payload.event === "app_error") {
+    if (payload.event === "message_done" || payload.event === "app_error" || payload.event === "task_aborted") {
       source.close();
       handlers.onClose();
     }
@@ -152,6 +152,7 @@ export function streamTask(
   source.addEventListener("message_done", handle);
   source.addEventListener("execution_update", handle);
   source.addEventListener("heartbeat", handle);
+  source.addEventListener("task_aborted", handle);
   source.addEventListener("app_error", handle);
   source.onerror = () => {
     source.close();

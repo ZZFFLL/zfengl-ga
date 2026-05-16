@@ -1,8 +1,11 @@
 @import "./styles/base.css";
 @import "./styles/antd-overrides.css";
 @import "./styles/shell.css";
+@import "./styles/sidebar.css";
+@import "./styles/workbench.css";
 @import "./styles/chat.css";
 @import "./styles/execution.css";
+@import "./styles/context.css";
 @import "./styles/motion.css";
 
 @tailwind base;
@@ -11,23 +14,23 @@
 
 @layer components {
   .control-button {
-    @apply inline-flex min-h-11 w-full items-center gap-2 rounded-[18px] border border-app-line bg-white px-4 text-left text-sm font-medium text-app-text transition hover:bg-app-surface disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex min-h-11 w-full items-center gap-2 rounded-md border border-app-line bg-white px-4 text-left text-sm font-medium text-app-text transition hover:bg-app-surface disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .icon-button-subtle {
-    @apply inline-flex h-10 w-10 items-center justify-center rounded-[18px] border border-app-line bg-white text-app-text transition hover:bg-app-surface;
+    @apply inline-flex h-10 w-10 items-center justify-center rounded-md border border-app-line bg-white text-app-text transition hover:bg-app-surface;
   }
 
   .icon-button-ghost {
-    @apply inline-flex h-8 w-8 items-center justify-center rounded-xl text-app-muted transition hover:bg-[#e8ecf3] hover:text-app-text disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex h-8 w-8 items-center justify-center rounded-md text-app-muted transition hover:bg-[#e8ecf3] hover:text-app-text disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .chip-muted {
-    @apply inline-flex items-center rounded-full bg-white px-3 py-1 text-xs text-app-muted ring-1 ring-app-line;
+    @apply inline-flex items-center rounded-md bg-white px-3 py-1 text-xs text-app-muted ring-1 ring-app-line;
   }
 
   .sidebar-section-title {
-    @apply px-2 text-[12px] font-semibold uppercase text-app-muted;
+    @apply px-2 text-[0.75rem] font-semibold uppercase text-app-muted;
   }
 
   .sidebar-list {
@@ -35,11 +38,11 @@
   }
 
   .sidebar-item {
-    @apply flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-app-text transition hover:bg-white/80 disabled:cursor-not-allowed disabled:opacity-60;
+    @apply flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-app-text transition hover:bg-white/80 disabled:cursor-not-allowed disabled:opacity-60;
   }
 
   .sidebar-item.active {
-    @apply bg-white shadow-[0_1px_0_rgba(31,41,55,0.04)] ring-1 ring-app-line/80;
+    @apply bg-white shadow-[0_0.0625rem_0_rgba(31,41,55,0.04)] ring-1 ring-app-line/80;
   }
 
 }

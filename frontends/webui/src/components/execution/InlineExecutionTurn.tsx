@@ -8,9 +8,11 @@ import { ExecutionToolCallCard } from "./ExecutionToolCallCard";
 export function InlineExecutionTurn({
   turn,
   defaultOpen,
+  onSelectInspectorTarget,
 }: {
   turn: ExecutionTurn;
   defaultOpen: boolean;
+  onSelectInspectorTarget?: (toolIndex: number) => void;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const [manualOpen, setManualOpen] = useState(false);
@@ -26,18 +28,19 @@ export function InlineExecutionTurn({
 
   return (
     <section
-      className={`ga-run-rail rounded-xl border bg-white ${
+      className={`ga-run-rail rounded-[0.625rem] border bg-white ${
         active ? "border-app-primary/45 shadow-soft" : "border-app-line"
       }`}
     >
       <button
         type="button"
-        className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left"
+        className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left transition hover:bg-app-surface"
         onClick={() => {
           setManualOpen(true);
           setOpen((value) => !value);
         }}
         aria-expanded={open}
+        aria-label={`${open ? "收起" : "展开"} Turn ${turn.turn} 执行步骤`}
       >
         <div className="min-w-0">
           <div className="flex min-w-0 items-center gap-2 text-sm font-semibold text-app-text">
@@ -56,7 +59,10 @@ export function InlineExecutionTurn({
             {active ? "执行中" : "已完成"} · {toolCalls.length} 个工具调用
           </div>
         </div>
-        <ChevronDown className={`mt-0.5 h-4 w-4 shrink-0 text-app-muted transition ${open ? "rotate-180" : ""}`} />
+        <ChevronDown
+          className={`mt-0.5 h-4 w-4 shrink-0 text-app-muted transition ${open ? "rotate-180" : ""}`}
+          aria-hidden="true"
+        />
       </button>
       {open ? (
         <div className="border-t border-app-line/70 px-4 py-4">
@@ -69,7 +75,7 @@ export function InlineExecutionTurn({
                 <ExecutionToolCallCard
                   key={`${turn.turn}-${toolCall.tool}-${toolIndex}`}
                   toolCall={toolCall}
-                  resultMode="preview"
+                  onInspect={() => onSelectInspectorTarget?.(toolIndex)}
                 />
               ))}
             </div>

@@ -1,6 +1,6 @@
 :root {
-  color: #1d2430;
-  background: #f4f6f8;
+  color: #242424;
+  background: #f7f7f5;
   font-family:
     "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui,
     -apple-system, BlinkMacSystemFont, sans-serif;
@@ -15,9 +15,9 @@ body,
 
 body {
   margin: 0;
-  min-width: 320px;
+  min-width: 20rem;
   min-height: 100%;
-  background: #f4f6f8;
+  background: #f7f7f5;
 }
 
 button,
@@ -31,6 +31,6 @@ button:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
 input:focus-visible {
-  outline: 3px solid rgba(85, 113, 186, 0.22);
-  outline-offset: 2px;
+  outline: 0.125rem solid rgba(15, 118, 110, 0.72);
+  outline-offset: 0.125rem;
 }

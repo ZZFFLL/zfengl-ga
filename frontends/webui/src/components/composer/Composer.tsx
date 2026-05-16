@@ -20,22 +20,34 @@ export function Composer({
   onSubmit: (event?: FormEvent) => void;
   onAbort: () => void;
 }) {
+  const helperText = !state?.configured
+    ? "请先配置模型后再发送。"
+    : running
+      ? "任务运行中，可以停止当前任务。"
+      : "Shift+Enter 换行，Enter 发送。";
+  const statusText = running ? "运行中" : state?.configured ? "准备就绪" : "未配置";
+
   return (
-    <form className="shrink-0 border-t border-app-line bg-white/86 px-3 py-3 backdrop-blur md:px-4 md:py-4" onSubmit={onSubmit}>
-      <div className="ga-composer-surface mx-auto max-w-[900px] rounded-xl px-4 py-3">
+    <form className="ga-command-dock" onSubmit={onSubmit}>
+      <div className="ga-command-dock-inner">
+        <div className="ga-command-dock-status">
+          <span>{state?.current_llm?.name ?? "未选择模型"}</span>
+          <span aria-hidden="true">/</span>
+          <span>{statusText}</span>
+        </div>
         <textarea
           id="chat-composer-draft"
           name="chat-composer-draft"
-          className="min-h-[64px] w-full resize-none border-0 bg-transparent text-[15px] leading-7 text-app-text placeholder:text-app-muted focus:outline-none"
-          placeholder={running ? "任务运行中..." : "继续补充问题，Shift+Enter 换行"}
+          className="ga-command-input"
+          placeholder={running ? "任务运行中..." : "输入任务、修改目标或问题"}
           value={draft}
           disabled={running || !state?.configured}
           onChange={(event) => onDraftChange(event.target.value)}
           onKeyDown={onKeyDown}
           rows={2}
         />
-        <div className="mt-3 flex items-center justify-between gap-3">
-          <div className="text-xs text-app-muted">Shift+Enter 换行，Enter 发送。</div>
+        <div className="ga-command-dock-footer">
+          <div className="text-xs text-app-muted">{helperText}</div>
           <div className="flex items-center gap-2">
             {running ? (
               <Button
@@ -48,11 +60,11 @@ export function Composer({
             <Button
               type="primary"
               htmlType="submit"
-              shape="circle"
               disabled={!draft.trim() || running || !state?.configured}
-              aria-label="发送"
+              aria-label="发送任务"
               icon={<Send className="h-4 w-4" aria-hidden="true" />}
             >
+              运行
             </Button>
           </div>
         </div>

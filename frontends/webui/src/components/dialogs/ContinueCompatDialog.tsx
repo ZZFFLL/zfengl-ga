@@ -31,7 +31,7 @@ export function ContinueCompatDialog({
     <Modal
       open={open}
       title="恢复旧会话（兼容入口）"
-      width={720}
+      width="min(92vw, 45rem)"
       centered
       destroyOnClose={false}
       onCancel={() => onOpenChange(false)}
@@ -74,7 +74,7 @@ export function ContinueCompatDialog({
                 <div className="text-sm font-semibold text-app-text">兼容历史预览</div>
                 <Tag bordered={false}>{result.history.length}</Tag>
               </div>
-              <div className="mt-3 max-h-[280px] space-y-3 overflow-y-auto">
+              <div className="mt-3 max-h-[17.5rem] space-y-3 overflow-y-auto">
                 {result.history.length === 0 ? (
                   <div className="text-sm text-app-muted">这次兼容恢复没有返回可展示的历史记录。</div>
                 ) : (
