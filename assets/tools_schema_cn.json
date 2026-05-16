@@ -62,10 +62,10 @@
   }},
   {"type": "function", "function": {
     "name": "browser_action",
-    "description": "在真实 Chrome 页面中，基于最新 browser_state 的索引元素执行浏览器动作。selector 只支持 wait_selector。",
+    "description": "在真实 Chrome 页面中，基于最新 browser_state 的索引元素执行浏览器动作。输入后提交/搜索时，调用 keys 且 text 为 Enter，并且不要传 index，让按键发送到当前焦点元素。selector 只支持 wait_selector。",
     "parameters": {"type": "object", "properties": {
       "action": {"type": "string", "enum": ["click", "input", "select", "keys", "wait_index", "wait_text", "wait_selector"], "description": "要执行的浏览器动作"},
-      "index": {"type": "integer", "description": "来自 browser_state 的元素索引"},
+      "index": {"type": "integer", "description": "来自 browser_state 的元素索引。input 后继续 keys 时不要传 index，让按键发送到当前焦点元素。"},
       "text": {"type": "string", "description": "用于输入、按键、等待文本或匹配的文本"},
       "value": {"type": "string", "description": "用于 select 或 input 动作的值"},
       "selector": {"type": "string", "description": "仅用于 wait_selector 的 CSS selector"},

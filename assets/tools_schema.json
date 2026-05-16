@@ -62,10 +62,10 @@
   }},
   {"type": "function", "function": {
     "name": "browser_action",
-    "description": "Perform a browser action against latest browser_state indexed elements in the real Chrome page. selector is only supported for wait_selector.",
+    "description": "Perform a browser action against latest browser_state indexed elements in the real Chrome page. For submit/search after input, call keys with text Enter and omit index to use the focused element. selector is only supported for wait_selector.",
     "parameters": {"type": "object", "properties": {
       "action": {"type": "string", "enum": ["click", "input", "select", "keys", "wait_index", "wait_text", "wait_selector"], "description": "Browser action to perform"},
-      "index": {"type": "integer", "description": "Indexed element id from browser_state"},
+      "index": {"type": "integer", "description": "Indexed element id from browser_state. For keys after input, omit index so the key is sent to the focused element."},
       "text": {"type": "string", "description": "Text for input, keys, wait_text, or matching"},
       "value": {"type": "string", "description": "Value for select or input actions"},
       "selector": {"type": "string", "description": "CSS selector for wait_selector only"},

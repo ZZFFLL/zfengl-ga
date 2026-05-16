@@ -33,6 +33,8 @@ def test_english_schema_exposes_browser_tools():
 
     assert "indexed" in state["description"].lower()
     assert state["parameters"]["properties"]["max_elements"]["default"] == 120
+    assert "omit index" in action["description"]
+    assert "focused element" in action["parameters"]["properties"]["index"]["description"]
     assert action["parameters"]["properties"]["action"]["enum"] == ACTION_ENUM
 
 
@@ -48,5 +50,7 @@ def test_chinese_schema_exposes_browser_tools():
     assert state["parameters"]["properties"]["max_elements"]["default"] == 120
     assert "index" in action["parameters"]["properties"]
     assert "selector" in action["parameters"]["properties"]
+    assert "不要传 index" in action["description"]
+    assert "当前焦点元素" in action["parameters"]["properties"]["index"]["description"]
     assert action["parameters"]["properties"]["action"]["enum"] == ACTION_ENUM
     assert action["parameters"]["properties"]["timeout"]["default"] == 10

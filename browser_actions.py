@@ -9,6 +9,9 @@ from browser_indexer import build_browser_state_script, normalize_state_result
 SUPPORTED_ACTIONS = {"click", "input", "select", "keys", "wait_index", "wait_text", "wait_selector"}
 INDEX_REQUIRED_ACTIONS = {"click", "input", "select", "wait_index"}
 STATE_MUTATING_ACTIONS = {"click", "input", "select", "keys"}
+KEYS_AFTER_INPUT_HINT = (
+    "For keys after a successful input, retry browser_action without index to use the focused element."
+)
 
 
 def failed_result(action: str | None, stage: str, error: str, index: int | None = None) -> dict[str, Any]:
@@ -17,6 +20,15 @@ def failed_result(action: str | None, stage: str, error: str, index: int | None 
         result["action"] = action
     if index is not None:
         result["index"] = index
+    return result
+
+
+def keys_without_index_retry_result(action: str, index: int, text: str | None, value: str | None) -> dict[str, Any]:
+    result = failed_result(action, "state_missing", f"Run browser_state before browser_action {action}.", index)
+    result["hint"] = KEYS_AFTER_INPUT_HINT
+    key = text if text is not None else value
+    if key:
+        result["suggested_args"] = {"action": "keys", "text": str(key)}
     return result
 
 
@@ -298,6 +310,8 @@ def build_browser_action_script(
         action: "input",
         index: request.index,
         result: inputType === "password" ? "[REDACTED]" : "input_set",
+        next_action_hint: "To submit/search after input, call browser_action with action='keys', text='Enter' and without index; this uses the focused element.",
+        suggested_next_action: {{ action: "keys", text: "Enter" }},
         page_changed: true
       }};
     }}
@@ -445,6 +459,8 @@ class BrowserActionLayer:
         state_token = None
         if action in INDEX_REQUIRED_ACTIONS or safe_index is not None:
             if not self._last_state:
+                if action == "keys" and safe_index is not None:
+                    return keys_without_index_retry_result(action, safe_index, text, value)
                 return failed_result(action, "state_missing", f"Run browser_state before browser_action {action}.", safe_index)
             if str(self._last_state.get("tab_id") or "") != str(driver.default_session_id):
                 result = failed_result(

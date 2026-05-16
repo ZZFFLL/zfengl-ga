@@ -218,6 +218,22 @@ def test_run_action_requires_state_for_index_action():
     }
 
 
+def test_run_action_keys_with_stale_index_suggests_active_element_retry():
+    layer = BrowserActionLayer()
+    driver = FakeDriver()
+
+    result = layer.run_action(driver, action="keys", index=52, text="Enter")
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "state_missing"
+    assert result["action"] == "keys"
+    assert result["index"] == 52
+    assert "without index" in result["hint"]
+    assert "focused element" in result["hint"]
+    assert result["suggested_args"] == {"action": "keys", "text": "Enter"}
+    assert driver.calls == []
+
+
 def test_run_action_rejects_unknown_action():
     layer = BrowserActionLayer()
     driver = FakeDriver()
@@ -692,6 +708,32 @@ window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [button] };
 
     assert result["status"] == "failed"
     assert result["stage"] == "invalid_args"
+
+
+def test_browser_action_script_input_success_suggests_keys_without_index():
+    script = build_browser_action_script(
+        action="input",
+        index=1,
+        text="openai",
+        value=None,
+        timeout=1,
+        state_token="tok-2",
+        selector=None,
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+const input = makeElement({ tag: "input", type: "text", value: "" });
+window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [input] };
+""",
+    )
+
+    assert result["status"] == "success"
+    assert result["result"] == "input_set"
+    assert "without index" in result["next_action_hint"]
+    assert "focused element" in result["next_action_hint"]
+    assert result["suggested_next_action"] == {"action": "keys", "text": "Enter"}
 
 
 def test_build_browser_action_script_input_uses_native_setter_and_verifies_value():
