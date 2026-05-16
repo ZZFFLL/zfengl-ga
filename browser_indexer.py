@@ -5,7 +5,7 @@ MAX_MAX_ELEMENTS = 500
 INTERACTIVE_SELECTOR = (
     'a[href], button, input, textarea, select, [role="button"], [role="link"], '
     '[role="textbox"], [role="checkbox"], [role="radio"], [role="combobox"], '
-    '[role="menuitem"], [tabindex], [contenteditable="true"]'
+    '[role="menuitem"], [onclick], [tabindex], [contenteditable="true"]'
 )
 
 
@@ -18,7 +18,7 @@ def _clamp_int(value, default, minimum, maximum):
     return max(minimum, min(maximum, parsed))
 
 
-def build_browser_state_script(include_invisible=True, max_elements=DEFAULT_MAX_ELEMENTS):
+def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX_ELEMENTS):
     max_elements = _clamp_int(max_elements, DEFAULT_MAX_ELEMENTS, MIN_MAX_ELEMENTS, MAX_MAX_ELEMENTS)
     include_invisible_value = "true" if include_invisible else "false"
 
@@ -66,6 +66,35 @@ def build_browser_state_script(include_invisible=True, max_elements=DEFAULT_MAX_
     );
   }};
 
+  const nativeRoleOf = (element, tag, type) => {{
+    if (tag === "a" && element.hasAttribute("href")) {{
+      return "link";
+    }}
+    if (tag === "button") {{
+      return "button";
+    }}
+    if (tag === "select") {{
+      return "combobox";
+    }}
+    if (tag === "textarea") {{
+      return "textbox";
+    }}
+    if (tag === "input") {{
+      const inputType = type.toLowerCase();
+      if (inputType === "checkbox") {{
+        return "checkbox";
+      }}
+      if (inputType === "radio") {{
+        return "radio";
+      }}
+      if (["button", "submit", "reset"].includes(inputType)) {{
+        return "button";
+      }}
+      return "textbox";
+    }}
+    return "";
+  }};
+
   const elements = [];
   for (const element of document.querySelectorAll(selector)) {{
     if (elements.length >= maxElements) {{
@@ -86,7 +115,7 @@ def build_browser_state_script(include_invisible=True, max_elements=DEFAULT_MAX_
     elements.push({{
       index: elements.length + 1,
       tag,
-      role: element.getAttribute("role") || "",
+      role: element.getAttribute("role") || nativeRoleOf(element, tag, type),
       type,
       text: textOf(element),
       value,
@@ -118,10 +147,19 @@ def normalize_state_result(result):
         }
 
     if result.get("status") == "failed":
-        return dict(result)
+        failed = dict(result)
+        failed.setdefault("stage", "dom_event")
+        failed.setdefault("error", "browser_state failed")
+        return failed
 
     state = dict(result)
     state.setdefault("status", "success")
+    state.setdefault("backend", "")
+    state.setdefault("tab_id", "")
+    state.setdefault("url", "")
+    state.setdefault("title", "")
+    state.setdefault("state_token", "")
+    state.setdefault("viewport", {})
     elements = result.get("elements")
     if not isinstance(elements, list):
         elements = []

@@ -10,7 +10,14 @@ def test_build_browser_state_script_contains_index_state_and_limit():
     assert "const maxElements = 3;" in script
     assert "const includeInvisible = false;" in script
     assert "a[href]" in script
+    assert "[onclick]" in script
     assert "[contenteditable=\"true\"]" in script
+
+
+def test_build_browser_state_script_defaults_to_visible_elements_only():
+    script = build_browser_state_script()
+
+    assert "const includeInvisible = false;" in script
 
 
 def test_build_browser_state_script_clamps_max_elements():
@@ -19,6 +26,18 @@ def test_build_browser_state_script_clamps_max_elements():
 
     assert "const maxElements = 1;" in low
     assert "const maxElements = 500;" in high
+
+
+def test_build_browser_state_script_infers_native_roles():
+    script = build_browser_state_script()
+
+    assert "const nativeRoleOf = (element, tag, type) =>" in script
+    assert 'if (tag === "a" && element.hasAttribute("href")) {' in script
+    assert 'if (tag === "button") {' in script
+    assert 'if (tag === "select") {' in script
+    assert 'if (tag === "textarea") {' in script
+    assert 'if (tag === "input") {' in script
+    assert 'role: element.getAttribute("role") || nativeRoleOf(element, tag, type),' in script
 
 
 def test_normalize_state_result_adds_indices_and_defaults():
@@ -49,6 +68,18 @@ def test_normalize_state_result_adds_indices_and_defaults():
     assert state["elements"][1]["value"] == "[REDACTED]"
 
 
+def test_normalize_state_result_adds_top_level_defaults():
+    state = normalize_state_result({"status": "success"})
+
+    assert state["backend"] == ""
+    assert state["tab_id"] == ""
+    assert state["url"] == ""
+    assert state["title"] == ""
+    assert state["state_token"] == ""
+    assert state["viewport"] == {}
+    assert state["elements"] == []
+
+
 def test_normalize_state_result_rejects_non_dict():
     state = normalize_state_result("not a dict")
 
@@ -70,4 +101,14 @@ def test_normalize_state_result_preserves_failed_result():
         "status": "failed",
         "stage": "browser_unavailable",
         "error": "no tab",
+    }
+
+
+def test_normalize_state_result_fills_failed_result_defaults():
+    state = normalize_state_result({"status": "failed"})
+
+    assert state == {
+        "status": "failed",
+        "stage": "dom_event",
+        "error": "browser_state failed",
     }
