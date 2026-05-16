@@ -777,7 +777,7 @@ class BrowserActionLayer:
             return failed_result(action or None, "invalid_args", f"Unsupported browser action: {action}", safe_index)
         if verify and verify not in valid_verify:
             return failed_result(action or None, "invalid_args", f"Unsupported verification type: {verify}", safe_index)
-        if action in {"wait_dom_stable", "wait_not_busy", "wait_route"}:
+        if action in {"wait_text", "wait_selector", "wait_dom_stable", "wait_not_busy", "wait_route"}:
             safe_index = None
         if action in INDEX_REQUIRED_ACTIONS and safe_index is None:
             return failed_result(action, "invalid_args", f"index is required for {action}.")

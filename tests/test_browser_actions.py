@@ -355,6 +355,30 @@ def test_run_action_allows_wait_text_without_cached_state():
     assert '"text": "Ready"' in driver.calls[0]["script"]
 
 
+def test_run_action_wait_text_ignores_incidental_index_without_cached_state():
+    layer = BrowserActionLayer()
+    driver = FakeDriver([{"data": {"status": "success", "action": "wait_text", "result": "text_found"}}])
+
+    result = layer.run_action(driver, action="wait_text", index=1, text="Ready", timeout=2)
+
+    assert result["status"] == "success"
+    assert result["tab_id"] == "7"
+    assert len(driver.calls) == 1
+    assert '"index": null' in driver.calls[0]["script"]
+
+
+def test_run_action_wait_selector_ignores_incidental_index_without_cached_state():
+    layer = BrowserActionLayer()
+    driver = FakeDriver([{"data": {"status": "success", "action": "wait_selector", "result": "selector_found"}}])
+
+    result = layer.run_action(driver, action="wait_selector", index=1, selector=".ready", timeout=2)
+
+    assert result["status"] == "success"
+    assert result["tab_id"] == "7"
+    assert len(driver.calls) == 1
+    assert '"index": null' in driver.calls[0]["script"]
+
+
 def test_supported_actions_includes_spa_waits():
     assert {"wait_dom_stable", "wait_not_busy", "wait_enabled", "wait_route"} <= SUPPORTED_ACTIONS
 
