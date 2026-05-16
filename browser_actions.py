@@ -195,7 +195,6 @@ def build_browser_action_script(
     if (state.token !== request.state_token) return {{ error: fail("stale_index", "Element index is stale. Run browser_state again.") }};
     const el = state.elements && state.elements[Number(request.index) - 1];
     if (!el) {{
-      if (allowDetached) return {{ el: null }};
       return {{ error: fail("stale_index", "Element index is stale. Run browser_state again.") }};
     }}
     if (!ownerFrameChainAttached(el)) {{
@@ -778,6 +777,8 @@ class BrowserActionLayer:
             return failed_result(action or None, "invalid_args", f"Unsupported browser action: {action}", safe_index)
         if verify and verify not in valid_verify:
             return failed_result(action or None, "invalid_args", f"Unsupported verification type: {verify}", safe_index)
+        if action in {"wait_dom_stable", "wait_not_busy", "wait_route"}:
+            safe_index = None
         if action in INDEX_REQUIRED_ACTIONS and safe_index is None:
             return failed_result(action, "invalid_args", f"index is required for {action}.")
         if action == "wait_selector" and not selector:

@@ -370,6 +370,18 @@ def test_run_action_allows_wait_dom_stable_without_cached_state():
     assert '"action": "wait_dom_stable"' in driver.calls[0]["script"]
 
 
+def test_run_action_wait_dom_stable_ignores_incidental_index_without_cached_state():
+    layer = BrowserActionLayer()
+    driver = FakeDriver([{"data": {"status": "success", "action": "wait_dom_stable", "result": "dom_stable"}}])
+
+    result = layer.run_action(driver, action="wait_dom_stable", index=1, timeout=2)
+
+    assert result["status"] == "success"
+    assert result["tab_id"] == "7"
+    assert len(driver.calls) == 1
+    assert '"index": null' in driver.calls[0]["script"]
+
+
 def test_run_action_allows_wait_not_busy_without_cached_state():
     layer = BrowserActionLayer()
     driver = FakeDriver([{"data": {"status": "success", "action": "wait_not_busy", "result": "not_busy"}}])
@@ -379,6 +391,18 @@ def test_run_action_allows_wait_not_busy_without_cached_state():
     assert result["status"] == "success"
     assert result["tab_id"] == "7"
     assert '"selector": ".busy"' in driver.calls[0]["script"]
+
+
+def test_run_action_wait_not_busy_ignores_incidental_index_without_cached_state():
+    layer = BrowserActionLayer()
+    driver = FakeDriver([{"data": {"status": "success", "action": "wait_not_busy", "result": "not_busy"}}])
+
+    result = layer.run_action(driver, action="wait_not_busy", index=1, timeout=2)
+
+    assert result["status"] == "success"
+    assert result["tab_id"] == "7"
+    assert len(driver.calls) == 1
+    assert '"index": null' in driver.calls[0]["script"]
 
 
 def test_run_action_wait_route_without_cached_state_requires_text_or_value():
@@ -394,6 +418,18 @@ def test_run_action_wait_route_without_cached_state_requires_text_or_value():
     assert result["status"] == "success"
     assert result["tab_id"] == "7"
     assert '"value": "/dashboard"' in driver.calls[0]["script"]
+
+
+def test_run_action_wait_route_ignores_incidental_index_without_cached_state():
+    layer = BrowserActionLayer()
+    driver = FakeDriver([{"data": {"status": "success", "action": "wait_route", "result": "route_matched"}}])
+
+    result = layer.run_action(driver, action="wait_route", index=1, text="/dashboard", timeout=2)
+
+    assert result["status"] == "success"
+    assert result["tab_id"] == "7"
+    assert len(driver.calls) == 1
+    assert '"index": null' in driver.calls[0]["script"]
 
 
 def test_run_action_wait_enabled_requires_state_when_indexed():
@@ -750,6 +786,28 @@ document.querySelector = (_selector) => replacement;
 
     assert result["status"] == "success"
     assert result["result"] == "element_visible"
+
+
+def test_browser_action_script_wait_enabled_missing_cached_node_returns_stale_index():
+    script = build_browser_action_script(
+        action="wait_enabled",
+        index=1,
+        text=None,
+        value=None,
+        timeout=1,
+        state_token="tok-2",
+        selector=None,
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [null] };
+""",
+    )
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "stale_index"
 
 
 def test_browser_action_script_wait_index_fallback_succeeds_with_tag_only_hint():
