@@ -53,6 +53,26 @@
       "switch_tab_id": {"type": "string", "description": "[Optional] Tab ID to switch to before executing"}}}
   }},
   {"type": "function", "function": {
+    "name": "browser_state",
+    "description": "Get indexed browser state from the real Chrome page for accurate element targeting. Use before browser_action when indexes may have changed.",
+    "parameters": {"type": "object", "properties": {
+      "switch_tab_id": {"type": "string", "description": "[Optional] Tab ID to switch to before reading state"},
+      "include_invisible": {"type": "boolean", "description": "Include invisible elements in the indexed state", "default": false},
+      "max_elements": {"type": "integer", "description": "Maximum indexed elements to return", "default": 120}}}
+  }},
+  {"type": "function", "function": {
+    "name": "browser_action",
+    "description": "Perform a browser action against indexed elements or selectors in the real Chrome page.",
+    "parameters": {"type": "object", "properties": {
+      "action": {"type": "string", "enum": ["click", "input", "select", "keys", "wait_index", "wait_text", "wait_selector"], "description": "Browser action to perform"},
+      "index": {"type": "integer", "description": "Indexed element id from browser_state"},
+      "text": {"type": "string", "description": "Text for input, keys, wait_text, or matching"},
+      "value": {"type": "string", "description": "Value for select or input actions"},
+      "selector": {"type": "string", "description": "CSS selector for selector-based actions or waits"},
+      "timeout": {"type": "integer", "description": "Timeout in seconds for wait actions", "default": 10},
+      "switch_tab_id": {"type": "string", "description": "[Optional] Tab ID to switch to before acting"}}}
+  }},
+  {"type": "function", "function": {
     "name": "update_working_checkpoint",
     "description": "Short-term working notepad, auto-injected each turn to prevent info loss in long tasks. Call during early/mid stages, not at end. When: (1) after reading SOP, store user needs & key constraints (skip for simple 1-2 step tasks); (2) before subtask switch or context flush; (3) after repeated failures, re-read SOP and must store new findings; (4) on new task, update content, clear old progress but keep valid constraints.\n\nDon't call: simple tasks (1-2 steps), task completed (use long-term memory tool)",
     "parameters": {"type": "object", "properties": {
