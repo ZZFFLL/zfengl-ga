@@ -485,6 +485,66 @@ class WebUILogParserTests(unittest.TestCase):
         self.assertNotIn("JS 执行结果", visible)
         self.assertNotIn("Inbox", visible)
 
+    def test_tool_contract_browser_state_result_stays_in_execution_panel(self):
+        text = (
+            "**LLM Running (Turn 1) ...**\n"
+            "<summary>\n索引当前浏览器页面\n</summary>\n"
+            "🛠️ Tool: `browser_state`  📥 args:\n"
+            "````text\n"
+            "{\n"
+            '  "max_elements": 20\n'
+            "}\n"
+            "````\n"
+            "`````\n"
+            "Browser state:\n"
+            "{\n"
+            '  "status": "success",\n'
+            '  "elements": [{"index": 1, "text": "登录"}]\n'
+            "}\n"
+            "`````\n\n"
+            "已定位登录按钮。"
+        )
+
+        visible = extract_visible_reply_text(text)
+        turns = parse_execution_log(text)
+
+        self.assertEqual(visible, "已定位登录按钮。")
+        self.assertEqual(turns[0]["tool_calls"][0]["tool"], "browser_state")
+        self.assertIn('"text": "登录"', turns[0]["tool_calls"][0]["result"])
+        self.assertNotIn("Browser state", visible)
+        self.assertNotIn("elements", visible)
+
+    def test_tool_contract_browser_action_result_stays_in_execution_panel(self):
+        text = (
+            "**LLM Running (Turn 1) ...**\n"
+            "<summary>\n点击浏览器元素\n</summary>\n"
+            "🛠️ Tool: `browser_action`  📥 args:\n"
+            "````text\n"
+            "{\n"
+            '  "action": "click",\n'
+            '  "index": 1\n'
+            "}\n"
+            "````\n"
+            "`````\n"
+            "Browser action result:\n"
+            "{\n"
+            '  "status": "success",\n'
+            '  "action": "click",\n'
+            '  "result": "clicked"\n'
+            "}\n"
+            "`````\n\n"
+            "点击完成。"
+        )
+
+        visible = extract_visible_reply_text(text)
+        turns = parse_execution_log(text)
+
+        self.assertEqual(visible, "点击完成。")
+        self.assertEqual(turns[0]["tool_calls"][0]["tool"], "browser_action")
+        self.assertIn('"result": "clicked"', turns[0]["tool_calls"][0]["result"])
+        self.assertNotIn("Browser action result", visible)
+        self.assertNotIn("clicked", visible)
+
     def test_tool_contract_update_working_checkpoint_stays_in_execution_panel(self):
         text = (
             "**LLM Running (Turn 1) ...**\n"
