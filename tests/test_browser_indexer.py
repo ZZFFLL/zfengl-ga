@@ -80,6 +80,23 @@ def test_normalize_state_result_adds_top_level_defaults():
     assert state["elements"] == []
 
 
+def test_normalize_state_result_fills_element_defaults():
+    element = normalize_state_result({"elements": [{}]})["elements"][0]
+
+    assert element == {
+        "index": 1,
+        "tag": "",
+        "type": "",
+        "role": "",
+        "text": "",
+        "value": "",
+        "visible": True,
+        "disabled": False,
+        "bbox": {},
+        "selector_hint": "",
+    }
+
+
 def test_normalize_state_result_rejects_non_dict():
     state = normalize_state_result("not a dict")
 

@@ -171,8 +171,15 @@ def normalize_state_result(result):
 
         normalized = dict(element)
         normalized.setdefault("index", position)
+        normalized.setdefault("tag", "")
+        normalized.setdefault("type", "")
+        normalized.setdefault("role", "")
+        normalized.setdefault("text", "")
+        normalized.setdefault("value", "")
         normalized.setdefault("visible", True)
         normalized.setdefault("disabled", False)
+        normalized.setdefault("bbox", {})
+        normalized.setdefault("selector_hint", "")
 
         if str(normalized.get("type", "")).lower() == "password" and normalized.get("value"):
             normalized["value"] = "[REDACTED]"
