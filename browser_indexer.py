@@ -145,6 +145,16 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
   const stateToken = `${{Date.now()}}:${{window.__GA_BROWSER_STATE_COUNTER__}}:${{randomPart}}:${{elements.length}}`;
   window.__GA_BROWSER_ACTION_STATE__ = {{ token: stateToken, elements }};
   return {{
+    status: "success",
+    backend: "tmwd_user_chrome",
+    url: location.href,
+    title: document.title,
+    viewport: {{
+      width: window.innerWidth,
+      height: window.innerHeight,
+      scroll_x: window.scrollX,
+      scroll_y: window.scrollY,
+    }},
     state_token: stateToken,
     elements: snapshots,
   }};

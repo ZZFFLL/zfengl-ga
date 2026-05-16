@@ -44,6 +44,15 @@ def test_build_browser_state_script_separates_cached_nodes_from_snapshots():
     assert "const snapshots = elements.map((element, index) =>" in script
     assert "const stateToken =" in script
     assert "window.__GA_BROWSER_ACTION_STATE__ = { token: stateToken, elements };" in script
+    assert 'status: "success",' in script
+    assert 'backend: "tmwd_user_chrome",' in script
+    assert "url: location.href," in script
+    assert "title: document.title," in script
+    assert "viewport: {" in script
+    assert "width: window.innerWidth," in script
+    assert "height: window.innerHeight," in script
+    assert "scroll_x: window.scrollX," in script
+    assert "scroll_y: window.scrollY," in script
     assert "state_token: stateToken," in script
     assert "elements: snapshots," in script
 

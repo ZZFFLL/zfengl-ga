@@ -60,6 +60,23 @@ def test_do_browser_state_formats_execution_output(monkeypatch):
     assert data["elements"][0]["text"] == "Login"
 
 
+def test_do_browser_state_forwards_tab_id_alias(monkeypatch):
+    calls = []
+
+    def fake_browser_state(**kwargs):
+        calls.append(kwargs)
+        return {"status": "success", "tab_id": kwargs["switch_tab_id"], "elements": []}
+
+    monkeypatch.setattr(ga, "browser_state", fake_browser_state)
+    handler = make_handler()
+
+    chunks, outcome = run_generator(handler.do_browser_state({"tab_id": "tab-3"}, SimpleNamespace(content="")))
+
+    assert "Browser state:" in "".join(chunks)
+    assert calls[0]["switch_tab_id"] == "tab-3"
+    assert json.loads(outcome.data)["tab_id"] == "tab-3"
+
+
 def test_do_browser_state_truncates_large_output(monkeypatch):
     large_result = {
         "status": "success",
@@ -99,6 +116,25 @@ def test_do_browser_action_formats_execution_output(monkeypatch):
     assert "Browser action result:" in "".join(chunks)
     data = json.loads(outcome.data)
     assert data == {"status": "success", "action": "click", "index": 1, "result": "clicked"}
+
+
+def test_do_browser_action_forwards_tab_id_alias(monkeypatch):
+    calls = []
+
+    def fake_browser_action(**kwargs):
+        calls.append(kwargs)
+        return {"status": "success", "action": kwargs["action"], "tab_id": kwargs["switch_tab_id"]}
+
+    monkeypatch.setattr(ga, "browser_action", fake_browser_action)
+    handler = make_handler()
+
+    chunks, outcome = run_generator(
+        handler.do_browser_action({"action": "wait_text", "text": "Ready", "tab_id": "tab-3"}, SimpleNamespace(content=""))
+    )
+
+    assert "Browser action result:" in "".join(chunks)
+    assert calls[0]["switch_tab_id"] == "tab-3"
+    assert json.loads(outcome.data)["tab_id"] == "tab-3"
 
 
 def test_browser_action_init_failure_reports_browser_unavailable(monkeypatch):

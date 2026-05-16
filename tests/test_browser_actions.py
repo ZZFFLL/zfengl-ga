@@ -204,3 +204,20 @@ def test_build_browser_action_script_contains_stale_index_check():
     assert "stale_index" in script
     assert "dom_event" in script
     assert '"action": "input"' in script
+
+
+def test_build_browser_action_script_input_uses_native_setter_and_verifies_value():
+    script = build_browser_action_script(
+        action="input",
+        index=3,
+        text="hello",
+        value=None,
+        timeout=4,
+        state_token="tok-2",
+        selector=None,
+    )
+
+    assert 'Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), "value")?.set' in script
+    assert "valueSetter.call(el, nextValue)" in script
+    assert 'if ("value" in el && el.value !== nextValue)' in script
+    assert 'return fail("dom_event", "Input value was not accepted.")' in script

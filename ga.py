@@ -417,7 +417,7 @@ class GenericAgentHandler(BaseHandler):
 
     def do_browser_state(self, args, response):
         result = browser_state(
-            switch_tab_id=args.get("switch_tab_id"),
+            switch_tab_id=args.get("switch_tab_id") or args.get("tab_id"),
             include_invisible=args.get("include_invisible", False),
             max_elements=args.get("max_elements", 120),
         )
@@ -437,7 +437,7 @@ class GenericAgentHandler(BaseHandler):
             value=args.get("value"),
             selector=args.get("selector"),
             timeout=args.get("timeout", 10),
-            switch_tab_id=args.get("switch_tab_id"),
+            switch_tab_id=args.get("switch_tab_id") or args.get("tab_id"),
         )
         yield "Browser action result:\n"
         result_json = json.dumps(result, ensure_ascii=False, default=json_default)

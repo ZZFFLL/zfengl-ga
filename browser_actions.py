@@ -171,11 +171,19 @@ def build_browser_action_script(
       const nextValue = String(request.text !== null ? request.text : request.value);
       el.focus({{ preventScroll: true }});
       if ("value" in el) {{
-        el.value = nextValue;
+        const valueSetter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), "value")?.set;
+        if (valueSetter) {{
+          valueSetter.call(el, nextValue);
+        }} else {{
+          el.value = nextValue;
+        }}
       }} else {{
         el.textContent = nextValue;
       }}
       dispatchInputEvents(el);
+      if ("value" in el && el.value !== nextValue) {{
+        return fail("dom_event", "Input value was not accepted.");
+      }}
       const inputType = String(el.getAttribute("type") || "").toLowerCase();
       return {{
         status: "success",
