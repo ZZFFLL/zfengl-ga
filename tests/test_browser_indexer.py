@@ -35,13 +35,59 @@ def test_build_browser_state_script_infers_native_roles():
     assert 'if (tag === "select") {' in script
     assert 'if (tag === "textarea") {' in script
     assert 'if (tag === "input") {' in script
-    assert 'role: element.getAttribute("role") || nativeRoleOf(element, tag, type),' in script
+    assert 'const role = element.getAttribute("role") || nativeRoleOf(element, tag, type);' in script
+    assert "role," in script
 
 
 def test_build_browser_state_script_includes_placeholder_text():
     script = build_browser_state_script()
 
     assert 'element.getAttribute("placeholder") || ""' in script
+
+
+def test_build_browser_state_script_includes_metadata_helpers():
+    script = build_browser_state_script()
+
+    for helper in [
+        "labelsOf",
+        "attributesOf",
+        "validationOf",
+        "stableKeyOf",
+        "fieldContextOf",
+        "tableContextOf",
+        "layerContextOf",
+        "controlKindOf",
+        "actionHintsOf",
+    ]:
+        assert f"const {helper} = " in script
+
+    for field in [
+        "labels: labelsOf(element),",
+        "attributes: attributesOf(element),",
+        "validation: validationOf(element),",
+        "stable_key: stableKeyOf(element, tag, role),",
+        "field_context: fieldContextOf(element),",
+        "table_context: tableContextOf(element),",
+        "layer: layerContext.layer,",
+        "layer_root_hint: layerContext.layer_root_hint,",
+        "modal_rank: layerContext.modal_rank,",
+        "control_kind: controlKind,",
+        "action_hints: actionHintsOf(element, tag, role, controlKind),",
+    ]:
+        assert field in script
+
+
+def test_build_browser_state_script_includes_overlay_patterns_and_action_hints():
+    script = build_browser_state_script()
+
+    assert ".ant-modal" in script
+    assert ".ant-drawer" in script
+    assert ".ant-select-dropdown" in script
+    assert ".ant-dropdown" in script
+    assert "custom_select" in script
+    assert "native_select" in script
+    assert "click_to_open" in script
+    assert "state_after_open" in script
 
 
 def test_build_browser_state_script_separates_cached_nodes_from_snapshots():

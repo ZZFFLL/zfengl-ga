@@ -1202,6 +1202,63 @@ window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [input] };
     assert result["suggested_next_action"] == {"action": "keys", "text": "Enter"}
 
 
+def test_browser_action_script_native_select_still_selects_option():
+    script = build_browser_action_script(
+        action="select",
+        index=1,
+        text=None,
+        value="us",
+        timeout=1,
+        state_token="tok-2",
+        selector=None,
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+const select = makeElement({ tag: "select", value: "" });
+select.options = [
+  { value: "ca", text: "Canada" },
+  { value: "us", text: "United States" },
+];
+window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [select] };
+""",
+    )
+
+    assert result["status"] == "success"
+    assert result["result"] == "us"
+
+
+def test_browser_action_script_select_rejects_custom_combobox_with_click_hint():
+    script = build_browser_action_script(
+        action="select",
+        index=3,
+        text=None,
+        value="Admin",
+        timeout=1,
+        state_token="tok-2",
+        selector=None,
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+const combo = makeElement({
+  tag: "div",
+  role: "combobox",
+  attrs: { "aria-haspopup": "listbox" },
+});
+window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [null, null, combo] };
+""",
+    )
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "control_unsupported"
+    assert result["retryable"] is True
+    assert "custom" in result["hint"]
+    assert result["suggested_next_action"] == {"action": "click", "index": 3}
+
+
 def test_browser_action_script_input_verify_field_value_success():
     script = build_browser_action_script(
         action="input",

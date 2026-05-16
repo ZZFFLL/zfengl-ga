@@ -648,7 +648,23 @@ def build_browser_action_script(
     if (request.action === "select") {{
       const wanted = String(request.value !== null ? request.value : request.text || "");
       if (!wanted) return fail("invalid_args", "value or text is required for select.");
-      if (el.tagName !== "SELECT") return fail("invalid_args", "select action requires a select element.");
+      if (el.tagName !== "SELECT") {{
+        const role = roleOf(el);
+        const hasListboxPopup = String(el.getAttribute("aria-haspopup") || "").toLowerCase() === "listbox";
+        if (role === "combobox" || hasListboxPopup) {{
+          return {{
+            status: "failed",
+            action: request.action,
+            index: request.index,
+            stage: "control_unsupported",
+            error: "select action only supports native select elements.",
+            hint: "This appears to be a custom select/combobox. Click it, run browser_state again, then click the desired option.",
+            suggested_next_action: {{ action: "click", index: request.index }},
+            retryable: true
+          }};
+        }}
+        return fail("invalid_args", "select action requires a select element.");
+      }}
       const option = Array.from(el.options).find(opt => opt.value === wanted || opt.text.trim() === wanted);
       if (!option) return fail("locate", "No matching option found.");
       el.value = option.value;

@@ -100,6 +100,177 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
     return "";
   }};
 
+  const compactUnique = (values) => {{
+    const seen = new Set();
+    const result = [];
+    for (const value of values) {{
+      const text = String(value || "").trim().replace(/\\s+/g, " ");
+      if (text && !seen.has(text)) {{
+        seen.add(text);
+        result.push(boundedText(text));
+      }}
+    }}
+    return result;
+  }};
+
+  const labelsOf = (element) => {{
+    const values = [];
+    const doc = element.ownerDocument || document;
+    values.push(element.getAttribute("aria-label"));
+    const labelledBy = String(element.getAttribute("aria-labelledby") || "").split(/\\s+/).filter(Boolean);
+    for (const id of labelledBy) {{
+      const labelElement = doc.getElementById && doc.getElementById(id);
+      if (labelElement) {{
+        values.push(labelElement.innerText || labelElement.textContent || "");
+      }}
+    }}
+    const id = element.getAttribute("id");
+    if (id) {{
+      try {{
+        for (const label of doc.querySelectorAll(`label[for="${{cssEscape(id)}}"]`)) {{
+          values.push(label.innerText || label.textContent || "");
+        }}
+      }} catch (error) {{
+        // Ignore invalid selector edge cases from unusual ids.
+      }}
+    }}
+    const parentLabel = element.closest && element.closest("label");
+    if (parentLabel) {{
+      values.push(parentLabel.innerText || parentLabel.textContent || "");
+    }}
+    values.push(element.getAttribute("placeholder"));
+    return compactUnique(values);
+  }};
+
+  const attributesOf = (element) => {{
+    const attr = (name) => element.getAttribute(name) || "";
+    return {{
+      id: attr("id"),
+      name: attr("name"),
+      class: attr("class"),
+      role: attr("role"),
+      aria_expanded: attr("aria-expanded"),
+      aria_controls: attr("aria-controls"),
+      aria_invalid: attr("aria-invalid"),
+      data_testid: attr("data-testid") || attr("data-test"),
+      autocomplete: attr("autocomplete"),
+    }};
+  }};
+
+  const validationOf = (element) => {{
+    const maxLength = element.getAttribute("maxlength");
+    return {{
+      required: Boolean(element.required || element.getAttribute("aria-required") === "true"),
+      invalid: Boolean(element.getAttribute("aria-invalid") === "true" || (element.validity && element.validity.valid === false)),
+      read_only: Boolean(element.readOnly || element.getAttribute("aria-readonly") === "true"),
+      max_length: maxLength === null ? "" : maxLength,
+      pattern: element.getAttribute("pattern") || "",
+    }};
+  }};
+
+  const stableKeyOf = (element, tag, role) => {{
+    const attrs = attributesOf(element);
+    if (attrs.id) return `${{tag}}#${{attrs.id}}`;
+    if (attrs.name) return `${{tag}}[name="${{attrs.name}}"]`;
+    if (attrs.data_testid) return `${{tag}}[data-testid="${{attrs.data_testid}}"]`;
+    const label = labelsOf(element)[0] || "";
+    if (label) return `${{tag}}:${{role}}:${{label}}`;
+    return `${{tag}}:${{role}}:${{boundedText(textOf(element))}}`;
+  }};
+
+  const fieldContextOf = (element) => {{
+    const form = element.closest && element.closest("form");
+    const fieldset = element.closest && element.closest("fieldset");
+    const legend = fieldset && fieldset.querySelector("legend");
+    return {{
+      labels: labelsOf(element),
+      placeholder: element.getAttribute("placeholder") || "",
+      form_id: form ? (form.getAttribute("id") || "") : "",
+      form_name: form ? (form.getAttribute("name") || "") : "",
+      fieldset_legend: legend ? boundedText(legend.innerText || legend.textContent || "") : "",
+    }};
+  }};
+
+  const tableContextOf = (element) => {{
+    const cell = element.closest && element.closest("td, th, [role='cell'], [role='gridcell'], [role='columnheader'], [role='rowheader']");
+    const row = element.closest && element.closest("tr, [role='row']");
+    const table = element.closest && element.closest("table, [role='table'], [role='grid']");
+    if (!cell && !row && !table) {{
+      return {{}};
+    }}
+    const rowChildren = row ? Array.from(row.children || []) : [];
+    const tableRows = table ? Array.from(table.querySelectorAll("tr, [role='row']")) : [];
+    return {{
+      table_role: table ? (table.getAttribute("role") || table.tagName.toLowerCase()) : "",
+      table_label: table ? (table.getAttribute("aria-label") || labelsOf(table)[0] || "") : "",
+      row_index: row && tableRows.length ? tableRows.indexOf(row) + 1 : 0,
+      column_index: cell && rowChildren.length ? rowChildren.indexOf(cell) + 1 : 0,
+      cell_role: cell ? (cell.getAttribute("role") || cell.tagName.toLowerCase()) : "",
+      cell_text: cell ? boundedText(cell.innerText || cell.textContent || "") : "",
+    }};
+  }};
+
+  const layerContextOf = (element) => {{
+    const overlaySelector = [
+      ".ant-modal",
+      ".ant-drawer",
+      ".ant-select-dropdown",
+      ".ant-dropdown",
+      "[role='dialog']",
+      "[aria-modal='true']",
+      "[role='menu']",
+      "[role='listbox']",
+      "[data-popover]",
+      ".modal",
+      ".drawer",
+      ".dropdown",
+      ".popover",
+    ].join(", ");
+    const root = element.closest && element.closest(overlaySelector);
+    if (!root) {{
+      return {{ layer: "main", layer_root_hint: "", modal_rank: 0 }};
+    }}
+    const className = String(root.getAttribute("class") || "");
+    let layer = "overlay";
+    if (root.matches(".ant-modal, [role='dialog'], [aria-modal='true'], .modal")) layer = "modal";
+    else if (root.matches(".ant-drawer, .drawer")) layer = "drawer";
+    else if (root.matches(".ant-select-dropdown, .ant-dropdown, .dropdown")) layer = "dropdown";
+    else if (root.matches("[data-popover], .popover")) layer = "popover";
+    const visibleOverlays = Array.from((root.ownerDocument || document).querySelectorAll(overlaySelector))
+      .filter(node => isVisible(node, node.getBoundingClientRect(), node.ownerDocument.defaultView || window));
+    return {{
+      layer,
+      layer_root_hint: selectorHint(root),
+      modal_rank: visibleOverlays.indexOf(root) + 1,
+      layer_class: className,
+    }};
+  }};
+
+  const controlKindOf = (element, tag, role, type) => {{
+    const normalizedType = String(type || "").toLowerCase();
+    const normalizedRole = String(role || "").toLowerCase();
+    const hasListboxPopup = String(element.getAttribute("aria-haspopup") || "").toLowerCase() === "listbox";
+    if (tag === "select") return "native_select";
+    if (normalizedRole === "combobox" || hasListboxPopup) return "custom_select";
+    if (normalizedRole === "option" || tag === "option") return "option";
+    if (tag === "textarea") return "textarea";
+    if (element.isContentEditable || element.getAttribute("contenteditable") === "true") return "contenteditable";
+    if (tag === "input" && ["date", "datetime-local", "month", "time", "week"].includes(normalizedType)) return "date_input";
+    if (tag === "input") return "native_input";
+    if (tag === "button" || normalizedRole === "button") return "button";
+    if ((tag === "a" && element.hasAttribute("href")) || normalizedRole === "link") return "link";
+    return normalizedRole || tag;
+  }};
+
+  const actionHintsOf = (element, tag, role, controlKind) => {{
+    if (controlKind === "custom_select") return ["click_to_open", "state_after_open", "select_option_by_click"];
+    if (controlKind === "native_select") return ["select_by_value_or_text"];
+    if (controlKind === "option") return ["click_to_select"];
+    if (["native_input", "textarea", "contenteditable", "date_input"].includes(controlKind)) return ["input_text", "keys_after_input"];
+    if (["button", "link"].includes(controlKind)) return ["click"];
+    return [];
+  }};
+
   const elements = [];
   const collectDocument = (doc, framePath, frameWindow) => {{
     for (const element of doc.querySelectorAll(selector)) {{
@@ -149,13 +320,16 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
     const rect = element.getBoundingClientRect();
     const tag = element.tagName.toLowerCase();
     const type = element.getAttribute("type") || "";
+    const role = element.getAttribute("role") || nativeRoleOf(element, tag, type);
+    const controlKind = controlKindOf(element, tag, role, type);
+    const layerContext = layerContextOf(element);
     const rawValue = "value" in element ? element.value : "";
     const value = type.toLowerCase() === "password" && rawValue ? "[REDACTED]" : rawValue;
 
     return {{
       index: index + 1,
       tag,
-      role: element.getAttribute("role") || nativeRoleOf(element, tag, type),
+      role,
       type,
       text: boundedText(textOf(element)),
       value: boundedText(value),
@@ -172,6 +346,17 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
       frame_depth: framePath.length,
       frame_url: frameWindow.location.href,
       frame_title: element.ownerDocument.title,
+      labels: labelsOf(element),
+      attributes: attributesOf(element),
+      validation: validationOf(element),
+      stable_key: stableKeyOf(element, tag, role),
+      field_context: fieldContextOf(element),
+      table_context: tableContextOf(element),
+      layer: layerContext.layer,
+      layer_root_hint: layerContext.layer_root_hint,
+      modal_rank: layerContext.modal_rank,
+      control_kind: controlKind,
+      action_hints: actionHintsOf(element, tag, role, controlKind),
     }};
   }});
 
