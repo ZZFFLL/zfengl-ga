@@ -651,7 +651,31 @@ def build_browser_action_script(
       if (el.tagName !== "SELECT") {{
         const role = roleOf(el);
         const hasListboxPopup = String(el.getAttribute("aria-haspopup") || "").toLowerCase() === "listbox";
-        if (["combobox", "listbox", "option"].includes(role) || hasListboxPopup) {{
+        if (role === "option") {{
+          return {{
+            status: "failed",
+            action: request.action,
+            index: request.index,
+            stage: "control_unsupported",
+            error: "select action only supports native select elements.",
+            hint: "This is a custom option, not a native select. Click this option instead.",
+            suggested_next_action: {{ action: "click", index: request.index }},
+            retryable: true
+          }};
+        }}
+        if (role === "listbox") {{
+          return {{
+            status: "failed",
+            action: request.action,
+            index: request.index,
+            stage: "control_unsupported",
+            error: "select action only supports native select elements.",
+            hint: "This is an open custom listbox. Use browser_state to choose a visible child option, then click that option.",
+            suggested_next_step: "Run browser_state and click the visible child option matching the desired value.",
+            retryable: true
+          }};
+        }}
+        if (role === "combobox" || hasListboxPopup) {{
           return {{
             status: "failed",
             action: request.action,
