@@ -384,6 +384,66 @@ def test_run_action_wait_selector_ignores_incidental_index_without_cached_state(
     assert '"index": null' in driver.calls[0]["script"]
 
 
+def test_browser_action_script_wait_text_searches_same_origin_frames():
+    script = build_browser_action_script(
+        action="wait_text",
+        index=None,
+        text="Frame Ready",
+        value=None,
+        timeout=1,
+        state_token=None,
+        selector=None,
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+const frameDocument = {
+  defaultView: window,
+  body: { innerText: "Frame Ready", textContent: "Frame Ready" },
+  querySelectorAll: (_selector) => [],
+};
+const iframe = { contentDocument: frameDocument };
+document.body.innerText = "Top Only";
+document.body.textContent = "Top Only";
+document.querySelectorAll = (selector) => selector === "iframe, frame" ? [iframe] : [];
+""",
+    )
+
+    assert result["status"] == "success"
+    assert result["result"] == "text_found"
+
+
+def test_browser_action_script_wait_selector_searches_same_origin_frames():
+    script = build_browser_action_script(
+        action="wait_selector",
+        index=None,
+        text=None,
+        value=None,
+        timeout=1,
+        state_token=None,
+        selector=".inside-frame",
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+const frameDocument = {
+  defaultView: window,
+  body: { innerText: "", textContent: "" },
+  querySelector: (selector) => selector === ".inside-frame" ? makeElement({ tag: "button", text: "Inside" }) : null,
+  querySelectorAll: (_selector) => [],
+};
+const iframe = { contentDocument: frameDocument };
+document.querySelector = (_selector) => null;
+document.querySelectorAll = (selector) => selector === "iframe, frame" ? [iframe] : [];
+""",
+    )
+
+    assert result["status"] == "success"
+    assert result["result"] == "selector_found"
+
+
 def test_supported_actions_includes_spa_waits():
     assert {"wait_dom_stable", "wait_not_busy", "wait_enabled", "wait_route"} <= SUPPORTED_ACTIONS
 

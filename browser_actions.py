@@ -532,7 +532,7 @@ def build_browser_action_script(
     if (request.action === "wait_text") {{
       if (!request.text) return fail("invalid_args", "text is required for wait_text.");
       const waited = await waitFor(
-        () => document.body && document.body.innerText.includes(request.text),
+        () => readableDocuments(document).some(doc => documentReadableText(doc).includes(request.text)),
         "timeout",
         "Timed out waiting for text."
       );
@@ -543,7 +543,16 @@ def build_browser_action_script(
     if (request.action === "wait_selector") {{
       if (!request.selector) return fail("invalid_args", "selector is required for wait_selector.");
       const waited = await waitFor(
-        () => document.querySelector(request.selector),
+        () => {{
+          for (const doc of readableDocuments(document)) {{
+            try {{
+              if (doc.querySelector(request.selector)) return true;
+            }} catch (e) {{
+              return {{ error: fail("invalid_args", "selector is invalid.") }};
+            }}
+          }}
+          return false;
+        }},
         "timeout",
         "Timed out waiting for selector."
       );

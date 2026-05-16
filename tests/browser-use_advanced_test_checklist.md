@@ -353,48 +353,37 @@
 
 ## 高级测试结论模板
 
+注意：以下是填写模板，不是已完成的测试结论。执行清单后必须用真实工具返回和页面证据替换 `<待填写>`；若 ATC-34~38 仍为 `待测`，不得在汇总或关键证据中写成已通过。
+
 ```md
 # GA 浏览器操作高级能力验证结论
 
-测试日期：
-测试分支：
-基础清单结果：
-Chrome 状态：
+测试日期：<待填写>
+测试分支：<待填写>
+基础清单结果：<待填写>
+Chrome 状态：<待填写>
 
 ## 汇总
 
 | 等级 | 通过 | 未通过 | 跳过 | 说明 |
 | --- | --- | --- | --- | --- |
-| P1 | 6 | 0 | 0 | 向导/搜索/弹窗 全部通过 |
-| P3 | 8 | 0 | 1 跳过 | ATC-11 fixture 无 Rerender Final 按钮跳过 |
-| P4 (wait_index) | 4 | 0 | 0 | wait_index 边界 4/4 通过 |
-| P4 (iframe/layer/metadata) | 5 | 0 | 0 | 同源 iframe、富文本、overlay layer、metadata 检查通过 |
-| P4 (自定义组件) | 5 | 0 | 0 | 自定义组件 5/5 通过 |
-| P4 (tab隔离) | 3 | 0 | 0 | tab隔离 3/3 通过 |
-| P4 (真实站点) | 1 通过 + 2 部分 | 0 | 2 未测 | ATC-64登录态通过；ATC-60/62部分验证；ATC-61/63未测 |
+| P1 | <待填写> | <待填写> | <待填写> | <填写已执行用例和证据> |
+| P3 | <待填写> | <待填写> | <待填写> | <填写已执行用例和证据> |
+| P4 (wait_index) | <待填写> | <待填写> | <待填写> | <填写已执行用例和证据> |
+| P4 (iframe/layer/metadata) | <待填写> | <待填写> | <待填写> | <若 ATC-34~38 仍为待测，不得填写通过> |
+| P4 (自定义组件) | <待填写> | <待填写> | <待填写> | <填写已执行用例和证据> |
+| P4 (tab隔离) | <待填写> | <待填写> | <待填写> | <填写已执行用例和证据> |
+| P4 (真实站点) | <待填写> | <待填写> | <待填写> | <区分通过、部分通过、未测> |
 
 ## 关键证据
 
-- input 后 DOM 展开但 keys without index 成功：ATC-03 delta Enter → search:enter:delta ✅
-- mutation 后旧 index 被拒绝：ATC-10 Rerender Start 后旧 sibling index 失效 → state_missing ✅；ATC-20 大列表生成后旧 index 失效 ✅
-- max_elements 截断和扩大后命中：ATC-21 120 未含 Row Action 160，300 含；ATC-22 220 找到并点击成功 ✅
-- wait_index identity 边界：ATC-30 同 id 同文本 fallback 成功；ATC-31 文本变化 timeout；ATC-32 hidden 不 fallback ✅
-- 同源 iframe / rich text / metadata：ATC-34 frame_path 可见并可操作；ATC-36 同源 iframe editor body 可 `field_value` 验证；ATC-38 table_context 只读 ✅
-- fake combobox select 失败后 click 流恢复：ATC-41 连续 select 返回 invalid_args；ATC-42 click 展开 + 点选 Fake High 成功 ✅
-- tab state 隔离：ATC-50 A 的 index 切 B 用 → stale_index ✅；ATC-51 B 重扫后自身 index 可用 ✅；ATC-52 wait_text 跨 tab 正确隔离 ✅
-- 真实站点登录态继承：ATC-64 日报页直接打开且登录态完整，无需重新认证 ✅
-- 真实站点输入兼容性：ATC-60 日报页部分 textarea input 成功，部分字段因框架拒绝 input（验证了真实 SPA 差异） ✅
+- <ATC-ID>：<工具序列> -> <关键返回 status/stage/result> -> <页面证据>
+- <ATC-ID>：<工具序列> -> <关键返回 status/stage/result> -> <页面证据>
+- <ATC-ID>：<工具序列> -> <关键返回 status/stage/result> -> <页面证据>
 
 ## 结论
 
-- **新工具是否足以作为 GA 默认高层浏览器操作入口**：是，对于标准流程（输入、点击、wait_text、原生 select、同源 iframe indexed 操作）配合 SOP 和 `browser_state` 的 index 机制已足够。对 mutation/rerender 场景，old index → stale_index 的错误模式可靠可预期。
-- **哪些复杂场景应立即切回 `tmwebdriver_sop`**：
-  1. **框架级自定义 Select/Combobox**（ATC-41~42）：indexed select 返回 invalid_args/control_unsupported 后，需切回 click 展开 + 点选，仍可用；若菜单项无有效索引则应切 tmwebdriver_sop 使用 selector/CDP。
-  2. **跨域 iframe 内容**：高层工具不承诺跨域 iframe；需要 `tmwebdriver_sop` / CDP bridge 路径。
-  3. **复杂 AntD/MUI 组件**（ATC-62 部分验证）：部分 SPA 框架的 input 拒绝原生 value 设置 → 应切 tmwebdriver 使用 JS setter+事件链。
-  4. **跨 tab 深层操作**：当前 tab 隔离通过，但跨 tab 连续状态管理仍需 SOP 规范。
-- **GA 工具编排仍需优化的问题**：
-  1. 跨域 iframe 仍需低层路径，不应在高层工具里承诺透明穿透。
-  2. 大列表（max_elements）截断时首扫不能定论，需 SOP 约束至少两次扫描。
-  3. input 在部分框架中可能被拒绝（`Input value was not accepted`），应自动降级为原生 JS setter+事件链。
-  4. 没有 wait_selector 的通用 fallback（虽然有算子但需要具体 selector），对复杂 DOM 定位不够灵活。
+- **新工具是否足以作为 GA 默认高层浏览器操作入口**：<基于本轮真实证据填写>
+- **哪些复杂场景应立即切回 `tmwebdriver_sop`**：<基于本轮真实失败/跳过证据填写>
+- **GA 工具编排仍需优化的问题**：<基于本轮工具序列和失败证据填写>
+```
