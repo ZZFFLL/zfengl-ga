@@ -54,6 +54,9 @@ def build_browser_action_script(
     timeout: int,
     state_token: str | None,
     selector: str | None,
+    selector_tag: str | None = None,
+    selector_role: str | None = None,
+    selector_text: str | None = None,
 ) -> str:
     request = {
         "action": action,
@@ -63,6 +66,9 @@ def build_browser_action_script(
         "timeout": timeout,
         "state_token": state_token,
         "selector": selector,
+        "selector_tag": selector_tag,
+        "selector_role": selector_role,
+        "selector_text": selector_text,
     }
     request_json = json.dumps(request, ensure_ascii=False)
 
@@ -87,12 +93,15 @@ def build_browser_action_script(
       rect.height > 0;
   }}
 
-  function cachedElement() {{
+  function cachedElement(allowDetached) {{
     const state = window.__GA_BROWSER_ACTION_STATE__;
     if (!state || !state.token) return {{ error: fail("state_missing", "Run browser_state before indexed browser_action.") }};
     if (state.token !== request.state_token) return {{ error: fail("stale_index", "Element index is stale. Run browser_state again.") }};
     const el = state.elements && state.elements[Number(request.index) - 1];
-    if (!el || !document.contains(el)) return {{ error: fail("stale_index", "Element index is stale. Run browser_state again.") }};
+    if (!el || !document.contains(el)) {{
+      if (allowDetached) return {{ el: null }};
+      return {{ error: fail("stale_index", "Element index is stale. Run browser_state again.") }};
+    }}
     return {{ el }};
   }}
 
@@ -108,6 +117,76 @@ def build_browser_action_script(
   function dispatchInputEvents(el) {{
     el.dispatchEvent(new Event("input", {{ bubbles: true }}));
     el.dispatchEvent(new Event("change", {{ bubbles: true }}));
+  }}
+
+  function tagOf(el) {{
+    return el && el.tagName ? el.tagName.toLowerCase() : "";
+  }}
+
+  function textOf(element) {{
+    const aria = element.getAttribute("aria-label") || "";
+    const placeholder = element.getAttribute("placeholder") || "";
+    const title = element.getAttribute("title") || "";
+    const text = element.innerText || element.textContent || "";
+    return [aria, placeholder, title, text].filter(Boolean).join(" ").trim().replace(/\\s+/g, " ");
+  }}
+
+  function nativeRoleOf(element, tag, type) {{
+    if (tag === "a" && element.hasAttribute("href")) return "link";
+    if (tag === "button") return "button";
+    if (tag === "select") return "combobox";
+    if (tag === "textarea") return "textbox";
+    if (tag === "input") {{
+      const inputType = type.toLowerCase();
+      if (inputType === "checkbox") return "checkbox";
+      if (inputType === "radio") return "radio";
+      if (["button", "submit", "reset"].includes(inputType)) return "button";
+      return "textbox";
+    }}
+    return "";
+  }}
+
+  function roleOf(element) {{
+    const tag = tagOf(element);
+    return (element.getAttribute("role") || nativeRoleOf(element, tag, element.getAttribute("type") || "")).toLowerCase();
+  }}
+
+  function isContentEditableTarget(el) {{
+    return Boolean(el && (el.isContentEditable || el.getAttribute("contenteditable") === "true"));
+  }}
+
+  function editableForInput(el) {{
+    const tag = tagOf(el);
+    if (tag === "textarea" || isContentEditableTarget(el)) return true;
+    if (tag !== "input") return false;
+    const type = String(el.getAttribute("type") || "text").toLowerCase();
+    return !["button", "submit", "reset", "checkbox", "radio", "file", "image", "range", "color", "hidden"].includes(type);
+  }}
+
+  function requiresEditableKey(key) {{
+    return ["Control+A", "Backspace"].includes(key);
+  }}
+
+  function editableForEditingKey(el) {{
+    const tag = tagOf(el);
+    if (tag === "textarea") return true;
+    if (tag !== "input") return false;
+    const type = String(el.getAttribute("type") || "text").toLowerCase();
+    return !["button", "submit", "reset", "checkbox", "radio", "file", "image", "range", "color", "hidden"].includes(type);
+  }}
+
+  function matchesSelectorIdentity(target) {{
+    if (!target) return false;
+    if (!request.selector_tag && !request.selector_role && !request.selector_text) return false;
+    if (request.selector_tag && tagOf(target) !== String(request.selector_tag).toLowerCase()) return false;
+    if (request.selector_role && roleOf(target) !== String(request.selector_role).toLowerCase()) return false;
+    if (request.selector_text) {{
+      const expected = String(request.selector_text).trim().replace(/\\s+/g, " ");
+      const actual = textOf(target);
+      if (expected && !actual) return false;
+      if (expected && !actual.includes(expected) && !expected.includes(actual)) return false;
+    }}
+    return true;
   }}
 
   function keyboardEvent(target, type, key) {{
@@ -151,14 +230,26 @@ def build_browser_action_script(
 
     let el = null;
     if (request.index !== null && request.index !== undefined) {{
-      const located = cachedElement();
+      const located = cachedElement(request.action === "wait_index" && Boolean(request.selector));
       if (located.error) return located.error;
       el = located.el;
     }}
 
     if (request.action === "wait_index") {{
+      function waitIndexTarget() {{
+        if (el !== null) {{
+          if (document.contains(el)) return visible(el) ? el : null;
+          el = null;
+        }}
+        if (request.selector) {{
+          const target = document.querySelector(request.selector);
+          if (!matchesSelectorIdentity(target)) return null;
+          return visible(target) ? target : null;
+        }}
+        return null;
+      }}
       const waited = await waitFor(
-        () => visible(el),
+        () => waitIndexTarget(),
         "timeout",
         "Timed out waiting for element index."
       );
@@ -182,6 +273,7 @@ def build_browser_action_script(
 
     if (request.action === "input") {{
       if (request.text === null && request.value === null) return fail("invalid_args", "text or value is required for input.");
+      if (!editableForInput(el)) return fail("invalid_args", "input action requires an editable text element.");
       const nextValue = String(request.text !== null ? request.text : request.value);
       el.focus({{ preventScroll: true }});
       if ("value" in el) {{
@@ -191,8 +283,10 @@ def build_browser_action_script(
         }} else {{
           el.value = nextValue;
         }}
-      }} else {{
+      }} else if (isContentEditableTarget(el)) {{
         el.textContent = nextValue;
+      }} else {{
+        return fail("invalid_args", "input action requires an editable text element.");
       }}
       dispatchInputEvents(el);
       if ("value" in el && el.value !== nextValue) {{
@@ -226,6 +320,11 @@ def build_browser_action_script(
       if (!allowedKeys.includes(key)) return fail("invalid_args", "Unsupported key action.");
       const target = el || document.activeElement || document.body;
       if (!target) return fail("locate", "No keyboard target found.");
+      const blocked = blockedForAction(target, request.action);
+      if (blocked) return fail("visibility", blocked);
+      if (requiresEditableKey(key) && !editableForEditingKey(target)) {{
+        return fail("invalid_args", "Focused element is not editable.");
+      }}
       target.focus && target.focus({{ preventScroll: true }});
       if (key === "Control+A" && target.select) {{
         target.select();
@@ -293,7 +392,18 @@ class BrowserActionLayer:
         state = normalize_state_result(raw)
         if state.get("status") == "success":
             state["tab_id"] = state.get("tab_id") or driver.default_session_id
-            self._last_state = {"tab_id": state["tab_id"], "state_token": state.get("state_token")}
+            elements_by_index = {}
+            for element in state.get("elements", []):
+                if not isinstance(element, dict):
+                    continue
+                element_index = _safe_index(element.get("index"))
+                if element_index is not None:
+                    elements_by_index[element_index] = element
+            self._last_state = {
+                "tab_id": state["tab_id"],
+                "state_token": state.get("state_token"),
+                "elements_by_index": elements_by_index,
+            }
         else:
             self._last_state = None
         return state
@@ -347,6 +457,21 @@ class BrowserActionLayer:
                 return result
             state_token = self._last_state.get("state_token")
 
+        effective_selector = selector
+        selector_tag = None
+        selector_role = None
+        selector_text = None
+        if action == "wait_index" and safe_index is not None and self._last_state:
+            element = (self._last_state.get("elements_by_index") or {}).get(safe_index)
+            if isinstance(element, dict):
+                hint = str(element.get("selector_hint") or "").strip()
+                tag = str(element.get("tag") or "").strip()
+                if not effective_selector and hint:
+                    effective_selector = hint
+                selector_tag = tag or None
+                selector_role = str(element.get("role") or "").strip() or None
+                selector_text = str(element.get("text") or "").strip() or None
+
         script = build_browser_action_script(
             action=action,
             index=safe_index,
@@ -354,7 +479,10 @@ class BrowserActionLayer:
             value=value,
             timeout=safe_timeout,
             state_token=state_token,
-            selector=selector,
+            selector=effective_selector,
+            selector_tag=selector_tag,
+            selector_role=selector_role,
+            selector_text=selector_text,
         )
 
         try:
