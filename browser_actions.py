@@ -69,6 +69,7 @@ def build_browser_action_script(
     selector_tag: str | None = None,
     selector_role: str | None = None,
     selector_text: str | None = None,
+    frame_path: list[Any] | None = None,
 ) -> str:
     request = {
         "action": action,
@@ -81,6 +82,7 @@ def build_browser_action_script(
         "selector_tag": selector_tag,
         "selector_role": selector_role,
         "selector_text": selector_text,
+        "frame_path": frame_path or [],
     }
     request_json = json.dumps(request, ensure_ascii=False)
 
@@ -94,9 +96,44 @@ def build_browser_action_script(
     return {{ status: "failed", action: request.action, index: request.index, stage, error }};
   }}
 
+  function ownerWindowOf(el) {{
+    return (el && el.ownerDocument && el.ownerDocument.defaultView) || window;
+  }}
+
+  function ownerDocumentContains(el) {{
+    return Boolean(el && el.ownerDocument && el.ownerDocument.contains && el.ownerDocument.contains(el));
+  }}
+
+  function frameStepIndex(step) {{
+    if (typeof step === "number") return Number.isInteger(step) && step >= 0 ? step : null;
+    if (step && typeof step === "object" && typeof step.index === "number") {{
+      return Number.isInteger(step.index) && step.index >= 0 ? step.index : null;
+    }}
+    return null;
+  }}
+
+  function documentForFramePath(framePath) {{
+    let currentDocument = document;
+    for (const step of framePath || []) {{
+      const index = frameStepIndex(step);
+      if (index === null) return {{ error: fail("frame_unavailable", "Frame path is invalid.") }};
+      const frame = currentDocument.querySelectorAll("iframe, frame")[index];
+      if (!frame) return {{ error: fail("frame_unavailable", "Frame path is unavailable.") }};
+      let nextDocument = null;
+      try {{
+        nextDocument = frame.contentDocument;
+      }} catch (e) {{
+        return {{ error: fail("frame_unavailable", "Frame document is unavailable.") }};
+      }}
+      if (!nextDocument) return {{ error: fail("frame_unavailable", "Frame document is unavailable.") }};
+      currentDocument = nextDocument;
+    }}
+    return {{ document: currentDocument }};
+  }}
+
   function visible(el) {{
-    if (!el || !document.contains(el)) return false;
-    const style = window.getComputedStyle(el);
+    if (!ownerDocumentContains(el)) return false;
+    const style = ownerWindowOf(el).getComputedStyle(el);
     const rect = el.getBoundingClientRect();
     return style.display !== "none" &&
       style.visibility !== "hidden" &&
@@ -110,7 +147,7 @@ def build_browser_action_script(
     if (!state || !state.token) return {{ error: fail("state_missing", "Run browser_state before indexed browser_action.") }};
     if (state.token !== request.state_token) return {{ error: fail("stale_index", "Element index is stale. Run browser_state again.") }};
     const el = state.elements && state.elements[Number(request.index) - 1];
-    if (!el || !document.contains(el)) {{
+    if (!el || !ownerDocumentContains(el)) {{
       if (allowDetached) return {{ el: null }};
       return {{ error: fail("stale_index", "Element index is stale. Run browser_state again.") }};
     }}
@@ -250,11 +287,14 @@ def build_browser_action_script(
     if (request.action === "wait_index") {{
       function waitIndexTarget() {{
         if (el !== null) {{
-          if (document.contains(el)) return visible(el) ? el : null;
+          if (ownerDocumentContains(el)) return visible(el) ? el : null;
           el = null;
         }}
         if (request.selector) {{
-          const target = document.querySelector(request.selector);
+          const resolvedDocument = documentForFramePath(request.frame_path || []);
+          if (resolvedDocument.error) return resolvedDocument;
+          const queryDocument = resolvedDocument.document;
+          const target = queryDocument.querySelector(request.selector);
           if (!matchesSelectorIdentity(target)) return null;
           return visible(target) ? target : null;
         }}
@@ -265,6 +305,7 @@ def build_browser_action_script(
         "timeout",
         "Timed out waiting for element index."
       );
+      if (waited && waited.error && waited.error.stage === "frame_unavailable") return waited.error;
       if (waited && waited.error) return waited.error;
       return {{ status: "success", action: "wait_index", index: request.index, result: "element_visible" }};
     }}
@@ -477,16 +518,23 @@ class BrowserActionLayer:
         selector_tag = None
         selector_role = None
         selector_text = None
+        frame_path: list[Any] = []
+        cached_element = None
+        if safe_index is not None and self._last_state:
+            cached_element = (self._last_state.get("elements_by_index") or {}).get(safe_index)
+            if isinstance(cached_element, dict):
+                cached_frame_path = cached_element.get("frame_path")
+                if isinstance(cached_frame_path, list):
+                    frame_path = cached_frame_path
         if action == "wait_index" and safe_index is not None and self._last_state:
-            element = (self._last_state.get("elements_by_index") or {}).get(safe_index)
-            if isinstance(element, dict):
-                hint = str(element.get("selector_hint") or "").strip()
-                tag = str(element.get("tag") or "").strip()
+            if isinstance(cached_element, dict):
+                hint = str(cached_element.get("selector_hint") or "").strip()
+                tag = str(cached_element.get("tag") or "").strip()
                 if not effective_selector and hint:
                     effective_selector = hint
                 selector_tag = tag or None
-                selector_role = str(element.get("role") or "").strip() or None
-                selector_text = str(element.get("text") or "").strip() or None
+                selector_role = str(cached_element.get("role") or "").strip() or None
+                selector_text = str(cached_element.get("text") or "").strip() or None
 
         script = build_browser_action_script(
             action=action,
@@ -499,6 +547,7 @@ class BrowserActionLayer:
             selector_tag=selector_tag,
             selector_role=selector_role,
             selector_text=selector_text,
+            frame_path=frame_path,
         )
 
         try:

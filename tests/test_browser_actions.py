@@ -25,11 +25,13 @@ global.document = {
   activeElement: null,
   contains: (el) => Boolean(el && el.attached !== false),
   querySelector: (_selector) => null,
+  querySelectorAll: (_selector) => [],
 };
 global.window = {
   __GA_BROWSER_ACTION_STATE__: null,
   getComputedStyle: (el) => el._style || { display: "block", visibility: "visible", opacity: "1" },
 };
+document.defaultView = window;
 function makeElement(options = {}) {
   const attrs = options.attrs || {};
   const element = {
@@ -71,6 +73,7 @@ function makeElement(options = {}) {
       this.selected = true;
     },
   };
+  element.ownerDocument = options.ownerDocument || document;
   if (Object.prototype.hasOwnProperty.call(options, "value")) {
     element.value = options.value;
   }
@@ -369,6 +372,36 @@ def test_run_action_wait_index_passes_cached_selector_identity():
     assert '"selector_text": "Go"' in script
 
 
+def test_run_action_passes_cached_frame_path_from_latest_state():
+    layer = BrowserActionLayer()
+    driver = FakeDriver(
+        [
+            {
+                "data": {
+                    "status": "success",
+                    "state_token": "tok-1",
+                    "elements": [
+                        {
+                            "index": 1,
+                            "tag": "button",
+                            "text": "Go",
+                            "selector_hint": 'button[name="go"]',
+                            "frame_path": [0],
+                        }
+                    ],
+                }
+            },
+            {"data": {"status": "success", "action": "wait_index", "index": 1, "result": "element_visible"}},
+        ]
+    )
+
+    layer.get_state(driver)
+    result = layer.run_action(driver, action="wait_index", index=1)
+
+    assert result["status"] == "success"
+    assert '"frame_path": [0]' in driver.calls[1]["script"]
+
+
 def test_run_action_wait_index_user_selector_still_passes_cached_identity():
     layer = BrowserActionLayer()
     driver = FakeDriver(
@@ -478,8 +511,29 @@ def test_build_browser_action_script_wait_index_uses_selector_hint_when_availabl
     )
 
     assert 'if (request.selector) {' in script
-    assert 'const target = document.querySelector(request.selector);' in script
+    assert 'const target = queryDocument.querySelector(request.selector);' in script
     assert 'return visible(target) ? target : null;' in script
+
+
+def test_build_browser_action_script_contains_frame_document_helpers():
+    script = build_browser_action_script(
+        action="wait_index",
+        index=1,
+        text=None,
+        value=None,
+        timeout=4,
+        state_token="tok-2",
+        selector='button[data-testid="login"]',
+        frame_path=[0],
+    )
+
+    assert '"frame_path": [0]' in script
+    assert "function ownerWindowOf(el)" in script
+    assert "function ownerDocumentContains(el)" in script
+    assert "el.ownerDocument.contains(el)" in script
+    assert "function frameStepIndex(step)" in script
+    assert "function documentForFramePath(framePath)" in script
+    assert "frame_unavailable" in script
 
 
 def test_build_browser_action_script_wait_index_prefers_cached_node_and_checks_selector_identity():
@@ -494,7 +548,7 @@ def test_build_browser_action_script_wait_index_prefers_cached_node_and_checks_s
     )
 
     assert "function matchesSelectorIdentity(target)" in script
-    assert "if (document.contains(el)) return visible(el) ? el : null;" in script
+    assert "if (ownerDocumentContains(el)) return visible(el) ? el : null;" in script
     assert "el = null;" in script
     assert "if (!matchesSelectorIdentity(target)) return null;" in script
 
@@ -637,6 +691,48 @@ document.querySelector = (_selector) => unrelated;
 
     assert result["status"] == "failed"
     assert result["stage"] == "timeout"
+
+
+def test_browser_action_script_wait_index_fallback_queries_frame_document():
+    script = build_browser_action_script(
+        action="wait_index",
+        index=1,
+        text=None,
+        value=None,
+        timeout=1,
+        state_token="tok-2",
+        selector='button[name="go"]',
+        selector_tag="button",
+        selector_role="button",
+        selector_text="Go",
+        frame_path=[0],
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+const frameDocument = {
+  defaultView: window,
+  contains: (el) => Boolean(el && el.attached !== false && el.ownerDocument === frameDocument),
+  querySelector: (_selector) => makeElement({
+    tag: "button",
+    role: "button",
+    text: "Go",
+    visible: true,
+    ownerDocument: frameDocument
+  }),
+  querySelectorAll: (_selector) => [],
+};
+const iframe = { contentDocument: frameDocument };
+const cached = makeElement({ tag: "button", role: "button", text: "Go", attached: false, ownerDocument: frameDocument });
+window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [cached] };
+document.querySelector = (_selector) => null;
+document.querySelectorAll = (selector) => selector === "iframe, frame" ? [iframe] : [];
+""",
+    )
+
+    assert result["status"] == "success"
+    assert result["result"] == "element_visible"
 
 
 def test_browser_action_script_keys_rejects_contenteditable_editing_key():
