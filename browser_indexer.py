@@ -5,7 +5,8 @@ MAX_MAX_ELEMENTS = 500
 INTERACTIVE_SELECTOR = (
     'a[href], button, input, textarea, select, [role="button"], [role="link"], '
     '[role="textbox"], [role="checkbox"], [role="radio"], [role="combobox"], '
-    '[role="menuitem"], [onclick], [tabindex], [contenteditable="true"]'
+    '[role="listbox"], [role="option"], [role="menuitem"], [onclick], '
+    '[tabindex], [contenteditable="true"]'
 )
 
 

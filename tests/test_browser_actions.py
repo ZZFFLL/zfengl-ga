@@ -1259,6 +1259,32 @@ window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [null, null, co
     assert result["suggested_next_action"] == {"action": "click", "index": 3}
 
 
+def test_browser_action_script_select_rejects_custom_listbox_roles_with_click_hint():
+    for role in ["listbox", "option"]:
+        script = build_browser_action_script(
+            action="select",
+            index=1,
+            text=None,
+            value="Admin",
+            timeout=1,
+            state_token="tok-2",
+            selector=None,
+        )
+
+        result = run_browser_action_script(
+            script,
+            f"""
+const customControl = makeElement({{ tag: "div", role: "{role}" }});
+window.__GA_BROWSER_ACTION_STATE__ = {{ token: "tok-2", elements: [customControl] }};
+""",
+        )
+
+        assert result["status"] == "failed"
+        assert result["stage"] == "control_unsupported"
+        assert result["retryable"] is True
+        assert result["suggested_next_action"] == {"action": "click", "index": 1}
+
+
 def test_browser_action_script_input_verify_field_value_success():
     script = build_browser_action_script(
         action="input",

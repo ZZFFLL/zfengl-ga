@@ -12,6 +12,13 @@ def test_build_browser_state_script_contains_index_state_and_limit():
     assert "[contenteditable=\"true\"]" in script
 
 
+def test_build_browser_state_script_includes_custom_select_roles():
+    script = build_browser_state_script()
+
+    assert "[role=\"option\"]" in script
+    assert "[role=\"listbox\"]" in script
+
+
 def test_build_browser_state_script_defaults_to_visible_elements_only():
     script = build_browser_state_script()
 

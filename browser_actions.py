@@ -651,7 +651,7 @@ def build_browser_action_script(
       if (el.tagName !== "SELECT") {{
         const role = roleOf(el);
         const hasListboxPopup = String(el.getAttribute("aria-haspopup") || "").toLowerCase() === "listbox";
-        if (role === "combobox" || hasListboxPopup) {{
+        if (["combobox", "listbox", "option"].includes(role) || hasListboxPopup) {{
           return {{
             status: "failed",
             action: request.action,
