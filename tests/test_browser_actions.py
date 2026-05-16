@@ -872,6 +872,48 @@ document.querySelectorAll = (selector) => selector === "iframe, frame" ? [replac
     assert result["stage"] in {"stale_index", "frame_unavailable"}
 
 
+def test_browser_action_script_rejects_nested_target_with_null_ancestor_window():
+    script = build_browser_action_script(
+        action="click",
+        index=1,
+        text=None,
+        value=None,
+        timeout=1,
+        state_token="tok-2",
+        selector=None,
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+const parentFrameDocument = {
+  defaultView: null,
+  contains: (el) => Boolean(el && el.attached !== false && el.ownerDocument === parentFrameDocument),
+  querySelector: (_selector) => null,
+  querySelectorAll: (_selector) => [],
+};
+const childFrameElement = { attached: true, ownerDocument: parentFrameDocument };
+const childFrameWindow = { ...window, frameElement: childFrameElement, parent: null };
+const childFrameDocument = {
+  defaultView: childFrameWindow,
+  contains: (el) => Boolean(el && el.attached !== false && el.ownerDocument === childFrameDocument),
+  querySelector: (_selector) => null,
+  querySelectorAll: (_selector) => [],
+};
+const cached = makeElement({
+  tag: "button",
+  role: "button",
+  text: "Go",
+  ownerDocument: childFrameDocument
+});
+window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [cached] };
+""",
+    )
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "stale_index"
+
+
 def test_browser_action_script_keys_rejects_contenteditable_editing_key():
     script = build_browser_action_script(
         action="keys",

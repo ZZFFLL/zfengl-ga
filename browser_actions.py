@@ -110,6 +110,7 @@ def build_browser_action_script(
           return false;
         }}
         currentWindow = frame.ownerDocument.defaultView;
+        if (!currentWindow) return false;
       }}
       return true;
     }} catch (e) {{
