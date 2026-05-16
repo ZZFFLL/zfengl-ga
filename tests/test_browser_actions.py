@@ -69,6 +69,9 @@ function makeElement(options = {}) {
       document.activeElement = this;
       this.focused = true;
     },
+    click() {
+      this.clicked = true;
+    },
     select() {
       this.selected = true;
     },
@@ -733,6 +736,47 @@ document.querySelectorAll = (selector) => selector === "iframe, frame" ? [iframe
 
     assert result["status"] == "success"
     assert result["result"] == "element_visible"
+
+
+def test_browser_action_script_rejects_cached_target_in_detached_iframe():
+    for action, target_js, action_kwargs in [
+        (
+            "click",
+            'makeElement({ tag: "button", role: "button", text: "Go", ownerDocument: frameDocument })',
+            {"text": None, "value": None},
+        ),
+        (
+            "input",
+            'makeElement({ tag: "input", type: "text", value: "", ownerDocument: frameDocument })',
+            {"text": "openai", "value": None},
+        ),
+    ]:
+        script = build_browser_action_script(
+            action=action,
+            index=1,
+            timeout=1,
+            state_token="tok-2",
+            selector=None,
+            **action_kwargs,
+        )
+
+        result = run_browser_action_script(
+            script,
+            f"""
+const detachedIframe = {{ attached: false, ownerDocument: document }};
+const frameWindow = {{ ...window, frameElement: detachedIframe, parent: window }};
+const frameDocument = {{
+  defaultView: frameWindow,
+  contains: (el) => Boolean(el && el.attached !== false && el.ownerDocument === frameDocument),
+  querySelector: (_selector) => null,
+  querySelectorAll: (_selector) => [],
+}};
+window.__GA_BROWSER_ACTION_STATE__ = {{ token: "tok-2", elements: [{target_js}] }};
+""",
+        )
+
+        assert result["status"] == "failed"
+        assert result["stage"] == "stale_index"
 
 
 def test_browser_action_script_keys_rejects_contenteditable_editing_key():

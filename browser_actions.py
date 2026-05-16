@@ -100,8 +100,30 @@ def build_browser_action_script(
     return (el && el.ownerDocument && el.ownerDocument.defaultView) || window;
   }}
 
+  function ownerFrameChainAttached(el) {{
+    try {{
+      let currentWindow = el && el.ownerDocument && el.ownerDocument.defaultView;
+      while (currentWindow && currentWindow.frameElement) {{
+        const frame = currentWindow.frameElement;
+        if (!frame.ownerDocument || !frame.ownerDocument.contains || !frame.ownerDocument.contains(frame)) {{
+          return false;
+        }}
+        currentWindow = frame.ownerDocument.defaultView;
+      }}
+      return true;
+    }} catch (e) {{
+      return false;
+    }}
+  }}
+
   function ownerDocumentContains(el) {{
-    return Boolean(el && el.ownerDocument && el.ownerDocument.contains && el.ownerDocument.contains(el));
+    return Boolean(
+      el &&
+      el.ownerDocument &&
+      el.ownerDocument.contains &&
+      el.ownerDocument.contains(el) &&
+      ownerFrameChainAttached(el)
+    );
   }}
 
   function frameStepIndex(step) {{
