@@ -351,12 +351,11 @@ def build_browser_action_script(
   }}
 
   function finalizeMutatingAction(result, target) {{
+    result.verify_hint = verifyHintFor(request.action);
     if (request.verify) {{
       const verification = verifyAction(target);
       if (verification && verification.status === "failed") return verification;
       if (verification) result.verification = verification;
-    }} else {{
-      result.verify_hint = verifyHintFor(request.action);
     }}
     return result;
   }}

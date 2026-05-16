@@ -1075,7 +1075,7 @@ window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [input] };
         "expected": "openai",
         "passed": True,
     }
-    assert "verify_hint" not in result
+    assert result["verify_hint"] == "Use verify='field_value' with verify_value to require the field value after input."
 
 
 def test_browser_action_script_input_verify_field_value_failure():
