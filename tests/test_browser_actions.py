@@ -33,6 +33,17 @@ def test_get_state_returns_browser_unavailable_when_no_sessions():
     assert "没有可用的浏览器标签页" in result["error"]
 
 
+def test_get_state_unavailable_clears_cached_state():
+    layer = BrowserActionLayer()
+    layer._last_state = {"tab_id": "7", "state_token": "old"}
+    driver = FakeDriver(sessions=[])
+
+    result = layer.get_state(driver)
+
+    assert result["status"] == "failed"
+    assert layer.last_state_token is None
+
+
 def test_get_state_executes_indexer_and_caches_state_token():
     layer = BrowserActionLayer()
     driver = FakeDriver(

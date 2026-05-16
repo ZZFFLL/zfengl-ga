@@ -254,6 +254,7 @@ class BrowserActionLayer:
     ) -> dict[str, Any]:
         unavailable = self._ensure_driver(driver)
         if unavailable:
+            self._last_state = None
             return unavailable
         if switch_tab_id:
             driver.default_session_id = str(switch_tab_id)
