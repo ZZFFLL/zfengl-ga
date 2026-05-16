@@ -62,13 +62,13 @@
   }},
   {"type": "function", "function": {
     "name": "browser_action",
-    "description": "在真实 Chrome 页面中，基于索引元素或选择器执行浏览器动作。",
+    "description": "在真实 Chrome 页面中，基于最新 browser_state 的索引元素执行浏览器动作。selector 只支持 wait_selector。",
     "parameters": {"type": "object", "properties": {
       "action": {"type": "string", "enum": ["click", "input", "select", "keys", "wait_index", "wait_text", "wait_selector"], "description": "要执行的浏览器动作"},
       "index": {"type": "integer", "description": "来自 browser_state 的元素索引"},
       "text": {"type": "string", "description": "用于输入、按键、等待文本或匹配的文本"},
       "value": {"type": "string", "description": "用于 select 或 input 动作的值"},
-      "selector": {"type": "string", "description": "用于基于选择器动作或等待的 CSS selector"},
+      "selector": {"type": "string", "description": "仅用于 wait_selector 的 CSS selector"},
       "timeout": {"type": "integer", "description": "等待动作的超时时间（秒）", "default": 10},
       "switch_tab_id": {"type": "string", "description": "可选的标签页 ID，执行动作前切换到该标签页"}}}
   }},

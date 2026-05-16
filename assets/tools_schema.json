@@ -62,13 +62,13 @@
   }},
   {"type": "function", "function": {
     "name": "browser_action",
-    "description": "Perform a browser action against indexed elements or selectors in the real Chrome page.",
+    "description": "Perform a browser action against latest browser_state indexed elements in the real Chrome page. selector is only supported for wait_selector.",
     "parameters": {"type": "object", "properties": {
       "action": {"type": "string", "enum": ["click", "input", "select", "keys", "wait_index", "wait_text", "wait_selector"], "description": "Browser action to perform"},
       "index": {"type": "integer", "description": "Indexed element id from browser_state"},
       "text": {"type": "string", "description": "Text for input, keys, wait_text, or matching"},
       "value": {"type": "string", "description": "Value for select or input actions"},
-      "selector": {"type": "string", "description": "CSS selector for selector-based actions or waits"},
+      "selector": {"type": "string", "description": "CSS selector for wait_selector only"},
       "timeout": {"type": "integer", "description": "Timeout in seconds for wait actions", "default": 10},
       "switch_tab_id": {"type": "string", "description": "[Optional] Tab ID to switch to before acting"}}}
   }},
