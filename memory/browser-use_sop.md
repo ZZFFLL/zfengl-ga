@@ -36,7 +36,7 @@
 | action | 是否通常需要 index | 用途 |
 |---|---:|---|
 | `click` | 是 | 点击 indexed 元素 |
-| `input` | 是 | 向 input / textarea / contenteditable 输入文本 |
+| `input` | 是 | 向 input / textarea / contenteditable / 同源 designMode editor body 输入文本 |
 | `select` | 是 | 选择原生 `<select>` 的 option |
 | `keys` | 否，特殊场景可带 | 发送 Enter / Escape / Tab / Control+A / Backspace |
 | `wait_index` | 是 | 等待 indexed 元素可见，支持节点 detached 后基于 identity 的 selector fallback |
@@ -47,7 +47,7 @@
 | `wait_enabled` | 是 | 等待 indexed 元素变为可用 |
 | `wait_route` | 否 | 等待当前路由/URL 包含目标文本或 value |
 
-可选验证：`verify` 支持 `field_value`、`text`、`selector`、`element_text`。验证失败会返回 `status=failed` 且 `stage=verify_failed`。
+可选验证：`verify` 支持 `field_value`、`text`、`selector`、`element_text`，但只用于 `click` / `input` / `select` / `keys`。所有等待动作都会拒绝 `verify`；`field_value` 必须有非空期望值。验证失败会返回 `status=failed` 且 `stage=verify_failed`。
 
 ## 基本编排原则
 
@@ -63,7 +63,7 @@
 {"tool": "browser_action", "args": {"action": "click", "index": 12}}
 ```
 
-`click` / `input` / `select` / `wait_index` 必须基于最近一次 `browser_state` 的 index。没有 state 或 tab 不一致时，工具会拒绝执行。
+`click` / `input` / `select` / `wait_index` / `wait_enabled` 必须基于最近一次 `browser_state` 的 index。没有 state 或 tab 不一致时，工具会拒绝执行。
 
 ### 2. mutating action 成功后不要复用旧 index
 
@@ -129,6 +129,8 @@ SPA 页面没有稳定文本或 selector 时，再按页面形态选有界等待
 {"action": "wait_not_busy", "selector": ".ant-spin-spinning", "timeout": 10}
 ```
 
+等待动作只表示“等条件出现/消失”，不做结果验证；不要给 `wait_*` 传 `verify`。
+
 `wait_index` 只适合等待刚刚通过 `browser_state` 得到的那个 indexed 元素变可见。它不是通用搜索工具。
 
 ### 5. 标准输入/提交/等待/重扫顺序
@@ -181,6 +183,8 @@ SPA 页面没有稳定文本或 selector 时，再按页面形态选有界等待
 2. `browser_state` 重新扫下拉选项。
 3. `browser_action(click)` 点选项。
 4. 如果 `select` 返回 `control_unsupported` 或给出 click/state/click 的 hint，按 hint 改路径；若菜单项仍无法索引或点击，读 `tmwebdriver_sop`，改用 vnode 或 CDP 坐标点击。
+
+原生 `<select>` 中如果目标 `<option>` 自身 disabled，或位于 disabled `<optgroup>` 下，`select` 会拒绝执行。
 
 ### 关闭弹窗或菜单
 
@@ -261,7 +265,7 @@ SPA 页面没有稳定文本或 selector 时，再按页面形态选有界等待
 ### 当前实现事实
 
 - `browser_state` 只索引有限交互元素：链接、按钮、`input`、`textarea`、`select`、常见 ARIA role、`onclick`、`tabindex`、`contenteditable=true`。
-- `browser_state` 会递归索引同源 iframe / frame，并在元素快照中记录 `frame_path`、`frame_depth`、`frame_url`、`frame_title`。跨域 iframe 不会被高层工具穿透。
+- `browser_state` 会递归索引同源 iframe / frame，并在元素快照中记录 `frame_path`、`frame_depth`、`frame_url`、`frame_title`。隐藏或零尺寸的父 iframe 会让子元素不可见；跨域 iframe 不会被高层工具穿透。
 - `browser_state` 默认只返回可见元素；只有显式设置 `include_invisible=true` 才会包含不可见元素。
 - 单次索引默认最多 120 个元素，代码允许的 `max_elements` 范围是 1-500。
 - 元素快照只保留短文本和短 value，文本/value 最多约 240 字符；密码 value 会被 `[REDACTED]`。
@@ -270,8 +274,8 @@ SPA 页面没有稳定文本或 selector 时，再按页面形态选有界等待
 - `browser_action` 支持 11 个动作：`click`、`input`、`select`、`keys`、`wait_index`、`wait_text`、`wait_selector`、`wait_dom_stable`、`wait_not_busy`、`wait_enabled`、`wait_route`。
 - `click` / `input` / `select` / `wait_index` / `wait_enabled` 必须依赖最近一次 `browser_state` 生成的 index 和 state token；同源 iframe 内元素通过 `frame_path` 关联到对应 frame。
 - `click` / `input` / `select` / `keys` 成功后会清空缓存 state，避免继续复用旧 index。
-- `input` 支持直接写入 contenteditable，也支持同源 iframe editor body；建议用 `verify="field_value"` + `verify_value` 确认实际值。它不保证调用编辑器私有 API，也不保证跨域 iframe。
-- `select` 只支持原生 `<select>`。React/AntD/MUI/Vue 自定义下拉应 click 触发器、重新 `browser_state`、再 click 可见选项。
+- `input` 支持直接写入 contenteditable，也支持同源 iframe contenteditable / designMode editor body；建议用 `verify="field_value"` + 非空 `verify_value` 确认实际值。它不保证调用编辑器私有 API，也不保证跨域 iframe。
+- `select` 只支持原生 `<select>`，并会拒绝 disabled option / disabled optgroup。React/AntD/MUI/Vue 自定义下拉应 click 触发器、重新 `browser_state`、再 click 可见选项。
 - SPA waits 都是有界等待：`wait_dom_stable`、`wait_not_busy`、`wait_enabled`、`wait_route` 不应被当成无限等待或业务成功保证。
 - 工具失败时会返回结构化结果：`status=failed`，并带 `stage`、`error`；部分场景会额外带 `hint` / `suggested_args`。
 
@@ -300,7 +304,7 @@ SPA 页面没有稳定文本或 selector 时，再按页面形态选有界等待
 
 ### 关键限制
 
-- `input` 只允许 `input` / `textarea` / `contenteditable`。对 button/link/普通 div 会返回 `invalid_args`。
+- `input` 只允许 `input` / `textarea` / `contenteditable` / 同源 designMode editor body。对 button/link/普通 div 会返回 `invalid_args`。
 - `select` 只允许原生 `<select>`，不支持自定义下拉。
 - `keys` 只支持 `Enter`、`Escape`、`Tab`、`Control+A`、`Backspace`。
 - `keys` 不传 index 时，会优先作用在顶层文档或同源 iframe 内的当前焦点元素；这是 `input` 后提交搜索/表单的推荐路径。

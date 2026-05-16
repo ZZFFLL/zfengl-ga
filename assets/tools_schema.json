@@ -62,16 +62,16 @@
   }},
   {"type": "function", "function": {
     "name": "browser_action",
-    "description": "Perform a browser action against latest browser_state indexed elements in the real Chrome page. Native select stays native select; custom dropdowns are not select. For submit/search after input, call keys with text Enter and omit index to use the focused element. SPA wait actions include wait_dom_stable, wait_not_busy, wait_route, and indexed wait_enabled. Verification fields verify/verify_text/verify_value/verify_selector are supported and failed verification returns stage verify_failed. selector is supported for wait_selector and as a custom busy selector for wait_not_busy.",
+    "description": "Perform a browser action against latest browser_state indexed elements in the real Chrome page. Native select stays native select; custom dropdowns are not select. For submit/search after input, call keys with text Enter and omit index to use the focused element. SPA wait actions include wait_dom_stable, wait_not_busy, wait_route, and indexed wait_enabled. Verification fields verify/verify_text/verify_value/verify_selector are supported for click/input/select/keys only; wait actions reject verify. Failed verification returns stage verify_failed. selector is supported for wait_selector and as a custom busy selector for wait_not_busy.",
     "parameters": {"type": "object", "properties": {
       "action": {"type": "string", "enum": ["click", "input", "select", "keys", "wait_index", "wait_text", "wait_selector", "wait_dom_stable", "wait_not_busy", "wait_enabled", "wait_route"], "description": "Browser action to perform, including bounded SPA stability waits"},
       "index": {"type": "integer", "description": "Indexed element id from browser_state. For keys after input, omit index so the key is sent to the focused element."},
       "text": {"type": "string", "description": "Text for input, keys, wait_text, or matching"},
       "value": {"type": "string", "description": "Value for select or input actions"},
       "selector": {"type": "string", "description": "CSS selector for wait_selector, or custom busy selector for wait_not_busy"},
-      "verify": {"type": "string", "enum": ["field_value", "text", "selector", "element_text"], "description": "Verification type. Failed verification returns status failed with stage verify_failed."},
+      "verify": {"type": "string", "enum": ["field_value", "text", "selector", "element_text"], "description": "Verification type for click/input/select/keys only. Wait actions reject verify. Failed verification returns status failed with stage verify_failed."},
       "verify_text": {"type": "string", "description": "Expected text for text or element_text verification"},
-      "verify_value": {"type": "string", "description": "Expected value for field_value verification"},
+      "verify_value": {"type": "string", "description": "Non-empty expected value for field_value verification"},
       "verify_selector": {"type": "string", "description": "Expected selector for selector verification"},
       "timeout": {"type": "integer", "description": "Timeout in seconds for wait actions", "default": 10},
       "switch_tab_id": {"type": "string", "description": "[Optional] Tab ID to switch to before acting"}}}

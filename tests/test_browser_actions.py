@@ -308,6 +308,51 @@ def test_run_action_requires_expected_selector_for_selector_verification():
     assert driver.calls == []
 
 
+def test_run_action_rejects_verify_on_wait_actions():
+    cases = [
+        ("wait_index", {"index": 1}),
+        ("wait_text", {"text": "Ready"}),
+        ("wait_selector", {"selector": ".ready"}),
+        ("wait_dom_stable", {}),
+        ("wait_not_busy", {}),
+        ("wait_enabled", {"index": 1}),
+        ("wait_route", {"value": "/ready"}),
+    ]
+
+    for action, kwargs in cases:
+        layer = BrowserActionLayer()
+        driver = FakeDriver()
+
+        result = layer.run_action(driver, action=action, verify="text", verify_text="Ready", **kwargs)
+
+        assert result["status"] == "failed"
+        assert result["stage"] == "invalid_args"
+        assert "verify is not supported" in result["error"]
+        assert driver.calls == []
+
+
+def test_run_action_field_value_verification_requires_non_empty_expected_value():
+    layer = BrowserActionLayer()
+    driver = FakeDriver()
+
+    from_blank_text = layer.run_action(driver, action="input", index=1, text="", verify="field_value")
+    from_blank_value = layer.run_action(driver, action="select", index=1, value="  ", verify="field_value")
+    from_blank_verify_value = layer.run_action(
+        driver,
+        action="input",
+        index=1,
+        text="openai",
+        verify="field_value",
+        verify_value="  ",
+    )
+
+    for result in [from_blank_text, from_blank_value, from_blank_verify_value]:
+        assert result["status"] == "failed"
+        assert result["stage"] == "invalid_args"
+        assert "field_value verification requires" in result["error"]
+    assert driver.calls == []
+
+
 def test_run_action_executes_click_with_cached_token_and_invalidates_state():
     layer = BrowserActionLayer()
     layer._last_state = {"tab_id": "7", "state_token": "tok-1"}
@@ -1250,6 +1295,50 @@ window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [cached] };
     assert result["stage"] == "stale_index"
 
 
+def test_browser_action_script_rejects_target_inside_hidden_parent_iframe():
+    script = build_browser_action_script(
+        action="click",
+        index=1,
+        text=None,
+        value=None,
+        timeout=1,
+        state_token="tok-2",
+        selector=None,
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+const parentIframe = makeElement({ tag: "iframe", visible: false });
+const parentFrameWindow = { ...window, frameElement: parentIframe, parent: window };
+const parentFrameDocument = {
+  defaultView: parentFrameWindow,
+  contains: (el) => Boolean(el && el.attached !== false && el.ownerDocument === parentFrameDocument),
+  querySelector: (_selector) => null,
+  querySelectorAll: (_selector) => [],
+};
+const childIframe = makeElement({ tag: "iframe", ownerDocument: parentFrameDocument });
+const childFrameWindow = { ...window, frameElement: childIframe, parent: parentFrameWindow };
+const childFrameDocument = {
+  defaultView: childFrameWindow,
+  contains: (el) => Boolean(el && el.attached !== false && el.ownerDocument === childFrameDocument),
+  querySelector: (_selector) => null,
+  querySelectorAll: (_selector) => [],
+};
+const cached = makeElement({
+  tag: "button",
+  role: "button",
+  text: "Go",
+  ownerDocument: childFrameDocument
+});
+window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [cached] };
+""",
+    )
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "visibility"
+
+
 def test_browser_action_script_keys_rejects_contenteditable_editing_key():
     script = build_browser_action_script(
         action="keys",
@@ -1372,6 +1461,62 @@ window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [select] };
 
     assert result["status"] == "success"
     assert result["result"] == "us"
+
+
+def test_browser_action_script_select_rejects_disabled_native_option():
+    script = build_browser_action_script(
+        action="select",
+        index=1,
+        text=None,
+        value="us",
+        timeout=1,
+        state_token="tok-2",
+        selector=None,
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+const select = makeElement({ tag: "select", value: "" });
+select.options = [
+  { value: "ca", text: "Canada", disabled: false },
+  { value: "us", text: "United States", disabled: true },
+];
+window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [select] };
+""",
+    )
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "visibility"
+    assert "option is disabled" in result["error"]
+
+
+def test_browser_action_script_select_rejects_disabled_optgroup_option():
+    script = build_browser_action_script(
+        action="select",
+        index=1,
+        text=None,
+        value="us",
+        timeout=1,
+        state_token="tok-2",
+        selector=None,
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+const select = makeElement({ tag: "select", value: "" });
+const group = makeElement({ tag: "optgroup", disabled: true });
+select.options = [
+  { value: "us", text: "United States", disabled: false, parentElement: group },
+];
+window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [select] };
+""",
+    )
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "visibility"
+    assert "optgroup is disabled" in result["error"]
 
 
 def test_browser_action_script_select_rejects_custom_combobox_with_click_hint():
@@ -1550,6 +1695,68 @@ window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [editor] };
         "data": "rich text update",
         "bubbles": True,
         "cancelable": False,
+    }
+
+
+def test_browser_action_script_input_designmode_iframe_body_verify_field_value_success():
+    script = build_browser_action_script(
+        action="input",
+        index=1,
+        text="design mode update",
+        value=None,
+        timeout=1,
+        state_token="tok-2",
+        selector=None,
+        verify="field_value",
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+global.InputEvent = function InputEvent(type, options = {}) {
+  this.type = type;
+  this.inputType = options.inputType || "";
+  this.data = options.data || null;
+  this.options = options;
+};
+const iframe = makeElement({ tag: "iframe" });
+const frameWindow = { ...window, frameElement: iframe, parent: window };
+const frameDocument = {
+  defaultView: frameWindow,
+  designMode: "on",
+  contains: (el) => Boolean(el && el.attached !== false && el.ownerDocument === frameDocument),
+  querySelector: (_selector) => null,
+  querySelectorAll: (_selector) => [],
+};
+const editorBody = makeElement({ tag: "body", text: "seed", ownerDocument: frameDocument });
+frameDocument.body = editorBody;
+const events = [];
+editorBody.dispatchEvent = (event) => {
+  events.push(event.type);
+  return true;
+};
+global.__GA_TEST_PROBE__ = () => ({
+  events,
+  innerText: editorBody.innerText,
+  textContent: editorBody.textContent,
+});
+window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [editorBody] };
+""",
+    )
+
+    probe = result["probe"]
+    result = result["result"]
+    assert result["status"] == "success"
+    assert result["verification"] == {
+        "type": "field_value",
+        "observed": "design mode update",
+        "expected": "design mode update",
+        "passed": True,
+    }
+    assert probe == {
+        "events": ["beforeinput", "input", "change"],
+        "innerText": "design mode update",
+        "textContent": "design mode update",
     }
 
 

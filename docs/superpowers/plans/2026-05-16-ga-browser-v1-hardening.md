@@ -1585,7 +1585,7 @@ If there are no corrections, do not create an empty commit.
 Report:
 
 ```text
-Implemented in existing v1 tools: same-origin iframe state/action, verification, SPA waits, metadata for fields/tables/overlays/custom controls, rich text input basics, schema/SOP/checklist updates.
+Implemented in existing v1 tools: same-origin iframe state/action, verification, SPA waits, metadata for fields/tables/overlays/custom controls, rich text input basics, schema and SOP updates.
 Not implemented by design: browser-use runtime sessions, automatic Chrome launch, cross-origin iframe high-level control, screenshot logs, CDP real event fallback, cell editing, recording/replay.
-Verification run: <exact pytest commands and results>.
+Verification run: see branch commit/test output for the exact commands executed during implementation.
 ```

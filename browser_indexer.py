@@ -72,8 +72,42 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
     );
   }};
 
+  const frameChainVisible = (elementWindow) => {{
+    try {{
+      let currentWindow = elementWindow;
+      while (currentWindow && currentWindow.frameElement) {{
+        const frame = currentWindow.frameElement;
+        if (!frame.ownerDocument || !frame.ownerDocument.contains || !frame.ownerDocument.contains(frame)) {{
+          return false;
+        }}
+        const parentWindow = frame.ownerDocument.defaultView || window;
+        if (!isVisible(frame, frame.getBoundingClientRect(), parentWindow)) {{
+          return false;
+        }}
+        currentWindow = parentWindow;
+      }}
+      return true;
+    }} catch (error) {{
+      return false;
+    }}
+  }};
+
+  const isVisibleInFrameChain = (element, rect, elementWindow) => {{
+    return isVisible(element, rect, elementWindow) && frameChainVisible(elementWindow);
+  }};
+
   const isContentEditableTarget = (element) => {{
-    return Boolean(element && (element.isContentEditable || element.getAttribute("contenteditable") === "true"));
+    const isDesignModeBody = Boolean(
+      element &&
+      element.ownerDocument &&
+      element.ownerDocument.body === element &&
+      String(element.ownerDocument.designMode || "").toLowerCase() === "on"
+    );
+    return Boolean(element && (
+      element.isContentEditable ||
+      element.getAttribute("contenteditable") === "true" ||
+      isDesignModeBody
+    ));
   }};
 
   const nativeRoleOf = (element, tag, type) => {{
@@ -284,7 +318,7 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
     }}
 
     const rect = element.getBoundingClientRect();
-    const visible = isVisible(element, rect, frameWindow);
+    const visible = isVisibleInFrameChain(element, rect, frameWindow);
     if (!includeInvisible && !visible) {{
       return;
     }}
@@ -355,7 +389,7 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
       type,
       text: boundedText(textOf(element)),
       value: boundedText(value),
-      visible: isVisible(element, rect, frameWindow),
+      visible: isVisibleInFrameChain(element, rect, frameWindow),
       disabled: Boolean(element.disabled || element.getAttribute("aria-disabled") === "true"),
       bbox: {{
         x: rect.x,

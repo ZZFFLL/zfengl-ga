@@ -1,4 +1,98 @@
+import json
+import subprocess
+
 from browser_indexer import build_browser_state_script, normalize_state_result
+
+
+def run_browser_state_script(script, setup_js):
+    node_code = "\n".join(
+        [
+            f"const script = {json.dumps(script)};",
+            """
+function makeElement(options = {}) {
+  const attrs = options.attrs || {};
+  const element = {
+    tagName: String(options.tag || "div").toUpperCase(),
+    innerText: options.text || "",
+    textContent: options.text || "",
+    disabled: Boolean(options.disabled),
+    readOnly: Boolean(options.readOnly),
+    required: Boolean(options.required),
+    validity: options.validity || { valid: true },
+    isContentEditable: Boolean(options.contentEditable),
+    _style: options.visible === false
+      ? { display: "block", visibility: "hidden", opacity: "1" }
+      : { display: "block", visibility: "visible", opacity: "1" },
+    getAttribute(name) {
+      if (name === "role" && options.role) return options.role;
+      if (name === "type" && options.type) return options.type;
+      if (name === "id" && options.id) return options.id;
+      if (name === "name" && options.name) return options.name;
+      if (name === "contenteditable" && options.contentEditable) return "true";
+      return attrs[name] ?? null;
+    },
+    hasAttribute(name) {
+      return this.getAttribute(name) !== null;
+    },
+    getBoundingClientRect() {
+      return {
+        x: 0,
+        y: 0,
+        width: options.width === undefined ? 10 : options.width,
+        height: options.height === undefined ? 10 : options.height,
+      };
+    },
+    closest() {
+      return null;
+    },
+    matches() {
+      return false;
+    },
+    querySelectorAll() {
+      return [];
+    },
+  };
+  if (Object.prototype.hasOwnProperty.call(options, "value")) {
+    element.value = options.value;
+  }
+  element.ownerDocument = options.ownerDocument || document;
+  return element;
+}
+global.window = {
+  CSS: { escape: (value) => String(value) },
+  innerWidth: 1280,
+  innerHeight: 720,
+  scrollX: 0,
+  scrollY: 0,
+  location: { href: "https://example.test/" },
+  getComputedStyle: (el) => el._style || { display: "block", visibility: "visible", opacity: "1" },
+};
+global.location = window.location;
+global.document = {
+  title: "Top",
+  defaultView: window,
+  body: null,
+  getElementById: (_id) => null,
+  querySelectorAll: (_selector) => [],
+};
+document.body = makeElement({ tag: "body" });
+""",
+            setup_js,
+            """
+const result = eval(script);
+console.log(JSON.stringify(result));
+""",
+        ]
+    )
+    completed = subprocess.run(
+        ["node", "-"],
+        input=node_code,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    return json.loads(completed.stdout)
 
 
 def test_build_browser_state_script_contains_index_state_and_limit():
@@ -145,6 +239,152 @@ def test_build_browser_state_script_traverses_same_origin_frames():
     assert "frame_depth" in script
     assert "frame_url" in script
     assert "frame_title" in script
+
+
+def test_browser_state_script_indexes_same_origin_design_mode_frame_body():
+    script = build_browser_state_script(include_invisible=False, max_elements=10)
+
+    state = run_browser_state_script(
+        script,
+        """
+const editorIframe = makeElement({ tag: "iframe", ownerDocument: document });
+const frameWindow = {
+  ...window,
+  frameElement: editorIframe,
+  parent: window,
+  location: { href: "https://example.test/editor" },
+};
+const frameDocument = {
+  title: "Editor Frame",
+  defaultView: frameWindow,
+  designMode: "on",
+  body: null,
+  getElementById: (_id) => null,
+  querySelectorAll: (_selector) => [],
+};
+frameDocument.body = makeElement({
+  tag: "body",
+  text: "Editable frame body",
+  ownerDocument: frameDocument,
+});
+editorIframe.contentDocument = frameDocument;
+editorIframe.contentWindow = frameWindow;
+document.contains = (element) => element === editorIframe || element === document.body;
+document.querySelectorAll = (selector) => selector === "iframe, frame" ? [editorIframe] : [];
+""",
+    )
+
+    assert state["status"] == "success"
+    assert len(state["elements"]) == 1
+    element = state["elements"][0]
+    assert element["tag"] == "body"
+    assert element["text"] == "Editable frame body"
+    assert element["visible"] is True
+    assert element["frame_path"] == [0]
+    assert element["frame_depth"] == 1
+    assert element["frame_url"] == "https://example.test/editor"
+    assert element["frame_title"] == "Editor Frame"
+    assert element["control_kind"] == "contenteditable"
+    assert element["action_hints"] == ["input", "verify_field_value", "keys_after_input"]
+
+
+def test_browser_state_script_omits_child_elements_when_parent_iframe_is_hidden():
+    script = build_browser_state_script(include_invisible=False, max_elements=10)
+
+    state = run_browser_state_script(
+        script,
+        """
+const hiddenIframe = makeElement({ tag: "iframe", visible: false, ownerDocument: document });
+const frameWindow = {
+  ...window,
+  frameElement: hiddenIframe,
+  parent: window,
+  location: { href: "https://example.test/frame" },
+};
+const frameDocument = {
+  title: "Frame",
+  defaultView: frameWindow,
+  body: null,
+  getElementById: (_id) => null,
+  querySelectorAll: (selector) => {
+    if (selector === "iframe, frame" || selector.startsWith("label[")) return [];
+    return [frameButton];
+  },
+};
+frameDocument.body = makeElement({ tag: "body", ownerDocument: frameDocument });
+const frameButton = makeElement({
+  tag: "button",
+  text: "Inside",
+  ownerDocument: frameDocument,
+});
+hiddenIframe.contentDocument = frameDocument;
+hiddenIframe.contentWindow = frameWindow;
+document.querySelectorAll = (selector) => selector === "iframe, frame" ? [hiddenIframe] : [];
+""",
+    )
+
+    assert state["status"] == "success"
+    assert state["elements"] == []
+
+
+def test_browser_state_script_omits_child_elements_when_nested_ancestor_iframe_is_hidden():
+    script = build_browser_state_script(include_invisible=False, max_elements=10)
+
+    state = run_browser_state_script(
+        script,
+        """
+const hiddenOuterIframe = makeElement({ tag: "iframe", width: 0, height: 0, ownerDocument: document });
+const outerWindow = {
+  ...window,
+  frameElement: hiddenOuterIframe,
+  parent: window,
+  location: { href: "https://example.test/outer" },
+};
+const outerDocument = {
+  title: "Outer Frame",
+  defaultView: outerWindow,
+  body: null,
+  getElementById: (_id) => null,
+  querySelectorAll: (selector) => selector === "iframe, frame" ? [innerIframe] : [],
+};
+outerDocument.body = makeElement({ tag: "body", ownerDocument: outerDocument });
+const innerIframe = makeElement({ tag: "iframe", ownerDocument: outerDocument });
+
+const innerWindow = {
+  ...window,
+  frameElement: innerIframe,
+  parent: outerWindow,
+  location: { href: "https://example.test/inner" },
+};
+const innerDocument = {
+  title: "Inner Frame",
+  defaultView: innerWindow,
+  body: null,
+  getElementById: (_id) => null,
+  querySelectorAll: (selector) => {
+    if (selector === "iframe, frame" || selector.startsWith("label[")) return [];
+    return [nestedButton];
+  },
+};
+innerDocument.body = makeElement({ tag: "body", ownerDocument: innerDocument });
+const nestedButton = makeElement({
+  tag: "button",
+  text: "Nested",
+  ownerDocument: innerDocument,
+});
+hiddenOuterIframe.contentDocument = outerDocument;
+hiddenOuterIframe.contentWindow = outerWindow;
+innerIframe.contentDocument = innerDocument;
+innerIframe.contentWindow = innerWindow;
+document.contains = (element) => element === hiddenOuterIframe || element === document.body;
+outerDocument.contains = (element) => element === innerIframe || element === outerDocument.body;
+innerDocument.contains = (element) => element === nestedButton || element === innerDocument.body;
+document.querySelectorAll = (selector) => selector === "iframe, frame" ? [hiddenOuterIframe] : [];
+""",
+    )
+
+    assert state["status"] == "success"
+    assert state["elements"] == []
 
 
 def test_build_browser_state_script_uses_collision_resistant_token():

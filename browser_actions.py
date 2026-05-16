@@ -21,6 +21,15 @@ SUPPORTED_ACTIONS = {
 }
 INDEX_REQUIRED_ACTIONS = {"click", "input", "select", "wait_index", "wait_enabled"}
 STATE_MUTATING_ACTIONS = {"click", "input", "select", "keys"}
+WAIT_ACTIONS = {
+    "wait_index",
+    "wait_text",
+    "wait_selector",
+    "wait_dom_stable",
+    "wait_not_busy",
+    "wait_enabled",
+    "wait_route",
+}
 KEYS_AFTER_INPUT_HINT = (
     "For keys after a successful input, retry browser_action without index to use the focused element."
 )
@@ -138,6 +147,36 @@ def build_browser_action_script(
     }}
   }}
 
+  function frameElementVisible(frame) {{
+    const parentWindow = (frame && frame.ownerDocument && frame.ownerDocument.defaultView) || window;
+    const style = parentWindow.getComputedStyle(frame);
+    const rect = frame.getBoundingClientRect();
+    return style.display !== "none" &&
+      style.visibility !== "hidden" &&
+      Number(style.opacity || "1") !== 0 &&
+      rect.width > 0 &&
+      rect.height > 0;
+  }}
+
+  function ownerFrameChainVisible(el) {{
+    try {{
+      let currentWindow = el && el.ownerDocument && el.ownerDocument.defaultView;
+      if (!currentWindow) return false;
+      while (currentWindow && currentWindow.frameElement) {{
+        const frame = currentWindow.frameElement;
+        if (!frame.ownerDocument || !frame.ownerDocument.contains || !frame.ownerDocument.contains(frame)) {{
+          return false;
+        }}
+        if (!frameElementVisible(frame)) return false;
+        currentWindow = frame.ownerDocument.defaultView;
+        if (!currentWindow) return false;
+      }}
+      return true;
+    }} catch (e) {{
+      return false;
+    }}
+  }}
+
   function elementDocumentContains(el) {{
     return Boolean(
       el &&
@@ -180,6 +219,7 @@ def build_browser_action_script(
 
   function visible(el) {{
     if (!ownerDocumentContains(el)) return false;
+    if (!ownerFrameChainVisible(el)) return false;
     const style = ownerWindowOf(el).getComputedStyle(el);
     const rect = el.getBoundingClientRect();
     return style.display !== "none" &&
@@ -348,6 +388,12 @@ def build_browser_action_script(
     return String(el.innerText || el.textContent || "");
   }}
 
+  function expectedFieldValue() {{
+    return String(request.verify_value !== null && request.verify_value !== undefined
+      ? request.verify_value
+      : (request.value !== null && request.value !== undefined ? request.value : (request.text || "")));
+  }}
+
   function verifySuccess(type, observed, expected) {{
     return {{ type, observed, expected, passed: true }};
   }}
@@ -371,9 +417,7 @@ def build_browser_action_script(
     if (!type) return null;
 
     if (type === "field_value") {{
-      const expected = String(request.verify_value !== null && request.verify_value !== undefined
-        ? request.verify_value
-        : (request.value !== null && request.value !== undefined ? request.value : (request.text || "")));
+      const expected = expectedFieldValue();
       const observed = readElementValue(el);
       return observed === expected
         ? verifySuccess(type, observed, expected)
@@ -461,7 +505,13 @@ def build_browser_action_script(
   }}
 
   function isContentEditableTarget(el) {{
-    return Boolean(el && (el.isContentEditable || el.getAttribute("contenteditable") === "true"));
+    const isDesignModeBody = Boolean(
+      el &&
+      el.ownerDocument &&
+      el.ownerDocument.body === el &&
+      String(el.ownerDocument.designMode || "").toLowerCase() === "on"
+    );
+    return Boolean(el && (el.isContentEditable || el.getAttribute("contenteditable") === "true" || isDesignModeBody));
   }}
 
   function editableForInput(el) {{
@@ -514,6 +564,21 @@ def build_browser_action_script(
     return "";
   }}
 
+  function optionDisabled(option) {{
+    return Boolean(option && (
+      option.disabled ||
+      (option.getAttribute && option.getAttribute("disabled") !== null)
+    ));
+  }}
+
+  function optionOptgroupDisabled(option) {{
+    const parent = option && option.parentElement;
+    return Boolean(parent && tagOf(parent) === "optgroup" && (
+      parent.disabled ||
+      (parent.getAttribute && parent.getAttribute("disabled") !== null)
+    ));
+  }}
+
   function boundedDomSignature() {{
     const parts = [];
     for (const doc of readableDocuments(document)) {{
@@ -553,6 +618,14 @@ def build_browser_action_script(
   }}
 
   try {{
+    const waitActions = new Set(["wait_index", "wait_text", "wait_selector", "wait_dom_stable", "wait_not_busy", "wait_enabled", "wait_route"]);
+    if (request.verify && waitActions.has(request.action)) {{
+      return fail("invalid_args", "verify is not supported for wait actions.");
+    }}
+    if (request.verify === "field_value" && !expectedFieldValue().trim()) {{
+      return fail("invalid_args", "field_value verification requires a non-empty expected value.");
+    }}
+
     if (request.action === "wait_text") {{
       if (!request.text) return fail("invalid_args", "text is required for wait_text.");
       const waited = await waitFor(
@@ -773,6 +846,8 @@ def build_browser_action_script(
       }}
       const option = Array.from(el.options).find(opt => opt.value === wanted || opt.text.trim() === wanted);
       if (!option) return fail("locate", "No matching option found.");
+      if (optionDisabled(option)) return fail("visibility", "Selected option is disabled.");
+      if (optionOptgroupDisabled(option)) return fail("visibility", "Selected option's optgroup is disabled.");
       el.value = option.value;
       dispatchInputEvents(el);
       return finalizeMutatingAction({{ status: "success", action: "select", index: request.index, result: option.value, page_changed: true }}, el);
@@ -899,6 +974,17 @@ class BrowserActionLayer:
             return failed_result(action or None, "invalid_args", f"Unsupported browser action: {action}", safe_index)
         if verify and verify not in valid_verify:
             return failed_result(action or None, "invalid_args", f"Unsupported verification type: {verify}", safe_index)
+        if verify and action in WAIT_ACTIONS:
+            return failed_result(action, "invalid_args", "verify is not supported for wait actions.", safe_index)
+        if verify == "field_value":
+            expected = verify_value if verify_value is not None else value if value is not None else text
+            if not str(expected or "").strip():
+                return failed_result(
+                    action,
+                    "invalid_args",
+                    "field_value verification requires a non-empty expected value.",
+                    safe_index,
+                )
         if verify in {"text", "element_text"} and not str(verify_text or "").strip():
             return failed_result(action or None, "invalid_args", f"verify_text is required for {verify} verification.", safe_index)
         if verify == "selector" and not str(verify_selector or "").strip():
