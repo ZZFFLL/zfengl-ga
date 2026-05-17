@@ -1,16 +1,16 @@
 # Browser-Use 能力 SOP
 
-本 SOP 说明 GA 新增的浏览器接管能力：`browser_state` + `browser_action`。
+本 SOP 说明 GA 新增的浏览器接管能力：`browser_state` + `browser_find` + `browser_action` + `browser_recipe`。
 
 注意：这里的 "browser-use 能力" 指 GA 内置的高层浏览器操作层，不是外部 `browser-use` Python 项目运行时。底层仍走 TMWebDriver / `assets/tmwd_cdp_bridge` 接管用户真实 Chrome，因此继承用户登录态、Cookie、当前页面上下文。
 
 ## 核心定位
 
 - `web_scan` / `web_execute_js`：低层网页观察与 JS/CDP 操作，适合调试、复杂页面、CDP、文件上传、跨域 iframe、截图等细节控制。
-- `browser_state` / `browser_action`：高层浏览器操作工具，适合像用户一样点击、输入、原生选择、按键、等待元素或文本，并能处理同源 iframe 中被索引的元素。
-- 优先策略：普通网页交互先用 `browser_state` + `browser_action`；遇到 isTrusted、文件上传、跨域 iframe、复杂自定义组件无法索引/点击、CDP 坐标点击时，再回到 `tmwebdriver_sop` 的 `web_execute_js` / CDP 桥方案。
+- `browser_state` / `browser_find` / `browser_action` / `browser_recipe`：高层浏览器操作工具，适合像用户一样定位、点击、输入、原生选择、按键、等待元素或文本，并能处理同源 iframe 中被索引的元素。
+- 优先策略：普通网页交互先用 `browser_state` / `browser_find` 定位，再用 `browser_action` 或有界 `browser_recipe` 执行；遇到 isTrusted、文件上传、跨域 iframe、截图诊断、复杂自定义组件无法索引/点击、CDP 坐标点击时，再回到 `tmwebdriver_sop` 的 `web_execute_js` / CDP 桥方案。
 
-## 两个工具的职责
+## 四个工具的职责
 
 ### browser_state
 
@@ -27,6 +27,27 @@
 - action 返回 `state_missing` / `stale_index` 且仍需 indexed 操作时。
 
 不要把 `browser_state` 当成网页全文抽取工具。需要全文、复杂 DOM、隐藏内容、CDP 或直接 JS 时读 `tmwebdriver_sop`，用 `web_scan` / `web_execute_js`。
+
+### browser_find
+
+用途：只读定位真实 Chrome 当前页面中的 indexed 元素。它不会点击、输入、选择或按键，只返回候选 index、评分、原因和是否歧义。
+
+优先使用场景：
+- `browser_action` 返回 `recovery.next_tool="browser_find"`。
+- `browser_state` 输出太长，需要按 label、field、table、layer、frame 缩小目标。
+- 旧 index 失效后，需要刷新并重新定位目标。
+- 表格、弹层、AntD 选项存在多个相似文本，需要先判断候选。
+
+关键参数：
+- `query`：目标标签、文本或值。
+- `role` / `control_kind` / `layer` / `frame_path`：硬过滤条件。
+- `table`：表格定位条件，常用 `row_text` + `column_text`。
+- `refresh=true`：先刷新 `browser_state` 再定位。
+
+规则：
+- `ambiguous=true` 时不要直接选第一个，先用更具体的 `query`、`table`、`layer` 或 `frame_path` 缩小范围。
+- `status=failed` 且 `stage=target_not_found` 时，按 `recovery` 决定是否 refresh 或转低层工具。
+- `browser_find` 返回的是候选 index，不代表已经操作成功；真正点击/输入仍需 `browser_action` 或 `browser_recipe`。
 
 ### browser_action
 
@@ -49,7 +70,34 @@
 
 可选验证：`verify` 支持 `field_value`、`text`、`selector`、`element_text`，但只用于 `click` / `input` / `select` / `keys`。所有等待动作都会拒绝 `verify`；`field_value` 必须有非空期望值。验证失败会返回 `status=failed` 且 `stage=verify_failed`。
 
+### browser_recipe
+
+用途：运行有边界的常见组件操作编排。它不是自动浏览器代理，只支持固定 recipe。
+
+支持 recipe：
+- `custom_select`：AntD/React 自定义下拉，走 trigger -> state -> option -> click。
+- `layer_select`：弹窗、抽屉、popover 中选择人员/项目/文档等通用选择流程。
+- `table_locate`：按 `row_text` + `column_text` 定位表格中的 indexed 目标。
+- `component_wait`：检查 layer/options/field/enabled/not_busy 等组件条件。
+
+规则：
+- recipe 返回 `ambiguous_target` 时不要强行点击，必须补充更具体条件。
+- recipe 返回的 `steps` 是诊断依据，失败后先读最后一个失败 step。
+- `table_locate` 只定位，不做通用表格编辑。
+- `component_wait` 是一次性组件条件检查，不是轮询等待，也不等于业务成功保证。
+- 跨域 iframe、文件上传、截图、CDP 坐标、私有组件 API 仍走 `tmwebdriver_sop`。
+
 ## 基本编排原则
+
+### 0. failure recovery 优先于猜测
+
+失败结果里如果有 `recovery`，优先按它执行，不要自己猜下一步。
+
+- `recovery.next_tool` 指定下一步工具。
+- `recovery.next_args` 给出下一步参数骨架。
+- `recovery.stop_retry=true` 时停止重复同一个动作。
+- `stage=repeat_blocked` 表示工具已阻止重复撞墙，必须换定位、recipe 或低层路径。
+- 老字段 `hint` / `suggested_args` 仍可参考，但优先读 `recovery`。
 
 ### 1. indexed 操作前先 state
 
@@ -111,7 +159,7 @@
 ```
 应直接按 `suggested_args` 重试。
 
-### 4. 等待优先选 wait_text / wait_selector / SPA waits
+### 4. 等待优先选 wait_text / wait_selector / SPA waits / component_wait
 
 页面提交、搜索、登录、跳转后，优先用：
 ```json
@@ -127,13 +175,35 @@ SPA 页面没有稳定文本或 selector 时，再按页面形态选有界等待
 {"action": "wait_route", "value": "/results", "timeout": 10}
 {"action": "wait_dom_stable", "timeout": 10}
 {"action": "wait_not_busy", "selector": ".ant-spin-spinning", "timeout": 10}
+{"tool": "browser_recipe", "args": {"recipe": "component_wait", "condition": "options_visible", "target": {"query": "研发部"}, "timeout": 10}}
 ```
 
 等待动作只表示“等条件出现/消失”，不做结果验证；不要给 `wait_*` 传 `verify`。
 
+`component_wait` 只检查当前 state 下的组件条件；如果组件还在加载，先用 `wait_not_busy` / `wait_dom_stable` / `wait_text` / `wait_selector` 稳定页面，再用 `component_wait` 验证条件。
+
 `wait_index` 只适合等待刚刚通过 `browser_state` 得到的那个 indexed 元素变可见。它不是通用搜索工具。
 
-### 5. 标准输入/提交/等待/重扫顺序
+### 5. state 输出太长时先 browser_find
+
+不要人工在很长的 `browser_state.elements` 中反复猜 index。优先：
+```json
+{"tool": "browser_find", "args": {"query": "审批意见", "control_kind": "contenteditable", "max_results": 5}}
+```
+
+表格目标：
+```json
+{"tool": "browser_find", "args": {"table": {"row_text": "张三", "column_text": "审批意见"}, "max_results": 5}}
+```
+
+命中后再执行：
+```json
+{"tool": "browser_action", "args": {"action": "input", "index": 38, "text": "同意", "verify": "field_value", "verify_value": "同意"}}
+```
+
+如果 `browser_find` 返回 `ambiguous=true`，先补充约束，不要直接用第一个候选。
+
+### 6. 标准输入/提交/等待/重扫顺序
 
 推荐顺序：
 1. `browser_state`
@@ -179,12 +249,40 @@ SPA 页面没有稳定文本或 selector 时，再按页面形态选有界等待
 ```
 
 如果是 React/Vue/AntD/MUI 自定义下拉，不要强行用 `select`。优先：
+```json
+{"tool": "browser_recipe", "args": {"recipe": "custom_select", "target": {"query": "所属部门"}, "option_text": "研发部", "max_results": 5}}
+```
+
+如果 recipe 返回歧义，再手动拆解：
 1. `browser_action(click)` 打开下拉。
-2. `browser_state` 重新扫下拉选项。
+2. `browser_state` 或 `browser_find` 重新扫下拉选项。
 3. `browser_action(click)` 点选项。
-4. 如果 `select` 返回 `control_unsupported` 或给出 click/state/click 的 hint，按 hint 改路径；若菜单项仍无法索引或点击，读 `tmwebdriver_sop`，改用 vnode 或 CDP 坐标点击。
+4. 如果菜单项仍无法索引或点击，读 `tmwebdriver_sop`，改用 vnode 或 CDP 坐标点击。
 
 原生 `<select>` 中如果目标 `<option>` 自身 disabled，或位于 disabled `<optgroup>` 下，`select` 会拒绝执行。
+
+### 弹层/抽屉/Popover 选择
+
+优先用：
+```json
+{"tool": "browser_recipe", "args": {"recipe": "layer_select", "target": {"query": "选择人员"}, "option_text": "张三", "max_results": 5}}
+```
+
+如果需要点击确认按钮，必须显式给 `confirm_text`：
+```json
+{"tool": "browser_recipe", "args": {"recipe": "layer_select", "target": {"query": "选择人员"}, "option_text": "张三", "confirm_text": "确定"}}
+```
+
+不要让 recipe 在没有 `confirm_text` 的情况下猜测确认按钮。
+
+### 表格行列定位
+
+只定位：
+```json
+{"tool": "browser_recipe", "args": {"recipe": "table_locate", "table": {"row_text": "张三", "column_text": "审批意见"}}}
+```
+
+返回目标 index 后，再根据目标类型决定 `browser_action(input|click)`。`table_locate` 不负责分页、虚拟滚动、键盘导航或通用单元格编辑。
 
 ### 关闭弹窗或菜单
 
@@ -224,15 +322,16 @@ SPA 页面没有稳定文本或 selector 时，再按页面形态选有界等待
 含义：indexed action 需要 state，但当前没有可用 state。
 
 处理：
+- 优先读 `recovery.next_tool` / `recovery.next_args`。
 - 如果是 `keys` 且目的是 input 后回车/Tab/Escape：重试 `keys` 且不要传 index。
-- 如果是 `click` / `input` / `select` / `wait_index`：先 `browser_state` 再重试。
+- 如果是 `click` / `input` / `select` / `wait_index`：先 `browser_state` 或 `browser_find(refresh=true)` 再重试。
 
 ### stale_index
 
 含义：index 来源过期，或 tab 已切换。
 
 处理：
-1. 调用 `browser_state` 获取新 index。
+1. 优先调用 `browser_find(refresh=true)` 按语义重新定位，或调用 `browser_state` 获取新 index。
 2. 重新选择目标元素。
 3. 再执行 action。
 
@@ -256,7 +355,26 @@ SPA 页面没有稳定文本或 selector 时，再按页面形态选有界等待
 - `select` 用在非 `<select>` 上。
 - `keys` 使用了不支持的 key。
 
-处理：重新 `browser_state` 选正确元素；复杂组件转 `tmwebdriver_sop`。
+处理：重新 `browser_find` / `browser_state` 选正确元素；复杂组件先看是否适合 `browser_recipe`，不适合再转 `tmwebdriver_sop`。
+
+### ambiguous_target
+
+含义：`browser_find` 或 `browser_recipe` 找到多个相近候选，工具拒绝猜测。
+
+处理：
+- 增加 `query` 细节。
+- 增加 `table.row_text` / `table.column_text`。
+- 增加 `role` / `control_kind` / `layer` / `frame_path`。
+- 不要直接选第一个候选执行点击。
+
+### repeat_blocked
+
+含义：同一 tab、URL、动作、目标、失败阶段重复失败，工具已熔断，避免继续撞墙。
+
+处理：
+- 停止重复同一个 `browser_action`；`repeat_blocked` 的 `recovery` 通常只有 `stop_retry=true`，不会替你指定下一步工具。
+- 换策略：刷新后用更强约束 `browser_find` 重新定位，或改用适配场景的 `browser_recipe`。
+- 如果仍失败，转 `tmwebdriver_sop` 做低层诊断。
 
 ## 能力边界
 
@@ -264,31 +382,41 @@ SPA 页面没有稳定文本或 selector 时，再按页面形态选有界等待
 
 ### 当前实现事实
 
-- `browser_state` 只索引有限交互元素：链接、按钮、`input`、`textarea`、`select`、常见 ARIA role、`onclick`、`tabindex`、`contenteditable=true`。
+- `browser_state` 只索引有限交互元素：链接、按钮、`input`、`textarea`、`select`、常见 ARIA role、`onclick`、`tabindex`、`contenteditable=true`、`.ant-select-selector`、`.ant-picker`、`.ui-browser-item`、`.ui-browser` 下的 tree/menu item，以及保留下来的可操作 icon button/link。
 - `browser_state` 会递归索引同源 iframe / frame，并在元素快照中记录 `frame_path`、`frame_depth`、`frame_url`、`frame_title`。隐藏或零尺寸的父 iframe 会让子元素不可见；跨域 iframe 不会被高层工具穿透。
 - `browser_state` 默认只返回可见元素；显式设置 `include_invisible=true` 只会包含可见 frame 链内的不可见元素，隐藏父/祖先 iframe 子树不会暴露。
 - 单次索引默认最多 120 个元素，代码允许的 `max_elements` 范围是 1-500。
 - 元素快照只保留短文本和短 value，文本/value 最多约 240 字符；密码 value 会被 `[REDACTED]`。
 - 元素快照包含 labels、attributes、validation、stable_key、field_context、table_context、layer、control_kind、action_hints 等只读上下文；表格上下文用于判断行/列/表头/单元格位置，不提供单元格编辑封装。
+- `browser_state` 对 AntD / `ui-browser` 只做有限增强：会额外索引常见自定义下拉触发器、日期控件、tree/menu item 和可操作的 icon button/link，并通过 `control_kind` / `action_hints` 提示后续流程；这不是通用组件库适配层。
 - `selector_hint` 只是辅助提示，形式只有 `tag#id`、`tag[name="..."]` 或裸 `tag`，不是强定位保证。
 - `browser_action` 支持 11 个动作：`click`、`input`、`select`、`keys`、`wait_index`、`wait_text`、`wait_selector`、`wait_dom_stable`、`wait_not_busy`、`wait_enabled`、`wait_route`。
 - `click` / `input` / `select` / `wait_index` / `wait_enabled` 必须依赖最近一次 `browser_state` 生成的 index 和 state token；同源 iframe 内元素通过 `frame_path` 关联到对应 frame。
 - `click` / `input` / `select` / `keys` 成功后会清空缓存 state，避免继续复用旧 index。
 - `input` 支持直接写入 contenteditable，也支持同源 iframe contenteditable / designMode editor body；建议用 `verify="field_value"` + 非空 `verify_value` 确认实际值。它不保证调用编辑器私有 API，也不保证跨域 iframe。
-- `select` 只支持原生 `<select>`，并会拒绝 disabled option / disabled optgroup。React/AntD/MUI/Vue 自定义下拉应 click 触发器、重新 `browser_state`、再 click 可见选项。
+- `select` 只支持原生 `<select>`，并会拒绝 disabled option / disabled optgroup。React/AntD/MUI/Vue 自定义下拉优先用 `browser_recipe(custom_select)`；recipe 歧义或失败后再拆成 click -> state/find -> click。
 - SPA waits 都是有界等待：`wait_dom_stable`、`wait_not_busy`、`wait_enabled`、`wait_route` 不应被当成无限等待或业务成功保证。
+- `browser_find` 是只读定位层：复用或刷新当前 state，按 `query`、`role`、`control_kind`、`layer`、`frame_path`、`table` 做过滤和评分，`max_results` 被限制在 1-20；它只返回候选 index，不执行动作。
+- `browser_find` 的 `ambiguous=true` 是硬信号：候选分数接近，必须增加约束，不允许直接拿第一个候选操作。
+- `browser_recipe` 只支持 `custom_select`、`layer_select`、`table_locate`、`component_wait` 四类有界 recipe；不接受自由文本流程，也不会变成自动浏览器代理。
+- `custom_select` / `layer_select` 内部按 `browser_find` -> `click` -> `browser_state` -> `browser_find` -> `click` 编排；`layer_select` 只有传入 `confirm_text` 才会点击确认按钮。
+- `table_locate` 只调用 `browser_find` 定位候选，要求至少提供 `row_text`、`column_text` 或 `header_text` 之一；它不负责分页、虚拟滚动、单元格写入或提交。
+- `component_wait` 当前是一次性组件条件检查型 recipe：通过 `browser_find` 判断 `layer_open`、`layer_closed`、`options_visible`、`field_value`、`element_enabled`、`not_busy`，不是轮询等待、网络空闲等待，也不是业务完成判断。
 - 工具失败时会返回结构化结果：`status=failed`，并带 `stage`、`error`；部分场景会额外带 `hint` / `suggested_args`。
+- 新失败结果优先带 `recovery`；`recovery.stop_retry=true` 或 `stage=repeat_blocked` 时必须停止重复同一动作，改用 `browser_find` / `browser_recipe` 或低层路径。
 
 ### 适合
 
 - 对用户真实 Chrome 当前页面做普通交互：点击、输入、原生 select、按 Enter/Escape/Tab、等待文本或 selector。
 - 已登录页面中的轻量操作，因为底层仍沿用 TMWebDriver / Chrome 扩展接管用户浏览器。
 - 同源 iframe 内已被 `browser_state` 索引出的元素操作。
+- `browser_state` 输出过长或候选过多时，用 `browser_find` 按语义、控件类型、弹层、frame 或表格上下文缩小范围。
+- 常见 AntD/React 自定义下拉、弹层选择和表格目标定位：优先用固定 `browser_recipe`，让工具在歧义时 fail closed。
 - 搜索框、评论框、普通表单等“输入后回车”的流程：`input(index)` 后直接 `keys(text="Enter")`，不要传 index。
 - SPA 中短暂重渲染后的等待：`wait_index` 可在原节点 detached 后基于 selector hint + tag/role/text 做受限 fallback。
 - SPA 加载、按钮启用、路由变化的有界等待：`wait_not_busy`、`wait_dom_stable`、`wait_enabled`、`wait_route`。
 - contenteditable 或同源 iframe editor body 的直接输入，并用 `field_value` 验证。
-- 表格上下文阅读：用 row/column/header/cell metadata 辅助判断目标，不把它当成编辑表格的高级 API。
+- 表格上下文阅读和目标定位：用 row/column/header/cell metadata 或 `browser_recipe(table_locate)` 找目标，不把它当成编辑表格的高级 API。
 - 需要少写 JS、以高层动作完成的日常网页控制。
 
 ### 不适合
@@ -297,10 +425,11 @@ SPA 页面没有稳定文本或 selector 时，再按页面形态选有界等待
 - 文件上传、验证码截图、CDP 截图、网络抓包、Cookie/Tab/CDP 管理。
 - 跨域 iframe、closed Shadow DOM、复杂 iframe 坐标合成；这类场景走 `tmwebdriver_sop` / CDP bridge。
 - 需要 `isTrusted=true` 的敏感点击或浏览器级交互；当前 `click` 是 DOM `el.click()`。
-- 复杂自定义组件内部状态操作，例如 AntD/MUI/Vue 自定义 Select；`select` 只支持原生 `<select>`，自定义下拉要按 click/state/click 路径处理。
+- 复杂自定义组件内部状态操作，例如直接改 AntD/MUI/Vue 私有状态、调用组件实例、搜索型下拉输入过滤、处理虚拟列表深层滚动；高层工具只支持被索引出的触发器/选项和固定 recipe。
 - 编辑器私有 API、跨域富文本 iframe、表格单元格编辑 wrapper；当前高层工具只提供直接 contenteditable/input 和只读 metadata。
 - 对任意 CSS selector 直接 `click` / `input`；当前 selector 只用于 `wait_selector`，`wait_index` fallback 也只由工具内部受限使用。
 - 多元素同名同文本且无法靠 tag/role/text 区分的页面，容易超出当前 identity check 能力。
+- 录制回放、长期监控、多页面并发会话、结构化导出和截图日志；这些不是当前四个高层工具的职责。
 
 ### 关键限制
 
@@ -317,12 +446,17 @@ SPA 页面没有稳定文本或 selector 时，再按页面形态选有界等待
 - `wait_enabled` 依赖 indexed 元素；目标变化后仍应重新 `browser_state`。
 - `wait_index` 如果原 cached 节点仍 attached 但 hidden，不会 fallback 到其他元素；这能避免误匹配，但可能导致超时。
 - `wait_index` detached fallback 当前只用 `querySelector` 找第一个匹配，再做 tag/role/text 校验；页面上多个候选时可能等不到正确那个。
+- `browser_find` 会排除 disabled 元素；如果目的是等待一个 disabled 按钮恢复可用，不要用 `browser_find` 找它，应先用 `browser_state` 拿到 disabled 元素 index，再调用 `browser_action(wait_enabled, index=...)`。
+- `browser_find` 不会扩大 `browser_state` 的底层可见范围；隐藏父/祖先 iframe、跨域 iframe、未被索引的 Shadow DOM 内容仍找不到。
+- `browser_recipe` 依赖 `browser_find` 和 indexed action；如果目标元素没有被 state 索引，recipe 也不会 magically 操作它。
+- `custom_select` / `layer_select` 不处理搜索型下拉里的输入过滤、慢速选项渲染、虚拟滚动加载、分页选择或树节点展开；这类需要先稳定页面、刷新 state/find，必要时拆解为低层步骤。
+- `component_wait` 只检查当前可定位条件；如果页面仍在加载，先用 `wait_not_busy` / `wait_dom_stable` / `wait_text` / `wait_selector`，再用 recipe 检查组件条件。
 - 后台标签页、页面节流、复杂加载状态仍受 Chrome 行为影响；必要时按 `tmwebdriver_sop` 用 CDP `Page.bringToFront`。
 
 ### 何时切回 tmwebdriver_sop
 
 遇到以下情况，不要继续反复调用 `browser_action`：
-- 同一目标连续失败两次。
+- 同一目标连续失败两次，或返回 `recovery.stop_retry=true` / `stage=repeat_blocked`。
 - 需要 CDP、截图、文件上传、跨域 iframe、Shadow DOM、网络/Cookie/Tab 操作。
 - 页面控件明显是复杂前端组件，普通 click/input/select 不能触发真实业务状态。
 - 需要直接执行 JS、读取复杂 DOM、调用页面框架实例或 vnode。
@@ -334,10 +468,11 @@ SPA 页面没有稳定文本或 selector 时，再按页面形态选有界等待
 
 推荐决策：
 1. 只是看页面摘要或 DOM 文本：`web_scan`。
-2. 想执行普通用户动作：`browser_state` + `browser_action`。
-3. 想导航：`web_execute_js` 执行 `location.href='...'`，或在已有页面中点链接。
-4. 想执行复杂 JS / CDP / 上传 / 截图 / 跨域 iframe：读 `tmwebdriver_sop`，用 `web_execute_js`。
-5. 新能力失败两次以上，不要原地反复试：切换到 `tmwebdriver_sop` 的低层调试路径。
+2. 想执行普通用户动作：`browser_state` / `browser_find` 定位，`browser_action` 执行。
+3. 想处理常见自定义下拉、弹层选择、表格目标定位、组件条件检查：优先 `browser_recipe`。
+4. 想导航：`web_execute_js` 执行 `location.href='...'`，或在已有页面中点链接。
+5. 想执行复杂 JS / CDP / 上传 / 截图 / 跨域 iframe：读 `tmwebdriver_sop`，用 `web_execute_js`。
+6. 新能力失败两次以上，或出现 `repeat_blocked`：不要原地反复试，切换到 `tmwebdriver_sop` 的低层调试路径。
 
 ## 禁止/反模式
 
@@ -345,13 +480,19 @@ SPA 页面没有稳定文本或 selector 时，再按页面形态选有界等待
 - 禁止 input 后为了按 Enter 重新扫 state；优先 `keys` without index。
 - 禁止把 `selector` 当成通用 click/input 定位方式；selector 仅用于 `wait_selector`，`wait_index` fallback 由工具内部控制。
 - 禁止对非输入元素执行 `input` 后假设成功。
-- 禁止忽略 `status=failed` 的 `stage`、`hint`、`suggested_args`。
-- 禁止遇到复杂自定义组件时无脑重复 click；应读 `tmwebdriver_sop`。
+- 禁止忽略 `status=failed` 的 `stage`、`recovery`、`hint`、`suggested_args`。
+- 禁止在 `ambiguous=true` 时直接使用第一个候选 index。
+- 禁止在 `recovery.stop_retry=true` 或 `repeat_blocked` 后继续重复同一动作。
+- 禁止把 `component_wait` 当成会自动轮询到 `timeout` 的等待器；它当前只做条件检查。
+- 禁止把 `browser_recipe` 当成自由规划工具；它只支持四个固定 recipe。
+- 禁止遇到复杂自定义组件时无脑重复 click；先按 recovery/recipe 处理，仍失败再读 `tmwebdriver_sop`。
 
 ## 最小心智模型
 
-记住三句话：
+记住五句话：
 
 1. 要操作页面元素，先 `browser_state`，再用 index。
-2. 成功输入后要提交，直接 `keys Enter`，不要传 index。
-3. 页面结构变了，旧 index 作废；要么按焦点继续，要么重新 `browser_state`。
+2. state 太长或目标不明确，先 `browser_find`，不要猜 index。
+3. 成功输入后要提交，直接 `keys Enter`，不要传 index。
+4. 常见下拉/弹层/表格定位先试固定 `browser_recipe`，歧义就补约束。
+5. 失败先读 `recovery.stop_retry` / `recovery.next_args`；页面结构变了，旧 index 作废，要么按焦点继续，要么重新 `browser_state` / `browser_find(refresh=true)`。
