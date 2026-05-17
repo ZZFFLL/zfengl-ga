@@ -296,15 +296,21 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
     if (cell) {{
       return String(cell.tagName || (cell.getAttribute && cell.getAttribute("role")) || "").toLowerCase();
     }}
-    const container = element.closest && element.closest(".wea-field, .wea-browser, .wea-select, .ant-select, .ant-picker");
-    if (!container) return "";
-    const className = String(container.getAttribute && container.getAttribute("class") || "");
-    if (className.includes("wea-field")) return "wea-field";
-    if (className.includes("wea-browser")) return "wea-browser";
-    if (className.includes("wea-select")) return "wea-select";
-    if (className.includes("ant-select")) return "ant-select";
-    if (className.includes("ant-picker")) return "ant-picker";
-    return String(container.tagName || "").toLowerCase();
+    let current = element;
+    for (let depth = 0; current && depth < 8; depth += 1) {{
+      const role = String((current.getAttribute && current.getAttribute("role")) || "").toLowerCase();
+      const popup = String((current.getAttribute && current.getAttribute("aria-haspopup")) || "").toLowerCase();
+      const className = String((current.getAttribute && current.getAttribute("class")) || "").toLowerCase();
+      const tokens = className.split(/[^a-z0-9]+/).filter(Boolean);
+      const hasToken = (name) => tokens.some(token => token.includes(name));
+      if (role === "combobox") return "combobox";
+      if (popup === "listbox" || hasToken("select")) return "select";
+      if (hasToken("browser")) return "browser";
+      if (hasToken("picker")) return "picker";
+      if (hasToken("field")) return "field";
+      current = current.parentElement;
+    }}
+    return "";
   }};
 
   const fieldContextOf = (element) => {{
@@ -638,6 +644,8 @@ def normalize_state_result(result):
 
         field_context = normalized.get("field_context")
         if isinstance(field_context, dict) and field_context:
+            field_context = dict(field_context)
+            normalized["field_context"] = field_context
             field_context.setdefault("nearby_text", "")
             field_context.setdefault("row_label", "")
             field_context.setdefault("previous_cell_text", "")

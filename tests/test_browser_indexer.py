@@ -528,10 +528,9 @@ const trigger = makeElement({
   id: "field5956",
   name: "sfxj",
   text: "请选择",
-  attrs: { "aria-haspopup": "listbox", class: "ant-select wea-select" }
+  attrs: { "aria-haspopup": "listbox", class: "corp-select-control" }
 });
 trigger.closest = (selector) => {
-  if (selector.includes(".wea-select") || selector.includes(".ant-select")) return trigger;
   if (selector.includes("td")) return controlCell;
   if (selector.includes("tr")) return row;
   if (selector.includes("table")) return table;
@@ -567,14 +566,12 @@ const controlCell = makeElement({ tag: "td", text: "" });
 row.children = [labelCell, controlCell];
 const table = makeElement({ tag: "table" });
 table.querySelectorAll = (selector) => selector === "tr, [role='row']" ? [row] : [];
-const browser = makeElement({ tag: "div", attrs: { class: "wea-browser" } });
 const searchButton = makeElement({
   tag: "button",
   text: "",
   attrs: { class: "anticon anticon-search", "aria-label": "搜索" }
 });
 searchButton.closest = (selector) => {
-  if (selector.includes(".wea-browser")) return browser;
   if (selector.includes("td")) return controlCell;
   if (selector.includes("tr")) return row;
   if (selector.includes("table")) return table;
@@ -592,6 +589,32 @@ document.querySelectorAll = (selector) => {
     assert element["control_kind"] == "button"
     assert element["field_context"]["nearby_text"] == "项目名称"
     assert element["field_context"]["field_container_hint"] == "td"
+
+
+def test_browser_state_script_emits_generic_component_container_hint():
+    script = build_browser_state_script(include_invisible=False, max_elements=10)
+
+    state = run_browser_state_script(
+        script,
+        """
+const browserContainer = makeElement({ tag: "div", attrs: { class: "corp-browser-widget" } });
+const searchButton = makeElement({
+  tag: "button",
+  text: "",
+  attrs: { "aria-label": "Search" }
+});
+searchButton.parentElement = browserContainer;
+document.querySelectorAll = (selector) => {
+  if (selector === "iframe, frame" || selector.startsWith("label[")) return [];
+  return [searchButton];
+};
+""",
+    )
+
+    assert state["status"] == "success"
+    element = state["elements"][0]
+    assert element["control_kind"] == "button"
+    assert element["field_context"]["field_container_hint"] == "browser"
 
 
 def test_browser_state_script_inherits_field_attrs_from_deep_ancestor():
@@ -1181,6 +1204,17 @@ def test_normalize_state_result_fills_new_element_metadata_defaults():
     assert element["modal_rank"] == 0
     assert element["control_kind"] == ""
     assert element["action_hints"] == []
+
+
+def test_normalize_state_result_does_not_mutate_nested_field_context():
+    field_context = {"labels": ["Project"]}
+    raw = {"elements": [{"tag": "button", "field_context": field_context}]}
+
+    state = normalize_state_result(raw)
+
+    assert field_context == {"labels": ["Project"]}
+    assert raw["elements"][0]["field_context"] == {"labels": ["Project"]}
+    assert state["elements"][0]["field_context"]["nearby_text"] == ""
 
 
 def test_normalize_state_result_rejects_non_dict():
