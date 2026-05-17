@@ -56,6 +56,20 @@ class BrowserRecipeRunner:
         result["steps"] = steps
         return result
 
+    @staticmethod
+    def _component_condition_met(condition: str, match: dict[str, Any] | None) -> bool:
+        if condition in {"layer_closed", "not_busy"}:
+            return match is None
+        if condition in {"layer_open", "options_visible"}:
+            return match is not None
+        if condition == "element_enabled":
+            element = (match or {}).get("element", {})
+            return match is not None and element.get("disabled") is not True
+        if condition == "field_value":
+            element = (match or {}).get("element", {})
+            return match is not None and bool(element.get("value") or element.get("text"))
+        return False
+
     def _custom_select(
         self,
         driver: Any,
@@ -85,7 +99,7 @@ class BrowserRecipeRunner:
             driver,
             recipe="custom_select",
             target={"query": option_text},
-            layer=None,
+            layer="popover",
             max_results=max_results,
         )
         steps.append({"tool": "browser_find", **option_find})
@@ -127,6 +141,7 @@ class BrowserRecipeRunner:
                 driver,
                 recipe="layer_select",
                 target={"query": confirm_text},
+                layer="popover",
                 max_results=max_results,
             )
             result["steps"].append({"tool": "browser_find", **confirm_find})
@@ -141,7 +156,11 @@ class BrowserRecipeRunner:
         return result
 
     def _table_locate(self, driver: Any, *, table: dict[str, Any] | None, max_results: int) -> dict[str, Any]:
-        result = self.layer.find(driver, table=table or {}, max_results=max_results)
+        table = table or {}
+        if not any(table.get(key) for key in ("row_text", "column_text", "header_text")):
+            return failed_result(None, "invalid_args", "table_locate requires row_text or column_text.")
+
+        result = self.layer.find(driver, table=table, max_results=max_results)
         step = {"tool": "browser_find", **result}
         result["steps"] = [step]
         if result.get("status") == "success":
@@ -166,7 +185,7 @@ class BrowserRecipeRunner:
 
         find_result, match = self._find_one(driver, recipe="component_wait", target=target, max_results=max_results)
         steps = [{"tool": "browser_find", **find_result}]
-        if match:
+        if self._component_condition_met(condition, match):
             return {
                 "status": "success",
                 "recipe": "component_wait",
