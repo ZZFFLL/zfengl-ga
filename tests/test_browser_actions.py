@@ -2623,6 +2623,40 @@ def test_run_action_stale_tab_includes_find_recovery():
     assert result["recovery"]["next_tool"] == "browser_find"
 
 
+def test_run_action_select_custom_control_recovery_includes_target_and_option():
+    layer = BrowserActionLayer()
+    layer._last_state = {
+        "tab_id": "7",
+        "state_token": "tok-1",
+        "elements_by_index": {
+            4: {"index": 4, "text": "所属部门", "labels": ["所属部门"], "stable_key": "combo#dept", "selector_hint": "#dept"}
+        },
+    }
+    driver = FakeDriver(
+        [
+            {
+                "data": {
+                    "status": "failed",
+                    "action": "select",
+                    "index": 4,
+                    "stage": "control_unsupported",
+                    "error": "select action only supports native select elements.",
+                }
+            }
+        ]
+    )
+
+    result = layer.run_action(driver, action="select", index=4, value="研发部")
+
+    assert result["stage"] == "control_unsupported"
+    assert result["recovery"]["next_tool"] == "browser_recipe"
+    assert result["recovery"]["next_args"] == {
+        "recipe": "custom_select",
+        "target": {"index": 4},
+        "option_text": "研发部",
+    }
+
+
 def test_run_action_blocks_third_repeated_failure():
     layer = BrowserActionLayer()
     driver = FakeDriver([])
@@ -2637,7 +2671,7 @@ def test_run_action_blocks_third_repeated_failure():
     assert third["recovery"]["code"] == "stop_repeating"
 
 
-def test_run_action_blocks_repeated_failure_even_after_state_refresh():
+def test_run_action_state_refresh_resets_repeated_failure_fuse():
     layer = BrowserActionLayer()
     state_payload = {
         "status": "success",
@@ -2665,9 +2699,12 @@ def test_run_action_blocks_repeated_failure_even_after_state_refresh():
     third = layer.run_action(driver, action="click", index=1)
 
     assert first["stage"] == "dom_event"
-    assert second["recovery"]["stop_retry"] is True
-    assert third["stage"] == "repeat_blocked"
-    assert len(driver.calls) == 5
+    assert first["recovery"]["stop_retry"] is False
+    assert second["stage"] == "dom_event"
+    assert second["recovery"]["stop_retry"] is False
+    assert third["stage"] == "dom_event"
+    assert third["recovery"]["stop_retry"] is False
+    assert len(driver.calls) == 6
 
 
 def test_run_action_wait_success_does_not_reset_repeated_failure_fuse():
@@ -2826,3 +2863,33 @@ def test_run_action_success_resets_fuse_for_js_failures():
     assert success["status"] == "success"
     assert after_success["stage"] == "dom_event"
     assert after_success["recovery"]["stop_retry"] is False
+
+
+def test_run_action_tab_switch_resets_repeated_failure_fuse():
+    layer = BrowserActionLayer()
+    cached_state = {
+        "tab_id": "tab-a",
+        "state_token": "tok-a",
+        "elements_by_index": {
+            1: {"index": 1, "stable_key": "button#save", "selector_hint": "button#save", "text": "Save"}
+        },
+    }
+    layer._last_state = dict(cached_state)
+    driver = FakeDriver(
+        [
+            {"data": {"status": "failed", "stage": "dom_event", "error": "boom"}},
+            {"data": {"status": "failed", "stage": "dom_event", "error": "boom"}},
+            {"data": {"status": "failed", "stage": "dom_event", "error": "boom"}},
+        ]
+    )
+    driver.default_session_id = "tab-a"
+
+    first = layer.run_action(driver, action="click", index=1)
+    second = layer.run_action(driver, action="click", index=1)
+    layer._last_state = {**cached_state, "tab_id": "tab-b"}
+    after_switch = layer.run_action(driver, action="click", index=1, switch_tab_id="tab-b")
+
+    assert first["recovery"]["stop_retry"] is False
+    assert second["recovery"]["stop_retry"] is True
+    assert after_switch["stage"] == "dom_event"
+    assert after_switch["recovery"]["stop_retry"] is False

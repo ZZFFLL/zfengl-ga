@@ -1048,6 +1048,8 @@ class BrowserActionLayer:
             self._last_state = None
             return unavailable
         if switch_tab_id:
+            if str(getattr(driver, "default_session_id", "") or "") != str(switch_tab_id):
+                self._reset_failure_fuse()
             driver.default_session_id = str(switch_tab_id)
 
         script = build_browser_state_script(include_invisible=include_invisible, max_elements=max_elements)
@@ -1059,6 +1061,7 @@ class BrowserActionLayer:
 
         state = normalize_state_result(raw)
         if state.get("status") == "success":
+            self._reset_failure_fuse()
             state["tab_id"] = state.get("tab_id") or driver.default_session_id
             elements_by_index = {}
             for element in state.get("elements", []):
@@ -1094,9 +1097,30 @@ class BrowserActionLayer:
         switch_tab_id: str | None = None,
     ) -> dict[str, Any]:
         limit = safe_max_results(max_results)
+        has_locator = (
+            str(query or "").strip()
+            or role
+            or control_kind
+            or layer
+            or frame_path is not None
+            or (isinstance(table, dict) and any(table.get(key) for key in ("row_text", "column_text", "header_text")))
+        )
+        if not has_locator:
+            return find_in_state(
+                {"status": "success", "elements": []},
+                query=query,
+                role=role,
+                control_kind=control_kind,
+                layer=layer,
+                frame_path=frame_path,
+                table=table,
+                max_results=limit,
+            )
         requested_tab_id = str(switch_tab_id or getattr(driver, "default_session_id", "") or "")
         cached_tab_id = str((self._last_state or {}).get("tab_id") or "")
         if switch_tab_id:
+            if str(getattr(driver, "default_session_id", "") or "") != str(switch_tab_id):
+                self._reset_failure_fuse()
             driver.default_session_id = str(switch_tab_id)
         if refresh or not self._last_state or (requested_tab_id and cached_tab_id != requested_tab_id):
             state = self.get_state(
@@ -1119,6 +1143,16 @@ class BrowserActionLayer:
         )
         recovery = result.get("recovery")
         if result.get("status") == "failed" and isinstance(recovery, dict):
+            if refresh and result.get("stage") == "target_not_found":
+                recovery = dict(recovery)
+                recovery["code"] = "narrow_locator"
+                recovery["message"] = "The refreshed browser state still did not contain this target. Stop repeating the same find call and provide a narrower query, table, layer, frame, or control constraint."
+                recovery["stop_retry"] = True
+                recovery.pop("next_tool", None)
+                recovery.pop("next_args", None)
+                result = dict(result)
+                result["recovery"] = recovery
+                return result
             next_args = dict(recovery.get("next_args") or {})
             if switch_tab_id:
                 next_args["switch_tab_id"] = switch_tab_id
@@ -1190,6 +1224,8 @@ class BrowserActionLayer:
                 unavailable["index"] = safe_index
             return unavailable
         if switch_tab_id:
+            if str(getattr(driver, "default_session_id", "") or "") != str(switch_tab_id):
+                self._reset_failure_fuse()
             driver.default_session_id = str(switch_tab_id)
 
         state_token = None
@@ -1290,6 +1326,10 @@ class BrowserActionLayer:
             if action in STATE_MUTATING_ACTIONS:
                 self._reset_failure_fuse()
         else:
+            if action == "select" and result.get("stage") == "control_unsupported" and safe_index is not None:
+                option_text = str(value if value is not None else text or "").strip()
+                if option_text:
+                    result["suggested_args"] = {"target": {"index": safe_index}, "option_text": option_text}
             result = add_recovery(result, action=action, index=safe_index)
             result = self._record_failure(
                 result,

@@ -41,6 +41,20 @@ def _table_value(table_context: dict[str, Any], *names: str) -> str:
     return ""
 
 
+def _has_locator_constraint(
+    *,
+    query: str,
+    role: str | None,
+    control_kind: str | None,
+    layer: str | None,
+    frame_path: list[Any] | None,
+    table: dict[str, Any] | None,
+) -> bool:
+    if query or role or control_kind or layer or frame_path is not None:
+        return True
+    return isinstance(table, dict) and any(table.get(key) for key in ("row_text", "column_text", "header_text"))
+
+
 def _score_element(
     element: dict[str, Any],
     *,
@@ -119,9 +133,30 @@ def find_in_state(
     table: dict[str, Any] | None = None,
     max_results: int = 5,
 ) -> dict[str, Any]:
-    if not isinstance(state, dict) or state.get("status") != "success":
+    if not isinstance(state, dict):
         return failed_result(None, "state_missing", "browser_find requires a successful browser_state.")
     query_text = str(query or "").strip()
+    if state.get("status") != "success":
+        result = dict(state)
+        result.setdefault("status", "failed")
+        result.setdefault("stage", "state_missing")
+        result.setdefault("error", "browser_find requires a successful browser_state.")
+        return result
+    if not _has_locator_constraint(
+        query=query_text,
+        role=role,
+        control_kind=control_kind,
+        layer=layer,
+        frame_path=frame_path,
+        table=table,
+    ):
+        result = failed_result(None, "invalid_args", "browser_find requires query, table, layer, frame_path, role, or control_kind.")
+        result["recovery"]["code"] = "provide_locator"
+        result["recovery"]["message"] = "Provide a bounded locator before using browser_find; do not search every visible element."
+        result["recovery"]["stop_retry"] = True
+        result["recovery"].pop("next_tool", None)
+        result["recovery"].pop("next_args", None)
+        return result
     elements = state.get("elements") if isinstance(state.get("elements"), list) else []
     matches = []
     for element in elements:

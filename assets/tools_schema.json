@@ -62,7 +62,7 @@
   }},
   {"type": "function", "function": {
     "name": "browser_find",
-    "description": "Read-only locator for indexed browser elements from the real Chrome page. Use after browser_state or when recovery asks for browser_find. Returns candidate indexes with score, reason, and ambiguity instead of acting.",
+      "description": "Read-only locator for indexed browser elements from the real Chrome page. Provide at least one bounded locator such as query, table, layer, frame_path, role, or control_kind; unbounded calls are rejected to avoid arbitrary visible candidates. Returns candidate indexes with score, reason, and ambiguity instead of acting.",
     "parameters": {"type": "object", "properties": {
       "query": {"type": "string", "description": "Target label/text/value to find"},
       "role": {"type": "string", "description": "Optional role hard filter"},

@@ -81,6 +81,9 @@ def add_recovery(result: dict[str, Any], *, action: str | None = None, index: in
         recovery = dict(existing_recovery)
         if isinstance(recovery.get("next_args"), dict):
             recovery["next_args"] = dict(recovery["next_args"])
+        suggested_args = updated.get("suggested_args")
+        if isinstance(suggested_args, dict):
+            recovery["next_args"] = {**dict(recovery.get("next_args") or {}), **suggested_args}
     else:
         recovery = recovery_for_stage(stage, action=str(updated.get("action") or action or ""))
         suggested_args = updated.get("suggested_args")

@@ -42,13 +42,19 @@ class BrowserRecipeRunner:
         if target.get("index") is not None and cls._target_index(target) is None:
             result = failed_result(None, "invalid_args", "target.index must be a positive integer.")
             result["recipe"] = recipe
-            result["recovery"]["code"] = "provide_bounded_target"
-            result["recovery"]["next_tool"] = "browser_find"
-            result["recovery"]["next_args"] = {"refresh": True, "max_results": 5}
+            result["recovery"] = cls._bounded_target_recovery(recipe)
             return result
         if cls._target_index(target) is not None or str(target.get("query") or "").strip():
             return None
         return cls._invalid_target(recipe)
+
+    @staticmethod
+    def _bounded_target_recovery(recipe: str) -> dict[str, Any]:
+        return {
+            "code": "provide_bounded_target",
+            "message": f"Retry {recipe} with target.index from a known browser_state or target.query with specific visible text.",
+            "stop_retry": True,
+        }
 
     @staticmethod
     def _invalid_target(recipe: str) -> dict[str, Any]:
@@ -58,9 +64,7 @@ class BrowserRecipeRunner:
             error = f"{recipe} requires target.query or target.index."
         result = failed_result(None, "invalid_args", error)
         result["recipe"] = recipe
-        result["recovery"]["code"] = "provide_bounded_target"
-        result["recovery"]["next_tool"] = "browser_find"
-        result["recovery"]["next_args"] = {"refresh": True, "max_results": 5}
+        result["recovery"] = BrowserRecipeRunner._bounded_target_recovery(recipe)
         return result
 
     @staticmethod
@@ -75,24 +79,48 @@ class BrowserRecipeRunner:
         layer = (fallback or {}).get("layer") or element.get("layer")
         return fallback if layer and layer != "main" else None
 
+    @staticmethod
+    def _recipe_recovery(recipe: str, stage: str) -> dict[str, Any]:
+        if recipe == "layer_select":
+            if stage == "ambiguous_target":
+                message = "Retry layer_select with a more specific target, option_text, or confirm_text so only one overlay candidate matches."
+            else:
+                message = "Retry layer_select with bounded target, option_text, and optional confirm_text that match the opened overlay."
+            return {
+                "code": "use_layer_select_recipe",
+                "message": message,
+                "stop_retry": False,
+                "next_tool": "browser_recipe",
+                "next_args": {"recipe": "layer_select"},
+            }
+        if recipe == "custom_select":
+            if stage == "ambiguous_target":
+                message = "Retry custom_select with a more specific target or option_text so only one overlay candidate matches."
+            else:
+                message = "Retry custom_select with a bounded trigger target and option_text that appears in the opened overlay."
+            return {
+                "code": "use_custom_select_recipe",
+                "message": message,
+                "stop_retry": False,
+                "next_tool": "browser_recipe",
+                "next_args": {"recipe": "custom_select"},
+            }
+        return dict(failed_result(None, stage, "Recipe recovery is unavailable.")["recovery"])
+
     def _overlay_target_not_found(self, recipe: str, find_result: dict[str, Any], target_name: str) -> dict[str, Any]:
         result = failed_result(None, "target_not_found", f"Recipe {target_name} was not found in an overlay layer.")
         result["recipe"] = recipe
         result["candidates"] = find_result.get("matches", [])
-        if recipe == "layer_select":
-            result["recovery"]["code"] = "use_layer_select_recipe"
-        elif recipe == "custom_select":
-            result["recovery"]["code"] = "use_custom_select_recipe"
+        if recipe in {"layer_select", "custom_select"}:
+            result["recovery"] = self._recipe_recovery(recipe, "target_not_found")
         return result
 
     def _ambiguous(self, recipe: str, find_result: dict[str, Any]) -> dict[str, Any]:
         result = failed_result(None, "ambiguous_target", "Recipe target is ambiguous.")
         result["recipe"] = recipe
         result["candidates"] = find_result.get("matches", [])
-        if recipe == "layer_select":
-            result["recovery"]["code"] = "use_layer_select_recipe"
-        elif recipe == "custom_select":
-            result["recovery"]["code"] = "use_custom_select_recipe"
+        if recipe in {"layer_select", "custom_select"}:
+            result["recovery"] = self._recipe_recovery(recipe, "ambiguous_target")
         return result
 
     def _find_one(
@@ -139,7 +167,7 @@ class BrowserRecipeRunner:
             return match is not None and element.get("disabled") is not True
         if condition == "field_value":
             element = (match or {}).get("element", {})
-            return match is not None and bool(element.get("value") or element.get("text"))
+            return match is not None and bool(element.get("value"))
         return False
 
     def _match_for_condition(
@@ -228,7 +256,9 @@ class BrowserRecipeRunner:
         )
         result["recipe"] = "layer_select"
         if result.get("status") != "success":
-            result.setdefault("recovery", {}).update({"code": "use_layer_select_recipe"})
+            recovery = result.get("recovery")
+            if not (isinstance(recovery, dict) and recovery.get("stop_retry") is True):
+                result["recovery"] = self._recipe_recovery("layer_select", str(result.get("stage") or ""))
             return result
 
         if confirm_text:
@@ -287,9 +317,7 @@ class BrowserRecipeRunner:
             if target_index is None:
                 result = failed_result(None, "invalid_args", "target.index must be a positive integer.")
                 result["recipe"] = "component_wait"
-                result["recovery"]["code"] = "provide_bounded_target"
-                result["recovery"]["next_tool"] = "browser_find"
-                result["recovery"]["next_args"] = {"refresh": True, "max_results": max_results}
+                result["recovery"] = self._bounded_target_recovery("component_wait")
                 return result
             result = failed_result(
                 None,

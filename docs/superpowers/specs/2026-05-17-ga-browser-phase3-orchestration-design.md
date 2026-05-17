@@ -289,11 +289,6 @@ Recipe return shape:
     {"tool": "browser_find", "status": "success", "selected_index": 31},
     {"tool": "browser_action", "action": "click", "status": "success", "index": 31}
   ],
-  "verification": {
-    "status": "success",
-    "type": "field_value",
-    "value": "研发部"
-  },
   "recovery": null
 }
 ```
@@ -358,7 +353,6 @@ Initial public arguments:
   },
   "option_text": "研发部",
   "confirm_text": "",
-  "verify": true,
   "timeout": 10,
   "max_results": 5
 }

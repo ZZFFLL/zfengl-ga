@@ -1578,7 +1578,6 @@ def browser_recipe(
     confirm_text=None,
     table=None,
     condition=None,
-    verify=True,
     timeout=10,
     max_results=5,
     switch_tab_id=None,
@@ -1599,7 +1598,6 @@ def browser_recipe(
             confirm_text=confirm_text,
             table=table,
             condition=condition,
-            verify=verify,
             timeout=timeout,
             max_results=max_results,
         )
@@ -1618,7 +1616,6 @@ def do_browser_recipe(self, args, response):
         confirm_text=args.get("confirm_text"),
         table=args.get("table"),
         condition=args.get("condition"),
-        verify=args.get("verify", True),
         timeout=args.get("timeout", 10),
         max_results=args.get("max_results", 5),
         switch_tab_id=args.get("switch_tab_id") or args.get("tab_id"),
@@ -1647,7 +1644,6 @@ In `assets/tools_schema.json`, insert after `browser_find`:
     "confirm_text": {"type": "string", "description": "Explicit confirm button text for layer_select"},
     "table": {"type": "object", "description": "Table locator such as row_text and column_text for table_locate"},
     "condition": {"type": "string", "enum": ["layer_open", "layer_closed", "options_visible", "field_value", "element_enabled", "not_busy"], "description": "Component wait condition"},
-    "verify": {"type": "boolean", "description": "Whether the recipe should verify the expected state when supported", "default": true},
     "timeout": {"type": "integer", "description": "Timeout in seconds", "default": 10},
     "max_results": {"type": "integer", "description": "Maximum finder candidates per step", "default": 5},
     "switch_tab_id": {"type": "string", "description": "[Optional] Tab ID to switch to before running recipe"}}}
@@ -1667,7 +1663,6 @@ In `assets/tools_schema_cn.json`, insert:
     "confirm_text": {"type": "string", "description": "layer_select 中显式确认按钮文本"},
     "table": {"type": "object", "description": "table_locate 的表格定位条件，例如 row_text 和 column_text"},
     "condition": {"type": "string", "enum": ["layer_open", "layer_closed", "options_visible", "field_value", "element_enabled", "not_busy"], "description": "组件等待条件"},
-    "verify": {"type": "boolean", "description": "recipe 支持时是否验证结果", "default": true},
     "timeout": {"type": "integer", "description": "超时时间，单位秒", "default": 10},
     "max_results": {"type": "integer", "description": "每步 finder 最多返回候选数", "default": 5},
     "switch_tab_id": {"type": "string", "description": "[可选] 执行 recipe 前切换标签页"}}}

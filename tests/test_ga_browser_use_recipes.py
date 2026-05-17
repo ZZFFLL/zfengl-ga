@@ -44,6 +44,9 @@ def test_custom_select_requires_bounded_target_before_any_action():
     assert result["status"] == "failed"
     assert result["stage"] == "invalid_args"
     assert "target.query or target.index" in result["error"]
+    assert result["recovery"]["code"] == "provide_bounded_target"
+    assert result["recovery"]["stop_retry"] is True
+    assert "next_tool" not in result["recovery"]
     assert layer.calls == []
 
 
@@ -56,6 +59,9 @@ def test_layer_select_requires_bounded_target_before_any_action():
     assert result["status"] == "failed"
     assert result["stage"] == "invalid_args"
     assert "target.query or target.index" in result["error"]
+    assert result["recovery"]["code"] == "provide_bounded_target"
+    assert result["recovery"]["stop_retry"] is True
+    assert "next_tool" not in result["recovery"]
     assert layer.calls == []
 
 
@@ -68,6 +74,9 @@ def test_custom_select_rejects_invalid_index_before_any_find():
     assert result["status"] == "failed"
     assert result["stage"] == "invalid_args"
     assert "target.index must be a positive integer" in result["error"]
+    assert result["recovery"]["code"] == "provide_bounded_target"
+    assert result["recovery"]["stop_retry"] is True
+    assert "next_tool" not in result["recovery"]
     assert layer.calls == []
 
 
@@ -98,6 +107,26 @@ def test_custom_select_refuses_main_layer_singleton_option_after_open():
     assert [call[0] for call in layer.calls] == ["find", "action", "state", "find"]
 
 
+def test_custom_select_overlay_target_not_found_has_recipe_recovery():
+    layer = FakeLayer()
+    layer.find_results = [
+        {"status": "success", "matches": [{"index": 10, "element": {"index": 10, "layer": "main"}}], "ambiguous": False},
+        {"status": "success", "matches": [{"index": 22, "element": {"index": 22, "layer": "main"}}], "ambiguous": False},
+    ]
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="custom_select", target={"query": "所属部门"}, option_text="研发部")
+
+    assert result["status"] == "failed"
+    assert result["recovery"] == {
+        "code": "use_custom_select_recipe",
+        "message": "Retry custom_select with a bounded trigger target and option_text that appears in the opened overlay.",
+        "stop_retry": False,
+        "next_tool": "browser_recipe",
+        "next_args": {"recipe": "custom_select"},
+    }
+
+
 def test_layer_select_refuses_ambiguous_option():
     layer = FakeLayer()
     layer.find_results = [
@@ -117,6 +146,30 @@ def test_layer_select_refuses_ambiguous_option():
     assert result["recovery"]["code"] == "use_layer_select_recipe"
 
 
+def test_layer_select_ambiguous_target_has_recipe_recovery():
+    layer = FakeLayer()
+    layer.find_results = [
+        {"status": "success", "matches": [{"index": 10, "element": {"index": 10}}], "ambiguous": False},
+        {
+            "status": "success",
+            "matches": [{"index": 21, "element": {"index": 21}}, {"index": 22, "element": {"index": 22}}],
+            "ambiguous": True,
+        },
+    ]
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="layer_select", target={"query": "人员"}, option_text="张三")
+
+    assert result["status"] == "failed"
+    assert result["recovery"] == {
+        "code": "use_layer_select_recipe",
+        "message": "Retry layer_select with a more specific target, option_text, or confirm_text so only one overlay candidate matches.",
+        "stop_retry": False,
+        "next_tool": "browser_recipe",
+        "next_args": {"recipe": "layer_select"},
+    }
+
+
 def test_layer_select_refuses_main_layer_singleton_confirm_after_open():
     layer = FakeLayer()
     layer.find_results = [
@@ -132,6 +185,27 @@ def test_layer_select_refuses_main_layer_singleton_confirm_after_open():
     assert result["stage"] == "target_not_found"
     assert result["recipe"] == "layer_select"
     assert [call[0] for call in layer.calls] == ["find", "action", "state", "find", "action", "find"]
+
+
+def test_layer_select_preserves_hard_stop_from_custom_select_failure():
+    layer = FakeLayer()
+    layer.find_results = [
+        {
+            "status": "failed",
+            "stage": "repeat_blocked",
+            "recovery": {"code": "stop_repeating", "message": "stop", "stop_retry": True},
+        }
+    ]
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="layer_select", target={"query": "人员"}, option_text="张三")
+
+    assert result["status"] == "failed"
+    assert result["recipe"] == "layer_select"
+    assert result["stage"] == "repeat_blocked"
+    assert result["recovery"]["code"] == "stop_repeating"
+    assert result["recovery"]["stop_retry"] is True
+    assert "next_tool" not in result["recovery"]
 
 
 def test_layer_select_confirm_search_does_not_hard_filter_popover():
@@ -275,6 +349,19 @@ def test_component_wait_element_enabled_can_use_later_enabled_match():
     assert result["match"]["index"] == 4
 
 
+def test_component_wait_field_value_does_not_accept_label_text_without_value():
+    layer = FakeLayer()
+    layer.find_results = [
+        {"status": "success", "matches": [{"index": 3, "element": {"index": 3, "text": "审批意见"}}], "ambiguous": False},
+    ]
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="component_wait", condition="field_value", target={"query": "审批意见"}, timeout=0)
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "component_not_ready"
+
+
 def test_component_wait_clamps_large_string_timeout():
     layer = FakeLayer()
     layer.find_results = [
@@ -375,7 +462,9 @@ def test_component_wait_rejects_invalid_index_before_recovery():
     assert result["status"] == "failed"
     assert result["stage"] == "invalid_args"
     assert "target.index must be a positive integer" in result["error"]
-    assert result["recovery"]["next_tool"] == "browser_find"
+    assert result["recovery"]["code"] == "provide_bounded_target"
+    assert result["recovery"]["stop_retry"] is True
+    assert "next_tool" not in result["recovery"]
     assert layer.calls == []
 
 

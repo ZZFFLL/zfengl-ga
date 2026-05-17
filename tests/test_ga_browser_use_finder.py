@@ -101,6 +101,33 @@ def test_find_returns_target_not_found_with_recovery():
     assert result["recovery"]["code"] == "refresh_state_then_find"
 
 
+def test_find_rejects_unbounded_locator():
+    state = make_state([{"index": 1, "text": "保存", "labels": [], "visible": True, "disabled": False}])
+
+    result = find_in_state(state, max_results=5)
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "invalid_args"
+    assert result["recovery"]["code"] == "provide_locator"
+    assert result["recovery"]["stop_retry"] is True
+
+
+def test_find_preserves_state_failure_stage():
+    state = {
+        "status": "failed",
+        "stage": "browser_unavailable",
+        "error": "Chrome unavailable",
+        "recovery": {"code": "fallback_low_level", "next_tool": "web_execute_js"},
+    }
+
+    result = find_in_state(state, query="保存", max_results=5)
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "browser_unavailable"
+    assert result["error"] == "Chrome unavailable"
+    assert result["recovery"]["code"] == "fallback_low_level"
+
+
 def test_find_safely_parses_string_max_results():
     state = make_state(
         [

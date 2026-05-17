@@ -61,6 +61,31 @@ def test_add_recovery_merges_suggested_args_into_recovery_next_args():
     assert updated["recovery"]["next_args"] == {"action": "keys", "text": "Enter"}
 
 
+def test_add_recovery_merges_select_suggested_args_into_existing_recipe_recovery():
+    result = {
+        "status": "failed",
+        "stage": "control_unsupported",
+        "action": "select",
+        "recovery": {
+            "code": "use_custom_select_recipe",
+            "message": "This target is not a native select. Use the custom select recipe.",
+            "stop_retry": False,
+            "next_tool": "browser_recipe",
+            "next_args": {"recipe": "custom_select"},
+        },
+        "suggested_args": {"target": {"index": 9}, "option_text": "研发部"},
+    }
+
+    updated = add_recovery(result)
+
+    assert updated["suggested_args"] == {"target": {"index": 9}, "option_text": "研发部"}
+    assert updated["recovery"]["next_args"] == {
+        "recipe": "custom_select",
+        "target": {"index": 9},
+        "option_text": "研发部",
+    }
+
+
 def test_add_recovery_copies_existing_recovery_before_mutation():
     recovery = {"code": "custom", "message": "keep", "stop_retry": False, "next_args": {"action": "click"}}
     result = {"status": "failed", "stage": "custom", "recovery": recovery}

@@ -399,10 +399,10 @@ SPA 页面没有稳定文本或 selector 时，再按页面形态选有界等待
 - `input` 支持直接写入 contenteditable，也支持同源 iframe contenteditable / designMode editor body；建议用 `verify="field_value"` + 非空 `verify_value` 确认实际值。它不保证调用编辑器私有 API，也不保证跨域 iframe。
 - `select` 只支持原生 `<select>`，并会拒绝 disabled option / disabled optgroup。React/AntD/MUI/Vue 自定义下拉优先用 `browser_recipe(custom_select)`；recipe 歧义或失败后再拆成 click -> state/find -> click。
 - SPA waits 都是有界等待：`wait_dom_stable`、`wait_not_busy`、`wait_enabled`、`wait_route` 不应被当成无限等待或业务成功保证。
-- `browser_find` 是只读定位层：复用或刷新当前 state，按 `query`、`role`、`control_kind`、`layer`、`frame_path`、`table` 做过滤和评分，`max_results` 被限制在 1-20；它只返回候选 index，不执行动作。
+- `browser_find` 是只读定位层：复用或刷新当前 state，按 `query`、`role`、`control_kind`、`layer`、`frame_path`、`table` 做过滤和评分，`max_results` 被限制在 1-20；必须至少提供一个定位约束，无约束调用会被拒绝，避免返回任意可见元素；它只返回候选 index，不执行动作。
 - `browser_find` 会返回 disabled 候选，方便判断控件存在或后续等待启用；真正的 disabled/read-only 拒绝仍由 `browser_action` 执行层负责。
 - `browser_find` 的 `ambiguous=true` 是硬信号：候选分数接近，必须增加约束，不允许直接拿第一个候选操作。
-- `browser_find` 的 recovery 会保留 `switch_tab_id` 和 `include_invisible`，避免重试时跑到错误标签页或可见性模式。
+- `browser_find` 的可重试 recovery 会保留 `switch_tab_id` 和 `include_invisible`，避免重试时跑到错误标签页或可见性模式；如果 `refresh=true` 后仍找不到目标，会返回 `stop_retry=true`，需要补充更强约束或换策略。
 - `browser_recipe` 只支持 `custom_select`、`layer_select`、`table_locate`、`component_wait` 四类有界 recipe；不接受自由文本流程，也不会变成自动浏览器代理。
 - `custom_select` / `layer_select` 必须提供明确 target；内部按 `browser_find` -> `click` -> `browser_state` -> `browser_find` -> `click` 编排；`layer_select` 只有传入 `confirm_text` 才会点击确认按钮。
 - `table_locate` 只调用 `browser_find` 定位候选，要求至少提供 `row_text`、`column_text` 或 `header_text` 之一；它不负责分页、虚拟滚动、单元格写入或提交。

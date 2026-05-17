@@ -280,10 +280,62 @@ def test_browser_find_recovery_preserves_tab_and_visibility_context():
     result = layer.find(driver, query="隐藏按钮", switch_tab_id="tab-b", include_invisible=True, refresh=True)
 
     assert result["status"] == "failed"
-    next_args = result["recovery"]["next_args"]
-    assert next_args["switch_tab_id"] == "tab-b"
-    assert next_args["include_invisible"] is True
+    assert result["recovery"]["code"] == "narrow_locator"
+    assert result["recovery"]["stop_retry"] is True
+    assert "next_args" not in result["recovery"]
     assert driver.execute_js_calls == 1
+
+
+def test_browser_find_refresh_miss_stops_same_refresh_loop():
+    class FakeDriver:
+        default_session_id = "tab-a"
+
+        def get_all_sessions(self):
+            return [{"id": "tab-a"}]
+
+        def execute_js(self, script, timeout=10):
+            return {
+                "status": "success",
+                "tab_id": "tab-a",
+                "state_token": "tok-a",
+                "elements": [{"index": 1, "text": "保存", "labels": [], "visible": True, "disabled": False}],
+            }
+
+    layer = BrowserActionLayer()
+    driver = FakeDriver()
+
+    result = layer.find(driver, query="不存在", refresh=True)
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "target_not_found"
+    assert result["recovery"]["code"] == "narrow_locator"
+    assert result["recovery"]["stop_retry"] is True
+    assert result["recovery"].get("next_tool") != "browser_find"
+
+
+def test_browser_find_unbounded_call_does_not_refresh_page_state():
+    class FakeDriver:
+        default_session_id = "tab-a"
+
+        def __init__(self):
+            self.execute_js_calls = 0
+
+        def get_all_sessions(self):
+            return [{"id": "tab-a"}]
+
+        def execute_js(self, script, timeout=10):
+            self.execute_js_calls += 1
+            return {"status": "success", "elements": [{"index": 1, "text": "保存", "visible": True}]}
+
+    layer = BrowserActionLayer()
+    driver = FakeDriver()
+
+    result = layer.find(driver, refresh=True)
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "invalid_args"
+    assert result["recovery"]["code"] == "provide_locator"
+    assert driver.execute_js_calls == 0
 
 
 def test_browser_find_exception_result_includes_recovery(monkeypatch):

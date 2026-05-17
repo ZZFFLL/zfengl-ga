@@ -62,7 +62,7 @@
   }},
   {"type": "function", "function": {
     "name": "browser_find",
-    "description": "只读定位真实 Chrome 页面中的 indexed 元素。适合在 browser_state 后或 recovery 要求 browser_find 时使用。返回候选 index、评分、原因和是否歧义，不执行点击或输入。",
+      "description": "只读定位真实 Chrome 页面中的 indexed 元素。必须提供至少一个有边界的定位条件，例如 query、table、layer、frame_path、role 或 control_kind；无约束调用会被拒绝，避免返回任意可见元素。返回候选 index、评分、原因和是否歧义，不执行点击或输入。",
     "parameters": {"type": "object", "properties": {
       "query": {"type": "string", "description": "要查找的标签、文本或值"},
       "role": {"type": "string", "description": "可选 role 硬过滤"},
