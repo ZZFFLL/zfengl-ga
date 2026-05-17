@@ -76,7 +76,17 @@ def add_recovery(result: dict[str, Any], *, action: str | None = None, index: in
         updated["action"] = action
     if index is not None and "index" not in updated:
         updated["index"] = index
-    updated.setdefault("recovery", recovery_for_stage(stage, action=str(updated.get("action") or action or "")))
+    existing_recovery = updated.get("recovery")
+    if isinstance(existing_recovery, dict):
+        recovery = dict(existing_recovery)
+        if isinstance(recovery.get("next_args"), dict):
+            recovery["next_args"] = dict(recovery["next_args"])
+    else:
+        recovery = recovery_for_stage(stage, action=str(updated.get("action") or action or ""))
+        suggested_args = updated.get("suggested_args")
+        if isinstance(suggested_args, dict):
+            recovery["next_args"] = {**dict(recovery.get("next_args") or {}), **suggested_args}
+    updated["recovery"] = recovery
     return updated
 
 
@@ -108,6 +118,8 @@ class FailureFuse:
         )
 
     def record(self, result: dict[str, Any], *, tab_id: str, url: str, target: dict[str, Any] | None = None) -> dict[str, Any]:
+        if result.get("status") != "failed":
+            return dict(result)
         updated = add_recovery(result, action=result.get("action"), index=result.get("index"))
         signature = self._signature(updated, tab_id=tab_id, url=url, target=target)
         count = self._counts.get(signature, 0) + 1

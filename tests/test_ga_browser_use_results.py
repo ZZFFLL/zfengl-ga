@@ -34,6 +34,44 @@ def test_add_recovery_preserves_hint_and_suggested_args():
     assert updated["recovery"]["code"] == "use_focused_keys"
 
 
+def test_failure_fuse_ignores_success_results():
+    fuse = FailureFuse()
+    success = {"status": "success", "action": "click", "index": 5, "result": "clicked"}
+
+    first = fuse.record(success, tab_id="tab-1", url="https://example.test/form", target={})
+    second = fuse.record(success, tab_id="tab-1", url="https://example.test/form", target={})
+    third = fuse.record(success, tab_id="tab-1", url="https://example.test/form", target={})
+
+    assert first == success
+    assert second == success
+    assert third == success
+    assert "recovery" not in third
+
+
+def test_add_recovery_merges_suggested_args_into_recovery_next_args():
+    result = {
+        "status": "failed",
+        "stage": "state_missing",
+        "suggested_args": {"action": "keys", "text": "Enter"},
+    }
+
+    updated = add_recovery(result, action="keys", index=8)
+
+    assert updated["recovery"]["code"] == "use_focused_keys"
+    assert updated["recovery"]["next_args"] == {"action": "keys", "text": "Enter"}
+
+
+def test_add_recovery_copies_existing_recovery_before_mutation():
+    recovery = {"code": "custom", "message": "keep", "stop_retry": False, "next_args": {"action": "click"}}
+    result = {"status": "failed", "stage": "custom", "recovery": recovery}
+
+    updated = add_recovery(result, action="click", index=3)
+    updated["recovery"]["stop_retry"] = True
+    updated["recovery"]["next_args"]["index"] = 3
+
+    assert recovery == {"code": "custom", "message": "keep", "stop_retry": False, "next_args": {"action": "click"}}
+
+
 def test_failure_fuse_blocks_third_identical_failure():
     fuse = FailureFuse()
     result = {"status": "failed", "stage": "stale_index", "action": "click", "index": 5}
