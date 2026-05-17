@@ -255,13 +255,12 @@ def test_run_action_requires_state_for_index_action():
 
     result = layer.run_action(driver, action="click", index=1)
 
-    assert result == {
-        "status": "failed",
-        "action": "click",
-        "index": 1,
-        "stage": "state_missing",
-        "error": "Run browser_state before browser_action click.",
-    }
+    assert result["status"] == "failed"
+    assert result["action"] == "click"
+    assert result["index"] == 1
+    assert result["stage"] == "state_missing"
+    assert result["error"] == "Run browser_state before browser_action click."
+    assert result["recovery"]["code"] == "refresh_state"
 
 
 def test_run_action_keys_with_stale_index_suggests_active_element_retry():
@@ -2598,3 +2597,41 @@ def test_build_browser_action_script_input_uses_native_setter_and_verifies_value
     assert "valueSetter.call(el, nextValue)" in script
     assert 'if ("value" in el && el.value !== nextValue)' in script
     assert 'return fail("dom_event", "Input value was not accepted.")' in script
+
+
+def test_run_action_state_missing_includes_structured_recovery():
+    layer = BrowserActionLayer()
+    driver = FakeDriver([])
+
+    result = layer.run_action(driver, action="click", index=3)
+
+    assert result["stage"] == "state_missing"
+    assert result["recovery"]["code"] == "refresh_state"
+    assert result["recovery"]["next_tool"] == "browser_state"
+
+
+def test_run_action_stale_tab_includes_find_recovery():
+    layer = BrowserActionLayer()
+    layer._last_state = {"tab_id": "old-tab", "state_token": "tok", "elements_by_index": {1: {"index": 1}}}
+    driver = FakeDriver([])
+    driver.default_session_id = "new-tab"
+
+    result = layer.run_action(driver, action="click", index=1)
+
+    assert result["stage"] == "stale_index"
+    assert result["recovery"]["code"] == "refresh_state_then_find"
+    assert result["recovery"]["next_tool"] == "browser_find"
+
+
+def test_run_action_blocks_third_repeated_failure():
+    layer = BrowserActionLayer()
+    driver = FakeDriver([])
+
+    first = layer.run_action(driver, action="click", index=9)
+    second = layer.run_action(driver, action="click", index=9)
+    third = layer.run_action(driver, action="click", index=9)
+
+    assert first["stage"] == "state_missing"
+    assert second["recovery"]["stop_retry"] is True
+    assert third["stage"] == "repeat_blocked"
+    assert third["recovery"]["code"] == "stop_repeating"

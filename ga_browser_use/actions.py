@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from ga_browser_use.indexer import build_browser_state_script, normalize_state_result
+from ga_browser_use.results import FailureFuse, add_recovery, failed_result as structured_failed_result
 
 
 SUPPORTED_ACTIONS = {
@@ -36,12 +37,7 @@ KEYS_AFTER_INPUT_HINT = (
 
 
 def failed_result(action: str | None, stage: str, error: str, index: int | None = None) -> dict[str, Any]:
-    result: dict[str, Any] = {"status": "failed", "stage": stage, "error": error}
-    if action:
-        result["action"] = action
-    if index is not None:
-        result["index"] = index
-    return result
+    return structured_failed_result(action, stage, error, index)
 
 
 def keys_without_index_retry_result(action: str, index: int, text: str | None, value: str | None) -> dict[str, Any]:
@@ -936,6 +932,7 @@ def build_browser_action_script(
 class BrowserActionLayer:
     def __init__(self) -> None:
         self._last_state: dict[str, Any] | None = None
+        self._failure_fuse = FailureFuse()
 
     @property
     def last_state_token(self) -> str | None:
@@ -953,6 +950,21 @@ class BrowserActionLayer:
         if not sessions:
             return failed_result(None, "browser_unavailable", "没有可用的浏览器标签页。")
         return None
+
+    def _record_failure(
+        self,
+        result: dict[str, Any],
+        *,
+        driver: Any,
+        target: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        tab_id = str(getattr(driver, "default_session_id", "") or result.get("tab_id") or "")
+        url = ""
+        if self._last_state:
+            url = str(self._last_state.get("url") or "")
+        recorded = self._failure_fuse.record(result, tab_id=tab_id, url=url, target=target)
+        recorded.setdefault("tab_id", tab_id)
+        return recorded
 
     def get_state(
         self,
@@ -989,8 +1001,10 @@ class BrowserActionLayer:
             self._last_state = {
                 "tab_id": state["tab_id"],
                 "state_token": state.get("state_token"),
+                "url": state.get("url"),
                 "elements_by_index": elements_by_index,
             }
+            self._failure_fuse.reset()
         else:
             self._last_state = None
         return state
@@ -1060,8 +1074,10 @@ class BrowserActionLayer:
         if action in INDEX_REQUIRED_ACTIONS or safe_index is not None:
             if not self._last_state:
                 if action == "keys" and safe_index is not None:
-                    return keys_without_index_retry_result(action, safe_index, text, value)
-                return failed_result(action, "state_missing", f"Run browser_state before browser_action {action}.", safe_index)
+                    result = keys_without_index_retry_result(action, safe_index, text, value)
+                    return self._record_failure(result, driver=driver)
+                result = failed_result(action, "state_missing", f"Run browser_state before browser_action {action}.", safe_index)
+                return self._record_failure(result, driver=driver)
             if str(self._last_state.get("tab_id") or "") != str(driver.default_session_id):
                 result = failed_result(
                     action,
@@ -1070,7 +1086,8 @@ class BrowserActionLayer:
                     safe_index,
                 )
                 result["tab_id"] = driver.default_session_id
-                return result
+                target = (self._last_state.get("elements_by_index") or {}).get(safe_index)
+                return self._record_failure(result, driver=driver, target=target if isinstance(target, dict) else None)
             state_token = self._last_state.get("state_token")
 
         effective_selector = selector
@@ -1118,15 +1135,32 @@ class BrowserActionLayer:
         except Exception as exc:
             result = failed_result(action, "dom_event", str(exc), safe_index)
             result["tab_id"] = driver.default_session_id
-            return result
+            return self._record_failure(
+                result,
+                driver=driver,
+                target=cached_element if isinstance(cached_element, dict) else None,
+            )
 
         if not isinstance(raw, dict):
             result = failed_result(action, "dom_event", "browser_action returned a non-object result", safe_index)
             result["tab_id"] = driver.default_session_id
-            return result
+            return self._record_failure(
+                result,
+                driver=driver,
+                target=cached_element if isinstance(cached_element, dict) else None,
+            )
 
         result = dict(raw)
         result.setdefault("tab_id", driver.default_session_id)
+        if result.get("status") == "success":
+            self._failure_fuse.reset()
+        else:
+            result = add_recovery(result, action=action, index=safe_index)
+            result = self._record_failure(
+                result,
+                driver=driver,
+                target=cached_element if isinstance(cached_element, dict) else None,
+            )
 
         if action in STATE_MUTATING_ACTIONS and (
             result.get("status") == "success"
