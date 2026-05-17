@@ -933,6 +933,7 @@ class BrowserActionLayer:
     def __init__(self) -> None:
         self._last_state: dict[str, Any] | None = None
         self._failure_fuse = FailureFuse()
+        self._failure_fuse_meta: dict[tuple[str, ...], dict[str, Any]] = {}
 
     @property
     def last_state_token(self) -> str | None:
@@ -962,9 +963,76 @@ class BrowserActionLayer:
         url = ""
         if self._last_state:
             url = str(self._last_state.get("url") or "")
+        signature = self._failure_fuse._signature(result, tab_id=tab_id, url=url, target=target)
+        if result.get("page_changed") is True or result.get("stage") == "verify_failed":
+            self._failure_fuse_meta[signature] = {
+                "original_stage": result.get("stage"),
+                "page_changed": result.get("page_changed"),
+            }
         recorded = self._failure_fuse.record(result, tab_id=tab_id, url=url, target=target)
         recorded.setdefault("tab_id", tab_id)
+        if recorded.get("stage") == "repeat_blocked":
+            meta = self._failure_fuse_meta.get(signature, {})
+            if meta.get("original_stage") and "original_stage" not in recorded:
+                recorded["original_stage"] = meta["original_stage"]
+            if meta.get("page_changed") is True:
+                recorded["page_changed"] = True
         return recorded
+
+    def _preflight_repeated_failure(
+        self,
+        *,
+        action: str,
+        index: int | None,
+        driver: Any,
+        target: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        if not isinstance(target, dict):
+            return None
+        tab_id = str(getattr(driver, "default_session_id", "") or "")
+        url = str((self._last_state or {}).get("url") or "")
+        target = target or {}
+        expected = (
+            str(tab_id or ""),
+            str(url or ""),
+            str(action or ""),
+            str(index or ""),
+            str(target.get("stable_key") or ""),
+            str(target.get("selector_hint") or ""),
+            str(target.get("text") or target.get("value") or "")[:120],
+        )
+        for signature, count in self._failure_fuse._counts.items():
+            if count < self._failure_fuse.threshold - 1:
+                continue
+            comparable = signature[:4] + signature[5:]
+            if comparable != expected:
+                continue
+            result = failed_result(
+                action,
+                "repeat_blocked",
+                "The same browser action failed repeatedly against the same target.",
+                index,
+            )
+            result["tab_id"] = tab_id
+            meta = self._failure_fuse_meta.get(signature, {})
+            if meta.get("original_stage"):
+                result["original_stage"] = meta["original_stage"]
+            if meta.get("page_changed") is True:
+                result["page_changed"] = True
+            return result
+        return None
+
+    def _reset_failure_fuse(self) -> None:
+        self._failure_fuse.reset()
+        self._failure_fuse_meta.clear()
+
+    def _should_clear_state_after_action(self, action: str, result: dict[str, Any]) -> bool:
+        return action in STATE_MUTATING_ACTIONS and (
+            result.get("status") == "success"
+            or result.get("stage") == "verify_failed"
+            or result.get("original_stage") == "verify_failed"
+            or result.get("page_changed") is True
+        )
 
     def get_state(
         self,
@@ -1004,7 +1072,7 @@ class BrowserActionLayer:
                 "url": state.get("url"),
                 "elements_by_index": elements_by_index,
             }
-            self._failure_fuse.reset()
+            self._reset_failure_fuse()
         else:
             self._last_state = None
         return state
@@ -1112,6 +1180,17 @@ class BrowserActionLayer:
                 selector_role = str(cached_element.get("role") or "").strip() or None
                 selector_text = str(cached_element.get("text") or "").strip() or None
 
+        preflight_blocked = self._preflight_repeated_failure(
+            action=action,
+            index=safe_index,
+            driver=driver,
+            target=cached_element if isinstance(cached_element, dict) else None,
+        )
+        if preflight_blocked:
+            if self._should_clear_state_after_action(action, preflight_blocked):
+                self._last_state = None
+            return preflight_blocked
+
         script = build_browser_action_script(
             action=action,
             index=safe_index,
@@ -1152,8 +1231,9 @@ class BrowserActionLayer:
 
         result = dict(raw)
         result.setdefault("tab_id", driver.default_session_id)
+        raw_result = dict(result)
         if result.get("status") == "success":
-            self._failure_fuse.reset()
+            self._reset_failure_fuse()
         else:
             result = add_recovery(result, action=action, index=safe_index)
             result = self._record_failure(
@@ -1162,10 +1242,6 @@ class BrowserActionLayer:
                 target=cached_element if isinstance(cached_element, dict) else None,
             )
 
-        if action in STATE_MUTATING_ACTIONS and (
-            result.get("status") == "success"
-            or result.get("stage") == "verify_failed"
-            or result.get("page_changed") is True
-        ):
+        if self._should_clear_state_after_action(action, raw_result) or self._should_clear_state_after_action(action, result):
             self._last_state = None
         return result

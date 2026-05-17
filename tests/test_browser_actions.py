@@ -2635,3 +2635,111 @@ def test_run_action_blocks_third_repeated_failure():
     assert second["recovery"]["stop_retry"] is True
     assert third["stage"] == "repeat_blocked"
     assert third["recovery"]["code"] == "stop_repeating"
+
+
+def test_run_action_preflight_blocks_third_repeated_js_failure_before_execute():
+    layer = BrowserActionLayer()
+    layer._last_state = {
+        "tab_id": "7",
+        "state_token": "tok-1",
+        "elements_by_index": {
+            1: {"index": 1, "stable_key": "button#save", "selector_hint": "button#save", "text": "Save"}
+        },
+    }
+    driver = FakeDriver(
+        [
+            {"data": {"status": "failed", "stage": "dom_event", "error": "boom"}},
+            {"data": {"status": "failed", "stage": "dom_event", "error": "boom"}},
+        ]
+    )
+
+    first = layer.run_action(driver, action="click", index=1)
+    second = layer.run_action(driver, action="click", index=1)
+    third = layer.run_action(driver, action="click", index=1)
+
+    assert first["stage"] == "dom_event"
+    assert second["recovery"]["stop_retry"] is True
+    assert third["stage"] == "repeat_blocked"
+    assert len(driver.calls) == 2
+
+
+def test_run_action_repeat_blocked_verify_failure_page_change_invalidates_state():
+    layer = BrowserActionLayer()
+    cached_state = {
+        "tab_id": "7",
+        "state_token": "tok-1",
+        "elements_by_index": {
+            1: {"index": 1, "stable_key": "button#save", "selector_hint": "button#save", "text": "Save"},
+            2: {"index": 2, "stable_key": "button#cancel", "selector_hint": "button#cancel", "text": "Cancel"},
+        },
+    }
+    driver = FakeDriver(
+        [
+            {
+                "data": {
+                    "status": "failed",
+                    "stage": "verify_failed",
+                    "page_changed": True,
+                    "error": "not verified",
+                }
+            },
+            {
+                "data": {
+                    "status": "failed",
+                    "stage": "verify_failed",
+                    "page_changed": True,
+                    "error": "not verified",
+                }
+            },
+            {
+                "data": {
+                    "status": "failed",
+                    "stage": "verify_failed",
+                    "page_changed": True,
+                    "error": "not verified",
+                }
+            },
+        ]
+    )
+
+    layer._last_state = dict(cached_state)
+    first = layer.run_action(driver, action="click", index=1)
+    layer._last_state = dict(cached_state)
+    second = layer.run_action(driver, action="click", index=1)
+    layer._last_state = dict(cached_state)
+    third = layer.run_action(driver, action="click", index=1)
+
+    assert first["stage"] == "verify_failed"
+    assert second["recovery"]["stop_retry"] is True
+    assert third["stage"] == "repeat_blocked"
+    assert layer.last_state_token is None
+
+
+def test_run_action_success_resets_fuse_for_js_failures():
+    layer = BrowserActionLayer()
+    layer._last_state = {
+        "tab_id": "7",
+        "state_token": "tok-1",
+        "elements_by_index": {
+            1: {"index": 1, "stable_key": "button#save", "selector_hint": "button#save", "text": "Save"}
+        },
+    }
+    driver = FakeDriver(
+        [
+            {"data": {"status": "failed", "stage": "dom_event", "error": "boom"}},
+            {"data": {"status": "failed", "stage": "dom_event", "error": "boom"}},
+            {"data": {"status": "success", "action": "wait_index", "index": 1, "result": "element_visible"}},
+            {"data": {"status": "failed", "stage": "dom_event", "error": "boom"}},
+        ]
+    )
+
+    first = layer.run_action(driver, action="wait_index", index=1)
+    second = layer.run_action(driver, action="wait_index", index=1)
+    success = layer.run_action(driver, action="wait_index", index=2)
+    after_success = layer.run_action(driver, action="wait_index", index=1)
+
+    assert first["recovery"]["stop_retry"] is False
+    assert second["recovery"]["stop_retry"] is True
+    assert success["status"] == "success"
+    assert after_success["stage"] == "dom_event"
+    assert after_success["recovery"]["stop_retry"] is False
