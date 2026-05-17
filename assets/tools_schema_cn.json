@@ -57,7 +57,7 @@
     "description": "从真实 Chrome 页面获取带索引的浏览器状态，用于准确定位可操作元素，包含同源 iframe 元数据以及更丰富的 field/control/layer 上下文。索引可能变化时，先调用本工具再执行 browser_action。",
     "parameters": {"type": "object", "properties": {
       "switch_tab_id": {"type": "string", "description": "可选的标签页 ID，读取状态前切换到该标签页"},
-      "include_invisible": {"type": "boolean", "description": "是否包含不可见元素", "default": false},
+      "include_invisible": {"type": "boolean", "description": "是否包含可见 frame 链内的不可见元素；隐藏父 iframe 子树不会暴露", "default": false},
       "max_elements": {"type": "integer", "description": "最多返回的索引元素数量", "default": 120}}}
   }},
   {"type": "function", "function": {

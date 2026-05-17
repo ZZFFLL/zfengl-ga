@@ -57,7 +57,7 @@
     "description": "Get indexed browser state from the real Chrome page for accurate element targeting, including same-origin iframe metadata and richer field/control/layer context. Use before browser_action when indexes may have changed.",
     "parameters": {"type": "object", "properties": {
       "switch_tab_id": {"type": "string", "description": "[Optional] Tab ID to switch to before reading state"},
-      "include_invisible": {"type": "boolean", "description": "Include invisible elements in the indexed state", "default": false},
+      "include_invisible": {"type": "boolean", "description": "Include invisible elements in visible frame chains; hidden parent iframe subtrees are never exposed", "default": false},
       "max_elements": {"type": "integer", "description": "Maximum indexed elements to return", "default": 120}}}
   }},
   {"type": "function", "function": {

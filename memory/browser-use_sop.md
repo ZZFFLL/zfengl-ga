@@ -266,7 +266,7 @@ SPA 页面没有稳定文本或 selector 时，再按页面形态选有界等待
 
 - `browser_state` 只索引有限交互元素：链接、按钮、`input`、`textarea`、`select`、常见 ARIA role、`onclick`、`tabindex`、`contenteditable=true`。
 - `browser_state` 会递归索引同源 iframe / frame，并在元素快照中记录 `frame_path`、`frame_depth`、`frame_url`、`frame_title`。隐藏或零尺寸的父 iframe 会让子元素不可见；跨域 iframe 不会被高层工具穿透。
-- `browser_state` 默认只返回可见元素；只有显式设置 `include_invisible=true` 才会包含不可见元素。
+- `browser_state` 默认只返回可见元素；显式设置 `include_invisible=true` 只会包含可见 frame 链内的不可见元素，隐藏父/祖先 iframe 子树不会暴露。
 - 单次索引默认最多 120 个元素，代码允许的 `max_elements` 范围是 1-500。
 - 元素快照只保留短文本和短 value，文本/value 最多约 240 字符；密码 value 会被 `[REDACTED]`。
 - 元素快照包含 labels、attributes、validation、stable_key、field_context、table_context、layer、control_kind、action_hints 等只读上下文；表格上下文用于判断行/列/表头/单元格位置，不提供单元格编辑封装。
@@ -307,10 +307,10 @@ SPA 页面没有稳定文本或 selector 时，再按页面形态选有界等待
 - `input` 只允许 `input` / `textarea` / `contenteditable` / 同源 designMode editor body。对 button/link/普通 div 会返回 `invalid_args`。
 - `select` 只允许原生 `<select>`，不支持自定义下拉。
 - `keys` 只支持 `Enter`、`Escape`、`Tab`、`Control+A`、`Backspace`。
-- `keys` 不传 index 时，会优先作用在顶层文档或同源 iframe 内的当前焦点元素；这是 `input` 后提交搜索/表单的推荐路径。
+- `keys` 不传 index 时，会优先作用在顶层文档或可见同源 iframe 内的当前焦点元素；这是 `input` 后提交搜索/表单的推荐路径。
 - `Control+A` / `Backspace` 只对 value-backed `input` / `textarea` 做确定性处理；contenteditable 上会拒绝，避免合成键盘事件假成功。
-- `wait_text` 在顶层文档和可读同源 iframe 文档中查找文本，适合粗粒度等待，不适合精确语义判断。
-- `wait_selector` 在顶层文档和可读同源 iframe 文档中等待 selector 出现，不判断可见性和业务语义。
+- `wait_text` 在顶层文档和可见同源 iframe 文档中查找文本，适合粗粒度等待，不适合精确语义判断。
+- `wait_selector` 在顶层文档和可见同源 iframe 文档中等待 selector 出现，不判断命中元素自身可见性和业务语义。
 - `wait_not_busy` 只检查默认或指定 busy selector 的消失，不等于业务处理完成。
 - `wait_dom_stable` 只判断一段时间内 DOM 变化趋稳，不保证数据已加载正确。
 - `wait_route` 只匹配 URL/route 字符串，不保证页面数据完成渲染。

@@ -327,8 +327,107 @@ document.querySelectorAll = (selector) => selector === "iframe, frame" ? [hidden
     assert state["elements"] == []
 
 
+def test_browser_state_script_omits_hidden_parent_iframe_children_even_when_include_invisible():
+    script = build_browser_state_script(include_invisible=True, max_elements=10)
+
+    state = run_browser_state_script(
+        script,
+        """
+const hiddenIframe = makeElement({ tag: "iframe", visible: false, ownerDocument: document });
+const frameWindow = {
+  ...window,
+  frameElement: hiddenIframe,
+  parent: window,
+  location: { href: "https://example.test/frame" },
+};
+const frameDocument = {
+  title: "Frame",
+  defaultView: frameWindow,
+  body: null,
+  getElementById: (_id) => null,
+  querySelectorAll: (selector) => {
+    if (selector === "iframe, frame" || selector.startsWith("label[")) return [];
+    return [frameButton];
+  },
+};
+frameDocument.body = makeElement({ tag: "body", ownerDocument: frameDocument });
+const frameButton = makeElement({
+  tag: "button",
+  text: "Inside",
+  ownerDocument: frameDocument,
+});
+hiddenIframe.contentDocument = frameDocument;
+hiddenIframe.contentWindow = frameWindow;
+document.querySelectorAll = (selector) => selector === "iframe, frame" ? [hiddenIframe] : [];
+""",
+    )
+
+    assert state["status"] == "success"
+    assert state["elements"] == []
+
+
 def test_browser_state_script_omits_child_elements_when_nested_ancestor_iframe_is_hidden():
     script = build_browser_state_script(include_invisible=False, max_elements=10)
+
+    state = run_browser_state_script(
+        script,
+        """
+const hiddenOuterIframe = makeElement({ tag: "iframe", width: 0, height: 0, ownerDocument: document });
+const outerWindow = {
+  ...window,
+  frameElement: hiddenOuterIframe,
+  parent: window,
+  location: { href: "https://example.test/outer" },
+};
+const outerDocument = {
+  title: "Outer Frame",
+  defaultView: outerWindow,
+  body: null,
+  getElementById: (_id) => null,
+  querySelectorAll: (selector) => selector === "iframe, frame" ? [innerIframe] : [],
+};
+outerDocument.body = makeElement({ tag: "body", ownerDocument: outerDocument });
+const innerIframe = makeElement({ tag: "iframe", ownerDocument: outerDocument });
+
+const innerWindow = {
+  ...window,
+  frameElement: innerIframe,
+  parent: outerWindow,
+  location: { href: "https://example.test/inner" },
+};
+const innerDocument = {
+  title: "Inner Frame",
+  defaultView: innerWindow,
+  body: null,
+  getElementById: (_id) => null,
+  querySelectorAll: (selector) => {
+    if (selector === "iframe, frame" || selector.startsWith("label[")) return [];
+    return [nestedButton];
+  },
+};
+innerDocument.body = makeElement({ tag: "body", ownerDocument: innerDocument });
+const nestedButton = makeElement({
+  tag: "button",
+  text: "Nested",
+  ownerDocument: innerDocument,
+});
+hiddenOuterIframe.contentDocument = outerDocument;
+hiddenOuterIframe.contentWindow = outerWindow;
+innerIframe.contentDocument = innerDocument;
+innerIframe.contentWindow = innerWindow;
+document.contains = (element) => element === hiddenOuterIframe || element === document.body;
+outerDocument.contains = (element) => element === innerIframe || element === outerDocument.body;
+innerDocument.contains = (element) => element === nestedButton || element === innerDocument.body;
+document.querySelectorAll = (selector) => selector === "iframe, frame" ? [hiddenOuterIframe] : [];
+""",
+    )
+
+    assert state["status"] == "success"
+    assert state["elements"] == []
+
+
+def test_browser_state_script_omits_hidden_ancestor_iframe_children_even_when_include_invisible():
+    script = build_browser_state_script(include_invisible=True, max_elements=10)
 
     state = run_browser_state_script(
         script,

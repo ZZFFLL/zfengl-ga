@@ -333,7 +333,7 @@ def build_browser_action_script(
       }}
       for (const frame of frames) {{
         try {{
-          if (frame.contentDocument) visit(frame.contentDocument);
+          if (frameElementVisible(frame) && frame.contentDocument) visit(frame.contentDocument);
         }} catch (e) {{
           // Cross-origin frames are intentionally skipped.
         }}
@@ -860,6 +860,7 @@ def build_browser_action_script(
       if (!allowedKeys.includes(key)) return fail("invalid_args", "Unsupported key action.");
       const target = el || focusedElementInDocument(document) || document.body;
       if (!target) return fail("locate", "No keyboard target found.");
+      if (target !== document.body && !visible(target)) return fail("visibility", "Keyboard target is not visible.");
       const blocked = blockedForAction(target, request.action);
       if (blocked) return fail("visibility", blocked);
       if (requiresEditableKey(key) && !editableForEditingKey(target)) {{

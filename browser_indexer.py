@@ -316,9 +316,12 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
     if (!element || seenElements.has(element) || elements.length >= maxElements) {{
       return;
     }}
+    if (!frameChainVisible(frameWindow)) {{
+      return;
+    }}
 
     const rect = element.getBoundingClientRect();
-    const visible = isVisibleInFrameChain(element, rect, frameWindow);
+    const visible = isVisible(element, rect, frameWindow);
     if (!includeInvisible && !visible) {{
       return;
     }}

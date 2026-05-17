@@ -482,12 +482,14 @@ def test_browser_action_script_wait_text_searches_same_origin_frames():
     result = run_browser_action_script(
         script,
         """
+const iframe = makeElement({ tag: "iframe" });
+const frameWindow = { ...window, frameElement: iframe, parent: window };
 const frameDocument = {
-  defaultView: window,
+  defaultView: frameWindow,
   body: { innerText: "Frame Ready", textContent: "Frame Ready" },
   querySelectorAll: (_selector) => [],
 };
-const iframe = { contentDocument: frameDocument };
+iframe.contentDocument = frameDocument;
 document.body.innerText = "Top Only";
 document.body.textContent = "Top Only";
 document.querySelectorAll = (selector) => selector === "iframe, frame" ? [iframe] : [];
@@ -512,13 +514,15 @@ def test_browser_action_script_wait_selector_searches_same_origin_frames():
     result = run_browser_action_script(
         script,
         """
+const iframe = makeElement({ tag: "iframe" });
+const frameWindow = { ...window, frameElement: iframe, parent: window };
 const frameDocument = {
-  defaultView: window,
+  defaultView: frameWindow,
   body: { innerText: "", textContent: "" },
   querySelector: (selector) => selector === ".inside-frame" ? makeElement({ tag: "button", text: "Inside" }) : null,
   querySelectorAll: (_selector) => [],
 };
-const iframe = { contentDocument: frameDocument };
+iframe.contentDocument = frameDocument;
 document.querySelector = (_selector) => null;
 document.querySelectorAll = (selector) => selector === "iframe, frame" ? [iframe] : [];
 """,
@@ -526,6 +530,70 @@ document.querySelectorAll = (selector) => selector === "iframe, frame" ? [iframe
 
     assert result["status"] == "success"
     assert result["result"] == "selector_found"
+
+
+def test_browser_action_script_wait_text_skips_hidden_same_origin_frames():
+    script = build_browser_action_script(
+        action="wait_text",
+        index=None,
+        text="Hidden Frame Ready",
+        value=None,
+        timeout=1,
+        state_token=None,
+        selector=None,
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+const iframe = makeElement({ tag: "iframe", visible: false });
+const frameWindow = { ...window, frameElement: iframe, parent: window };
+const frameDocument = {
+  defaultView: frameWindow,
+  body: { innerText: "Hidden Frame Ready", textContent: "Hidden Frame Ready" },
+  querySelectorAll: (_selector) => [],
+};
+iframe.contentDocument = frameDocument;
+document.body.innerText = "Top Only";
+document.body.textContent = "Top Only";
+document.querySelectorAll = (selector) => selector === "iframe, frame" ? [iframe] : [];
+""",
+    )
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "timeout"
+
+
+def test_browser_action_script_wait_selector_skips_hidden_same_origin_frames():
+    script = build_browser_action_script(
+        action="wait_selector",
+        index=None,
+        text=None,
+        value=None,
+        timeout=1,
+        state_token=None,
+        selector=".inside-hidden-frame",
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+const iframe = makeElement({ tag: "iframe", visible: false });
+const frameWindow = { ...window, frameElement: iframe, parent: window };
+const frameDocument = {
+  defaultView: frameWindow,
+  body: { innerText: "", textContent: "" },
+  querySelector: (selector) => selector === ".inside-hidden-frame" ? makeElement({ tag: "button", text: "Inside" }) : null,
+  querySelectorAll: (_selector) => [],
+};
+iframe.contentDocument = frameDocument;
+document.querySelector = (_selector) => null;
+document.querySelectorAll = (selector) => selector === "iframe, frame" ? [iframe] : [];
+""",
+    )
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "timeout"
 
 
 def test_supported_actions_includes_spa_waits():
@@ -1337,6 +1405,100 @@ window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [cached] };
 
     assert result["status"] == "failed"
     assert result["stage"] == "visibility"
+
+
+def test_browser_action_script_keys_without_index_rejects_hidden_frame_focus():
+    script = build_browser_action_script(
+        action="keys",
+        index=None,
+        text="Enter",
+        value=None,
+        timeout=1,
+        state_token=None,
+        selector=None,
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+const hiddenIframe = makeElement({ tag: "iframe", visible: false });
+const frameWindow = { ...window, frameElement: hiddenIframe, parent: window };
+const frameInput = makeElement({ tag: "input", type: "text", value: "" });
+const frameDocument = {
+  defaultView: frameWindow,
+  activeElement: frameInput,
+  body: null,
+  contains: (el) => Boolean(el && el.attached !== false && el.ownerDocument === frameDocument),
+  querySelector: (_selector) => null,
+  querySelectorAll: (_selector) => [],
+};
+frameDocument.body = makeElement({ tag: "body", ownerDocument: frameDocument });
+frameInput.ownerDocument = frameDocument;
+hiddenIframe.contentDocument = frameDocument;
+document.activeElement = hiddenIframe;
+global.__GA_TEST_PROBE__ = () => ({ frameEvents: frameInput.dispatched || [] });
+""",
+    )
+
+    probe = result["probe"]
+    result = result["result"]
+    assert result["status"] == "failed"
+    assert result["stage"] == "visibility"
+    assert probe["frameEvents"] == []
+
+
+def test_browser_action_script_keys_without_index_rejects_hidden_ancestor_frame_focus():
+    script = build_browser_action_script(
+        action="keys",
+        index=None,
+        text="Enter",
+        value=None,
+        timeout=1,
+        state_token=None,
+        selector=None,
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+const hiddenOuterIframe = makeElement({ tag: "iframe", visible: false });
+const outerWindow = { ...window, frameElement: hiddenOuterIframe, parent: window };
+const innerIframe = makeElement({ tag: "iframe" });
+const outerDocument = {
+  defaultView: outerWindow,
+  activeElement: innerIframe,
+  body: null,
+  contains: (el) => Boolean(el && el.attached !== false && el.ownerDocument === outerDocument),
+  querySelector: (_selector) => null,
+  querySelectorAll: (_selector) => [],
+};
+outerDocument.body = makeElement({ tag: "body", ownerDocument: outerDocument });
+innerIframe.ownerDocument = outerDocument;
+
+const innerWindow = { ...window, frameElement: innerIframe, parent: outerWindow };
+const frameInput = makeElement({ tag: "input", type: "text", value: "" });
+const innerDocument = {
+  defaultView: innerWindow,
+  activeElement: frameInput,
+  body: null,
+  contains: (el) => Boolean(el && el.attached !== false && el.ownerDocument === innerDocument),
+  querySelector: (_selector) => null,
+  querySelectorAll: (_selector) => [],
+};
+innerDocument.body = makeElement({ tag: "body", ownerDocument: innerDocument });
+frameInput.ownerDocument = innerDocument;
+hiddenOuterIframe.contentDocument = outerDocument;
+innerIframe.contentDocument = innerDocument;
+document.activeElement = hiddenOuterIframe;
+global.__GA_TEST_PROBE__ = () => ({ frameEvents: frameInput.dispatched || [] });
+""",
+    )
+
+    probe = result["probe"]
+    result = result["result"]
+    assert result["status"] == "failed"
+    assert result["stage"] == "visibility"
+    assert probe["frameEvents"] == []
 
 
 def test_browser_action_script_keys_rejects_contenteditable_editing_key():
