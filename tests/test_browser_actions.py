@@ -2703,6 +2703,20 @@ def test_run_action_wait_success_does_not_reset_repeated_failure_fuse():
     assert len(driver.calls) == 4
 
 
+def test_run_action_read_only_wait_success_does_not_add_recovery():
+    layer = BrowserActionLayer()
+    driver = FakeDriver(
+        [
+            {"data": {"status": "success", "action": "wait_text", "result": "text_found"}},
+        ]
+    )
+
+    result = layer.run_action(driver, action="wait_text", text="Ready")
+
+    assert result["status"] == "success"
+    assert "recovery" not in result
+
+
 def test_run_action_preflight_blocks_third_repeated_js_failure_before_execute():
     layer = BrowserActionLayer()
     layer._last_state = {

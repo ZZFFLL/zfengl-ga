@@ -184,6 +184,24 @@ def test_component_wait_returns_component_not_ready_on_timeout():
     assert result["recovery"]["next_args"]["max_results"] == 5
 
 
+def test_component_wait_recovery_preserves_switch_tab_id():
+    layer = FakeLayer()
+    layer.find_results = [{"status": "failed", "stage": "target_not_found", "recovery": {"code": "refresh_state_then_find"}}]
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(
+        None,
+        recipe="component_wait",
+        condition="options_visible",
+        target={"query": "研发部"},
+        timeout=0,
+        switch_tab_id="tab-b",
+    )
+
+    assert result["status"] == "failed"
+    assert result["recovery"]["next_args"]["switch_tab_id"] == "tab-b"
+
+
 def test_component_wait_polls_until_later_find_satisfies_condition():
     layer = FakeLayer()
     layer.find_results = [

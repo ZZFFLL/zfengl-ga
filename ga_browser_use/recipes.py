@@ -244,6 +244,7 @@ class BrowserRecipeRunner:
         target: dict[str, Any] | None,
         timeout: int,
         max_results: int,
+        switch_tab_id: str | None,
     ) -> dict[str, Any]:
         if condition not in SUPPORTED_CONDITIONS:
             return failed_result(None, "invalid_args", f"Unsupported browser recipe condition: {condition}")
@@ -307,6 +308,8 @@ class BrowserRecipeRunner:
         }
         if target:
             next_args["target"] = dict(target)
+        if switch_tab_id:
+            next_args["switch_tab_id"] = switch_tab_id
         result["recovery"]["next_args"] = next_args
         result["last_find"] = last_find
         result["steps"] = steps
@@ -324,6 +327,7 @@ class BrowserRecipeRunner:
         condition: str | None = None,
         timeout: int = 10,
         max_results: int = 5,
+        switch_tab_id: str | None = None,
         **_: Any,
     ) -> dict[str, Any]:
         recipe = str(recipe or "").strip()
@@ -352,4 +356,5 @@ class BrowserRecipeRunner:
             target=target,
             timeout=timeout,
             max_results=max_results,
+            switch_tab_id=switch_tab_id,
         )

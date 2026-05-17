@@ -1286,8 +1286,9 @@ class BrowserActionLayer:
         result = dict(raw)
         result.setdefault("tab_id", driver.default_session_id)
         raw_result = dict(result)
-        if result.get("status") == "success" and action in STATE_MUTATING_ACTIONS:
-            self._reset_failure_fuse()
+        if result.get("status") == "success":
+            if action in STATE_MUTATING_ACTIONS:
+                self._reset_failure_fuse()
         else:
             result = add_recovery(result, action=action, index=safe_index)
             result = self._record_failure(
