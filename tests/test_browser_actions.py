@@ -2785,7 +2785,49 @@ def test_run_action_visibility_failure_suggests_clickable_in_same_field():
     assert result["recovery"]["next_tool"] == "browser_find"
     assert result["recovery"]["next_args"] == {
         "query": "项目名称",
-        "control_kind": "button",
+        "control_kind": "custom_select",
+        "refresh": True,
+        "max_results": 5,
+    }
+
+
+def test_run_action_visibility_failure_for_generic_wrapper_does_not_force_button_control_kind():
+    layer = BrowserActionLayer()
+    layer._last_state = {
+        "tab_id": "7",
+        "state_token": "tok-1",
+        "url": "https://example.test/form",
+        "elements_by_index": {
+            8: {
+                "index": 8,
+                "text": "",
+                "stable_key": "wrapper#generic",
+                "selector_hint": "#generic-wrapper",
+                "control_kind": "wrapper",
+                "field_context": {"nearby_text": "目标字段", "row_label": "目标字段"},
+            }
+        },
+    }
+    driver = FakeDriver(
+        [
+            {
+                "data": {
+                    "status": "failed",
+                    "action": "click",
+                    "index": 8,
+                    "stage": "visibility",
+                    "error": "Element is not visible.",
+                }
+            }
+        ]
+    )
+
+    result = layer.run_action(driver, action="click", index=8)
+
+    assert result["stage"] == "visibility"
+    assert result["recovery"]["code"] == "find_clickable_in_same_field"
+    assert result["recovery"]["next_args"] == {
+        "query": "目标字段",
         "refresh": True,
         "max_results": 5,
     }

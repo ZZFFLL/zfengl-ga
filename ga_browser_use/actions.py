@@ -1103,6 +1103,10 @@ class BrowserActionLayer:
             return {"index": index}
         return {}
 
+    def _visibility_recovery_control_kind(self, target: dict[str, Any] | None) -> str:
+        control_kind = str((target or {}).get("control_kind") or "")
+        return control_kind if control_kind in {"button", "custom_select"} else ""
+
     def _augment_action_recovery(
         self,
         result: dict[str, Any],
@@ -1118,13 +1122,17 @@ class BrowserActionLayer:
         query = self._field_query_for_target(target)
         control_kind = str((target or {}).get("control_kind") or "")
         if action == "click" and updated.get("stage") == "visibility" and query:
+            next_args: dict[str, Any] = {"query": query, "refresh": True, "max_results": 5}
+            recovery_control_kind = self._visibility_recovery_control_kind(target)
+            if recovery_control_kind:
+                next_args["control_kind"] = recovery_control_kind
             recovery.update(
                 {
                     "code": "find_clickable_in_same_field",
                     "message": "The indexed wrapper is not clickable. Find a visible clickable control in the same field.",
                     "stop_retry": False,
                     "next_tool": "browser_find",
-                    "next_args": {"query": query, "control_kind": "button", "refresh": True, "max_results": 5},
+                    "next_args": next_args,
                 }
             )
         elif updated.get("stage") == "repeat_blocked":
