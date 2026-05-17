@@ -267,6 +267,7 @@ def test_build_browser_state_script_includes_metadata_helpers():
         "layerContextOf",
         "controlKindOf",
         "actionHintsOf",
+        "recipeHintOf",
     ]:
         assert f"const {helper} = " in script
 
@@ -275,8 +276,9 @@ def test_build_browser_state_script_includes_metadata_helpers():
         "attributes: attributesOf(element),",
         "validation: validationOf(element),",
         "stable_key: stableKeyOf(element, tag, role),",
-        "field_context: fieldContextOf(element),",
+        "field_context: fieldContext,",
         "table_context: tableContextOf(element),",
+        "recipe_hint: recipeHint,",
         "layer: layerContext.layer,",
         "layer_root_hint: layerContext.layer_root_hint,",
         "modal_rank: layerContext.modal_rank,",
@@ -554,6 +556,47 @@ document.querySelectorAll = (selector) => {
     assert element["field_context"]["field_container_hint"] == "td"
 
 
+def test_browser_state_script_emits_custom_select_recipe_hint_with_query_target():
+    script = build_browser_state_script(include_invisible=False, max_elements=10)
+
+    state = run_browser_state_script(
+        script,
+        """
+const table = makeElement({ tag: "table", attrs: { "aria-label": "Daily Form" } });
+const row = makeElement({ tag: "tr" });
+const labelCell = makeElement({ tag: "td", text: "工作类型" });
+const controlCell = makeElement({ tag: "td", text: "" });
+row.children = [labelCell, controlCell];
+table.querySelectorAll = (selector) => selector === "tr, [role='row']" ? [row] : [];
+const trigger = makeElement({
+  tag: "div",
+  role: "combobox",
+  text: "请选择",
+  attrs: { "aria-haspopup": "listbox" }
+});
+trigger.closest = (selector) => {
+  if (selector.includes("td")) return controlCell;
+  if (selector.includes("tr")) return row;
+  if (selector.includes("table")) return table;
+  return null;
+};
+document.querySelectorAll = (selector) => {
+  if (selector === "iframe, frame" || selector.startsWith("label[")) return [];
+  return [trigger];
+};
+""",
+    )
+
+    assert state["status"] == "success"
+    element = state["elements"][0]
+    assert element["control_kind"] == "custom_select"
+    assert element["recipe_hint"] == {
+        "recipe": "custom_select",
+        "target": {"query": "工作类型"},
+        "requires": ["option_text"],
+    }
+
+
 def test_browser_state_script_inherits_field_context_for_browser_search_button():
     script = build_browser_state_script(include_invisible=False, max_elements=10)
 
@@ -589,6 +632,7 @@ document.querySelectorAll = (selector) => {
     assert element["control_kind"] == "button"
     assert element["field_context"]["nearby_text"] == "项目名称"
     assert element["field_context"]["field_container_hint"] == "td"
+    assert element["recipe_hint"] == {}
 
 
 def test_browser_state_script_emits_generic_component_container_hint():
@@ -1178,6 +1222,7 @@ def test_normalize_state_result_fills_element_defaults():
         "stable_key": "",
         "field_context": {},
         "table_context": {},
+        "recipe_hint": {},
         "layer": "main",
         "layer_root_hint": "",
         "modal_rank": 0,
@@ -1199,6 +1244,7 @@ def test_normalize_state_result_fills_new_element_metadata_defaults():
     assert element["stable_key"] == ""
     assert element["field_context"] == {}
     assert element["table_context"] == {}
+    assert element["recipe_hint"] == {}
     assert element["layer"] == "main"
     assert element["layer_root_hint"] == ""
     assert element["modal_rank"] == 0

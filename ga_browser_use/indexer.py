@@ -446,6 +446,22 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
     return [];
   }};
 
+  const recipeHintOf = (element, controlKind, fieldContext) => {{
+    if (controlKind !== "custom_select") return {{}};
+    const query = [
+      fieldContext.row_label,
+      fieldContext.nearby_text,
+      fieldContext.previous_cell_text,
+      fieldContext.placeholder,
+    ].map(value => String(value || "").trim()).find(Boolean);
+    if (!query) return {{}};
+    return {{
+      recipe: "custom_select",
+      target: {{ query: boundedText(query) }},
+      requires: ["option_text"],
+    }};
+  }};
+
   const elements = [];
   const seenElements = new WeakSet();
   const addElement = (element, framePath, frameWindow) => {{
@@ -521,6 +537,8 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
     const role = element.getAttribute("role") || nativeRoleOf(element, tag, type);
     const controlKind = controlKindOf(element, tag, role, type);
     const layerContext = layerContextOf(element);
+    const fieldContext = fieldContextOf(element);
+    const recipeHint = recipeHintOf(element, controlKind, fieldContext);
     const rawValue = "value" in element ? element.value : "";
     const value = type.toLowerCase() === "password" && rawValue ? "[REDACTED]" : rawValue;
 
@@ -548,8 +566,9 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
       attributes: attributesOf(element),
       validation: validationOf(element),
       stable_key: stableKeyOf(element, tag, role),
-      field_context: fieldContextOf(element),
+      field_context: fieldContext,
       table_context: tableContextOf(element),
+      recipe_hint: recipeHint,
       layer: layerContext.layer,
       layer_root_hint: layerContext.layer_root_hint,
       modal_rank: layerContext.modal_rank,
@@ -633,6 +652,7 @@ def normalize_state_result(result):
         normalized.setdefault("stable_key", "")
         normalized.setdefault("field_context", {})
         normalized.setdefault("table_context", {})
+        normalized.setdefault("recipe_hint", {})
         normalized.setdefault("layer", "main")
         normalized.setdefault("layer_root_hint", "")
         normalized.setdefault("modal_rank", 0)
