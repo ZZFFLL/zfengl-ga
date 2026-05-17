@@ -11,6 +11,14 @@
 - 平级策略：`web_execute_js` 不是 browser_* 的上级或下级，browser_* 也不是万能浏览器代理。先判断任务形态和组件类型，再选择低层 JS/CDP 轨道或结构化 indexed-action 轨道；不要为了完成目标把任一工具强行扩成通用自动化层。两条轨道互补，不按固定优先级排序。
 - 记忆短句：web_execute_js 不是 browser_* 的上级或下级。
 
+## 结构化 browser_* 工具编排建议
+
+- `browser_state` 用于刷新索引和读取字段上下文；看到 `recipe_hint` 时，只表示该控件适合某个固定 recipe，不表示工具会自动执行 recipe。
+- `browser_find` 用于只读定位。优先提供真实语义条件，例如字段名、表格行列、字段 id/name；`role`、`control_kind`、`layer`、`frame_path` 只是过滤条件，不能单独作为定位。
+- `browser_action` 用于有界索引动作。失败时必须读取 `recovery`，不要对同一 index 反复执行同一动作。
+- `browser_recipe` 只用于固定场景：`custom_select`、`layer_select`、`table_locate`、`component_wait`。它不是通用表单规划器，遇到歧义会返回候选并停止。
+- 如果 `browser_find(refresh=true)` 后仍然 `target_not_found` 且 `recovery.stop_retry=true`，不要继续重复同一查询；改用更窄的字段/层级约束，或切换到平级的 `web_execute_js` 做低层探测。
+
 ## 四个工具的职责
 
 ### browser_state
