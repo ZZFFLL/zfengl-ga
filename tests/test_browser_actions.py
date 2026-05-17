@@ -2712,7 +2712,14 @@ def test_run_action_select_custom_control_recovery_includes_target_and_option():
         "tab_id": "7",
         "state_token": "tok-1",
         "elements_by_index": {
-            4: {"index": 4, "text": "所属部门", "labels": ["所属部门"], "stable_key": "combo#dept", "selector_hint": "#dept"}
+            4: {
+                "index": 4,
+                "text": "所属部门",
+                "labels": ["所属部门"],
+                "stable_key": "combo#dept",
+                "selector_hint": "#dept",
+                "field_context": {"nearby_text": "所属部门", "row_label": "所属部门"},
+            }
         },
     }
     driver = FakeDriver(
@@ -2735,8 +2742,81 @@ def test_run_action_select_custom_control_recovery_includes_target_and_option():
     assert result["recovery"]["next_tool"] == "browser_recipe"
     assert result["recovery"]["next_args"] == {
         "recipe": "custom_select",
-        "target": {"index": 4},
+        "target": {"query": "所属部门"},
         "option_text": "研发部",
+    }
+
+
+def test_run_action_visibility_failure_suggests_clickable_in_same_field():
+    layer = BrowserActionLayer()
+    layer._last_state = {
+        "tab_id": "7",
+        "state_token": "tok-1",
+        "url": "https://example.test/form",
+        "elements_by_index": {
+            9: {
+                "index": 9,
+                "text": "",
+                "stable_key": "div#project",
+                "selector_hint": "#project",
+                "control_kind": "custom_select",
+                "field_context": {"nearby_text": "项目名称", "row_label": "项目名称"},
+            }
+        },
+    }
+    driver = FakeDriver(
+        [
+            {
+                "data": {
+                    "status": "failed",
+                    "action": "click",
+                    "index": 9,
+                    "stage": "visibility",
+                    "error": "Element is not visible.",
+                }
+            }
+        ]
+    )
+
+    result = layer.run_action(driver, action="click", index=9)
+
+    assert result["stage"] == "visibility"
+    assert result["recovery"]["code"] == "find_clickable_in_same_field"
+    assert result["recovery"]["next_tool"] == "browser_find"
+    assert result["recovery"]["next_args"] == {
+        "query": "项目名称",
+        "control_kind": "button",
+        "refresh": True,
+        "max_results": 5,
+    }
+
+
+def test_run_action_custom_select_click_success_returns_next_action_hint():
+    layer = BrowserActionLayer()
+    layer._last_state = {
+        "tab_id": "7",
+        "state_token": "tok-1",
+        "url": "https://example.test/form",
+        "elements_by_index": {
+            4: {
+                "index": 4,
+                "text": "工作类型",
+                "stable_key": "combo#work",
+                "selector_hint": "#work",
+                "control_kind": "custom_select",
+                "field_context": {"nearby_text": "工作类型", "row_label": "工作类型"},
+            }
+        },
+    }
+    driver = FakeDriver([{"data": {"status": "success", "action": "click", "index": 4, "page_changed": True}}])
+
+    result = layer.run_action(driver, action="click", index=4)
+
+    assert result["status"] == "success"
+    assert result["next_action_hint"] == {
+        "message": "Custom select may have opened an overlay. Refresh browser_state or run browser_recipe custom_select with option_text.",
+        "next_tools": ["browser_state", "browser_recipe"],
+        "recipe": {"recipe": "custom_select", "target": {"query": "工作类型"}},
     }
 
 

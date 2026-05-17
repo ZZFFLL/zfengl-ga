@@ -1077,6 +1077,69 @@ class BrowserActionLayer:
             or result.get("page_changed") is True
         )
 
+    def _field_query_for_target(self, target: dict[str, Any] | None) -> str:
+        if not isinstance(target, dict):
+            return ""
+        field_context = target.get("field_context") or {}
+        if isinstance(field_context, dict):
+            for key in ("row_label", "nearby_text", "previous_cell_text"):
+                value = str(field_context.get(key) or "").strip()
+                if value:
+                    return value
+        for key in ("text", "value"):
+            value = str(target.get(key) or "").strip()
+            if value:
+                return value
+        labels = target.get("labels") or []
+        if isinstance(labels, list) and labels:
+            return str(labels[0] or "").strip()
+        return ""
+
+    def _recipe_target_for_cached_element(self, index: int | None, target: dict[str, Any] | None) -> dict[str, Any]:
+        query = self._field_query_for_target(target)
+        if query:
+            return {"query": query}
+        if index is not None:
+            return {"index": index}
+        return {}
+
+    def _augment_action_recovery(
+        self,
+        result: dict[str, Any],
+        *,
+        action: str,
+        index: int | None,
+        target: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        if result.get("status") != "failed":
+            return result
+        updated = dict(result)
+        recovery = dict(updated.get("recovery") or {})
+        query = self._field_query_for_target(target)
+        control_kind = str((target or {}).get("control_kind") or "")
+        if action == "click" and updated.get("stage") == "visibility" and query:
+            recovery.update(
+                {
+                    "code": "find_clickable_in_same_field",
+                    "message": "The indexed wrapper is not clickable. Find a visible clickable control in the same field.",
+                    "stop_retry": False,
+                    "next_tool": "browser_find",
+                    "next_args": {"query": query, "control_kind": "button", "refresh": True, "max_results": 5},
+                }
+            )
+        elif updated.get("stage") == "repeat_blocked":
+            alternatives = []
+            if query:
+                alternatives.append({"tool": "browser_find", "args": {"query": query, "refresh": True, "max_results": 5}})
+            if control_kind == "custom_select" and query:
+                alternatives.append({"tool": "browser_recipe", "args": {"recipe": "custom_select", "target": {"query": query}}})
+            alternatives.append(
+                {"tool": "web_execute_js", "reason": "Use low-level probing if structured metadata is insufficient."}
+            )
+            recovery["alternatives"] = alternatives
+        updated["recovery"] = recovery
+        return updated
+
     def get_state(
         self,
         driver: Any,
@@ -1326,6 +1389,12 @@ class BrowserActionLayer:
             target=cached_element if isinstance(cached_element, dict) else None,
         )
         if preflight_blocked:
+            preflight_blocked = self._augment_action_recovery(
+                preflight_blocked,
+                action=action,
+                index=safe_index,
+                target=cached_element if isinstance(cached_element, dict) else None,
+            )
             if self._should_clear_state_after_action(action, preflight_blocked):
                 self._last_state = None
             return preflight_blocked
@@ -1372,17 +1441,39 @@ class BrowserActionLayer:
         result.setdefault("tab_id", driver.default_session_id)
         raw_result = dict(result)
         if result.get("status") == "success":
+            if action == "click" and isinstance(cached_element, dict) and cached_element.get("control_kind") == "custom_select":
+                recipe_target = self._recipe_target_for_cached_element(safe_index, cached_element)
+                if recipe_target:
+                    result = dict(result)
+                    result["next_action_hint"] = {
+                        "message": "Custom select may have opened an overlay. Refresh browser_state or run browser_recipe custom_select with option_text.",
+                        "next_tools": ["browser_state", "browser_recipe"],
+                        "recipe": {"recipe": "custom_select", "target": recipe_target},
+                    }
             if action in STATE_MUTATING_ACTIONS:
                 self._reset_failure_fuse()
         else:
             if action == "select" and result.get("stage") == "control_unsupported" and safe_index is not None:
                 option_text = str(value if value is not None else text or "").strip()
-                if option_text:
-                    result["suggested_args"] = {"target": {"index": safe_index}, "option_text": option_text}
+                recipe_target = self._recipe_target_for_cached_element(safe_index, cached_element)
+                if option_text and recipe_target:
+                    result["suggested_args"] = {"target": recipe_target, "option_text": option_text}
             result = add_recovery(result, action=action, index=safe_index)
+            result = self._augment_action_recovery(
+                result,
+                action=action,
+                index=safe_index,
+                target=cached_element if isinstance(cached_element, dict) else None,
+            )
             result = self._record_failure(
                 result,
                 driver=driver,
+                target=cached_element if isinstance(cached_element, dict) else None,
+            )
+            result = self._augment_action_recovery(
+                result,
+                action=action,
+                index=safe_index,
                 target=cached_element if isinstance(cached_element, dict) else None,
             )
 
