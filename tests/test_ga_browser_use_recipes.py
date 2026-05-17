@@ -11,7 +11,9 @@ class FakeLayer:
 
     def find(self, driver, **kwargs):
         self.calls.append(("find", kwargs))
-        return self.find_results.pop(0)
+        if len(self.find_results) > 1:
+            return self.find_results.pop(0)
+        return self.find_results[0]
 
     def run_action(self, driver, **kwargs):
         self.calls.append(("action", kwargs))
@@ -139,11 +141,28 @@ def test_component_wait_returns_component_not_ready_on_timeout():
     layer.find_results = [{"status": "failed", "stage": "target_not_found", "recovery": {"code": "refresh_state_then_find"}}]
     runner = BrowserRecipeRunner(layer)
 
-    result = runner.run(None, recipe="component_wait", condition="options_visible", target={"query": "研发部"}, timeout=1)
+    result = runner.run(None, recipe="component_wait", condition="options_visible", target={"query": "研发部"}, timeout=0)
 
     assert result["status"] == "failed"
     assert result["stage"] == "component_not_ready"
     assert result["recovery"]["code"] == "wait_component"
+
+
+def test_component_wait_polls_until_later_find_satisfies_condition():
+    layer = FakeLayer()
+    layer.find_results = [
+        {"status": "failed", "stage": "target_not_found", "recovery": {"code": "refresh_state_then_find"}},
+        {"status": "success", "matches": [{"index": 3, "element": {"index": 3}}], "ambiguous": False},
+    ]
+    runner = BrowserRecipeRunner(layer)
+    runner._component_wait_poll_interval = 0
+
+    result = runner.run(None, recipe="component_wait", condition="options_visible", target={"query": "研发部"}, timeout=1)
+
+    assert result["status"] == "success"
+    assert result["condition"] == "options_visible"
+    assert result["match"]["index"] == 3
+    assert [call[0] for call in layer.calls] == ["state", "find", "state", "find"]
 
 
 def test_component_wait_layer_closed_does_not_treat_state_missing_as_success():
@@ -151,7 +170,7 @@ def test_component_wait_layer_closed_does_not_treat_state_missing_as_success():
     layer.find_results = [{"status": "failed", "stage": "state_missing", "recovery": {"code": "refresh_state"}}]
     runner = BrowserRecipeRunner(layer)
 
-    result = runner.run(None, recipe="component_wait", condition="layer_closed", target={"query": "弹层"}, timeout=1)
+    result = runner.run(None, recipe="component_wait", condition="layer_closed", target={"query": "弹层"}, timeout=0)
 
     assert result["status"] == "failed"
     assert result["stage"] == "component_not_ready"
@@ -163,7 +182,7 @@ def test_component_wait_layer_closed_succeeds_on_target_not_found():
     layer.find_results = [{"status": "failed", "stage": "target_not_found", "recovery": {"code": "refresh_state_then_find"}}]
     runner = BrowserRecipeRunner(layer)
 
-    result = runner.run(None, recipe="component_wait", condition="layer_closed", target={"query": "弹层"}, timeout=1)
+    result = runner.run(None, recipe="component_wait", condition="layer_closed", target={"query": "弹层"}, timeout=0)
 
     assert result["status"] == "success"
     assert result["condition"] == "layer_closed"
@@ -176,7 +195,7 @@ def test_component_wait_layer_closed_requires_no_match():
     ]
     runner = BrowserRecipeRunner(layer)
 
-    result = runner.run(None, recipe="component_wait", condition="layer_closed", target={"query": "弹层"}, timeout=1)
+    result = runner.run(None, recipe="component_wait", condition="layer_closed", target={"query": "弹层"}, timeout=0)
 
     assert result["status"] == "failed"
     assert result["stage"] == "component_not_ready"
@@ -189,7 +208,7 @@ def test_component_wait_element_enabled_rejects_disabled_match():
     ]
     runner = BrowserRecipeRunner(layer)
 
-    result = runner.run(None, recipe="component_wait", condition="element_enabled", target={"query": "提交"}, timeout=1)
+    result = runner.run(None, recipe="component_wait", condition="element_enabled", target={"query": "提交"}, timeout=0)
 
     assert result["status"] == "failed"
     assert result["stage"] == "component_not_ready"

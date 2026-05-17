@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from ga_browser_use.results import failed_result
@@ -12,6 +13,7 @@ SUPPORTED_CONDITIONS = {"layer_open", "layer_closed", "options_visible", "field_
 class BrowserRecipeRunner:
     def __init__(self, layer: Any) -> None:
         self.layer = layer
+        self._component_wait_poll_interval = 0.2
 
     @staticmethod
     def _prefer_overlay_match(find_result: dict[str, Any], fallback: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -196,41 +198,52 @@ class BrowserRecipeRunner:
         if condition not in SUPPORTED_CONDITIONS:
             return failed_result(None, "invalid_args", f"Unsupported browser recipe condition: {condition}")
 
-        find_result, match = self._find_one(driver, recipe="component_wait", target=target, max_results=max_results)
-        steps = [{"tool": "browser_find", **find_result}]
-        if find_result.get("status") != "success":
-            if condition in {"layer_closed", "not_busy"} and find_result.get("stage") == "target_not_found":
+        deadline = time.monotonic() + max(0, timeout)
+        poll_interval = max(0, float(self._component_wait_poll_interval))
+        steps: list[dict[str, Any]] = []
+        last_find: dict[str, Any] | None = None
+
+        while True:
+            state = self.layer.get_state(driver, max_elements=120)
+            steps.append({"tool": "browser_state", "status": state.get("status")})
+
+            find_result, match = self._find_one(driver, recipe="component_wait", target=target, max_results=max_results)
+            last_find = find_result
+            steps.append({"tool": "browser_find", **find_result})
+            if find_result.get("status") != "success":
+                if condition in {"layer_closed", "not_busy"} and find_result.get("stage") == "target_not_found":
+                    return {
+                        "status": "success",
+                        "recipe": "component_wait",
+                        "condition": condition,
+                        "match": None,
+                        "steps": steps,
+                        "recovery": None,
+                    }
+                if find_result.get("stage") == "ambiguous_target":
+                    find_result["recipe"] = "component_wait"
+                    return self._with_steps(find_result, steps)
+            elif self._component_condition_met(condition, match):
                 return {
                     "status": "success",
                     "recipe": "component_wait",
                     "condition": condition,
-                    "match": None,
+                    "match": match,
                     "steps": steps,
                     "recovery": None,
                 }
-            result = failed_result(None, "component_not_ready", f"Timed out waiting for component condition: {condition}")
-            result["recipe"] = "component_wait"
-            result["recovery"]["code"] = "wait_component"
-            result["recovery"]["next_tool"] = "browser_recipe"
-            result["recovery"]["next_args"] = {"recipe": "component_wait", "condition": condition, "timeout": timeout}
-            result["last_find"] = find_result
-            result["steps"] = steps
-            return result
-        if self._component_condition_met(condition, match):
-            return {
-                "status": "success",
-                "recipe": "component_wait",
-                "condition": condition,
-                "match": match,
-                "steps": steps,
-                "recovery": None,
-            }
+
+            now = time.monotonic()
+            if now >= deadline:
+                break
+            time.sleep(min(poll_interval, deadline - now))
+
         result = failed_result(None, "component_not_ready", f"Timed out waiting for component condition: {condition}")
         result["recipe"] = "component_wait"
         result["recovery"]["code"] = "wait_component"
         result["recovery"]["next_tool"] = "browser_recipe"
         result["recovery"]["next_args"] = {"recipe": "component_wait", "condition": condition, "timeout": timeout}
-        result["last_find"] = find_result
+        result["last_find"] = last_find
         result["steps"] = steps
         return result
 

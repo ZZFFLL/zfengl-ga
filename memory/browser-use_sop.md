@@ -78,13 +78,13 @@
 - `custom_select`：AntD/React 自定义下拉，走 trigger -> state -> option -> click。
 - `layer_select`：弹窗、抽屉、popover 中选择人员/项目/文档等通用选择流程。
 - `table_locate`：按 `row_text` + `column_text` 定位表格中的 indexed 目标。
-- `component_wait`：检查 layer/options/field/enabled/not_busy 等组件条件。
+- `component_wait`：在 timeout 内按 state/find 做有界轮询，等待 layer/options/field/enabled/not_busy 等组件条件。
 
 规则：
 - recipe 返回 `ambiguous_target` 时不要强行点击，必须补充更具体条件。
 - recipe 返回的 `steps` 是诊断依据，失败后先读最后一个失败 step。
 - `table_locate` 只定位，不做通用表格编辑。
-- `component_wait` 是一次性组件条件检查，不是轮询等待，也不等于业务成功保证。
+- `component_wait` 是有界组件条件等待：每轮刷新 state 后 find，直到条件满足或 timeout；它不等于业务成功保证。
 - 跨域 iframe、文件上传、截图、CDP 坐标、私有组件 API 仍走 `tmwebdriver_sop`。
 
 ## 基本编排原则
@@ -180,7 +180,7 @@ SPA 页面没有稳定文本或 selector 时，再按页面形态选有界等待
 
 等待动作只表示“等条件出现/消失”，不做结果验证；不要给 `wait_*` 传 `verify`。
 
-`component_wait` 只检查当前 state 下的组件条件；如果组件还在加载，先用 `wait_not_busy` / `wait_dom_stable` / `wait_text` / `wait_selector` 稳定页面，再用 `component_wait` 验证条件。
+`component_wait` 会在 timeout 内刷新 state 并重复 find，适合等待组件条件短时间变化；如果页面整体仍在加载，先用 `wait_not_busy` / `wait_dom_stable` / `wait_text` / `wait_selector` 稳定页面，再用 `component_wait` 验证条件。
 
 `wait_index` 只适合等待刚刚通过 `browser_state` 得到的那个 indexed 元素变可见。它不是通用搜索工具。
 
@@ -401,7 +401,7 @@ SPA 页面没有稳定文本或 selector 时，再按页面形态选有界等待
 - `browser_recipe` 只支持 `custom_select`、`layer_select`、`table_locate`、`component_wait` 四类有界 recipe；不接受自由文本流程，也不会变成自动浏览器代理。
 - `custom_select` / `layer_select` 内部按 `browser_find` -> `click` -> `browser_state` -> `browser_find` -> `click` 编排；`layer_select` 只有传入 `confirm_text` 才会点击确认按钮。
 - `table_locate` 只调用 `browser_find` 定位候选，要求至少提供 `row_text`、`column_text` 或 `header_text` 之一；它不负责分页、虚拟滚动、单元格写入或提交。
-- `component_wait` 当前是一次性组件条件检查型 recipe：通过 `browser_find` 判断 `layer_open`、`layer_closed`、`options_visible`、`field_value`、`element_enabled`、`not_busy`，不是轮询等待、网络空闲等待，也不是业务完成判断。
+- `component_wait` 当前是有界组件条件等待型 recipe：在 timeout 内按 `browser_state` -> `browser_find` 轮询判断 `layer_open`、`layer_closed`、`options_visible`、`field_value`、`element_enabled`、`not_busy`，不是网络空闲等待，也不是业务完成判断。
 - 工具失败时会返回结构化结果：`status=failed`，并带 `stage`、`error`；部分场景会额外带 `hint` / `suggested_args`。
 - 新失败结果优先带 `recovery`；`recovery.stop_retry=true` 或 `stage=repeat_blocked` 时必须停止重复同一动作，改用 `browser_find` / `browser_recipe` 或低层路径。
 
@@ -450,7 +450,7 @@ SPA 页面没有稳定文本或 selector 时，再按页面形态选有界等待
 - `browser_find` 不会扩大 `browser_state` 的底层可见范围；隐藏父/祖先 iframe、跨域 iframe、未被索引的 Shadow DOM 内容仍找不到。
 - `browser_recipe` 依赖 `browser_find` 和 indexed action；如果目标元素没有被 state 索引，recipe 也不会 magically 操作它。
 - `custom_select` / `layer_select` 不处理搜索型下拉里的输入过滤、慢速选项渲染、虚拟滚动加载、分页选择或树节点展开；这类需要先稳定页面、刷新 state/find，必要时拆解为低层步骤。
-- `component_wait` 只检查当前可定位条件；如果页面仍在加载，先用 `wait_not_busy` / `wait_dom_stable` / `wait_text` / `wait_selector`，再用 recipe 检查组件条件。
+- `component_wait` 只轮询可定位的组件条件，timeout 会限制总等待时间；如果页面仍在加载，先用 `wait_not_busy` / `wait_dom_stable` / `wait_text` / `wait_selector`，再用 recipe 检查组件条件。
 - 后台标签页、页面节流、复杂加载状态仍受 Chrome 行为影响；必要时按 `tmwebdriver_sop` 用 CDP `Page.bringToFront`。
 
 ### 何时切回 tmwebdriver_sop
@@ -483,7 +483,7 @@ SPA 页面没有稳定文本或 selector 时，再按页面形态选有界等待
 - 禁止忽略 `status=failed` 的 `stage`、`recovery`、`hint`、`suggested_args`。
 - 禁止在 `ambiguous=true` 时直接使用第一个候选 index。
 - 禁止在 `recovery.stop_retry=true` 或 `repeat_blocked` 后继续重复同一动作。
-- 禁止把 `component_wait` 当成会自动轮询到 `timeout` 的等待器；它当前只做条件检查。
+- 禁止把 `component_wait` 当成业务完成或无限等待器；它只在 `timeout` 内做 state/find 有界轮询。
 - 禁止把 `browser_recipe` 当成自由规划工具；它只支持四个固定 recipe。
 - 禁止遇到复杂自定义组件时无脑重复 click；先按 recovery/recipe 处理，仍失败再读 `tmwebdriver_sop`。
 
