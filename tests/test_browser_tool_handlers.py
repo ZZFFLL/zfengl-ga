@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import ga
 from ga import GenericAgentHandler
+from ga_browser_use.actions import BrowserActionLayer
 
 
 def run_generator(gen):
@@ -212,3 +213,43 @@ def test_do_browser_find_formats_execution_output(monkeypatch):
 
     assert "Browser find result:" in "".join(chunks)
     assert json.loads(outcome.data)["matches"][0]["index"] == 2
+
+
+def test_browser_find_refreshes_when_cached_tab_differs():
+    class FakeDriver:
+        default_session_id = "tab-b"
+
+        def __init__(self):
+            self.execute_js_calls = 0
+
+        def get_all_sessions(self):
+            return [{"id": "tab-b"}]
+
+        def execute_js(self, script, timeout=10):
+            self.execute_js_calls += 1
+            return {
+                "status": "success",
+                "tab_id": "tab-b",
+                "state_token": "tok-b",
+                "elements": [
+                    {"index": 2, "text": "new", "labels": [], "visible": True, "disabled": False},
+                ],
+            }
+
+    layer = BrowserActionLayer()
+    layer._last_state = {
+        "tab_id": "tab-a",
+        "state": {
+            "status": "success",
+            "tab_id": "tab-a",
+            "elements": [{"index": 1, "text": "old", "labels": [], "visible": True, "disabled": False}],
+        },
+        "elements_by_index": {},
+        "state_token": "tok",
+    }
+    driver = FakeDriver()
+
+    result = layer.find(driver, query="new", switch_tab_id="tab-b", refresh=False)
+
+    assert result["matches"][0]["index"] == 2
+    assert driver.execute_js_calls == 1

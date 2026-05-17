@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from ga_browser_use.finder import find_in_state
+from ga_browser_use.finder import find_in_state, safe_max_results
 from ga_browser_use.indexer import build_browser_state_script, normalize_state_result
 from ga_browser_use.results import FailureFuse, add_recovery, failed_result as structured_failed_result
 
@@ -1094,12 +1094,17 @@ class BrowserActionLayer:
         include_invisible: bool = False,
         switch_tab_id: str | None = None,
     ) -> dict[str, Any]:
-        if refresh or not self._last_state:
+        limit = safe_max_results(max_results)
+        requested_tab_id = str(switch_tab_id or getattr(driver, "default_session_id", "") or "")
+        cached_tab_id = str((self._last_state or {}).get("tab_id") or "")
+        if switch_tab_id:
+            driver.default_session_id = str(switch_tab_id)
+        if refresh or not self._last_state or (requested_tab_id and cached_tab_id != requested_tab_id):
             state = self.get_state(
                 driver,
                 switch_tab_id=switch_tab_id,
                 include_invisible=include_invisible,
-                max_elements=max(120, max_results),
+                max_elements=max(120, limit),
             )
         else:
             state = self._last_state.get("state") or {}
@@ -1111,7 +1116,7 @@ class BrowserActionLayer:
             layer=layer,
             frame_path=frame_path,
             table=table,
-            max_results=max_results,
+            max_results=limit,
         )
 
     def run_action(

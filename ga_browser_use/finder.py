@@ -14,6 +14,14 @@ def _contains(haystack: Any, needle: Any) -> bool:
     return bool(needle_text and needle_text in _norm(haystack))
 
 
+def safe_max_results(value: Any) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = 5
+    return max(1, min(parsed, 20))
+
+
 def _text_parts(element: dict[str, Any]) -> list[str]:
     parts = [element.get("text"), element.get("value")]
     parts.extend(element.get("labels") or [])
@@ -139,13 +147,24 @@ def find_in_state(
             }
         )
     matches.sort(key=lambda item: item["score"], reverse=True)
-    limit = max(1, min(int(max_results or 5), 20))
+    limit = safe_max_results(max_results)
     matches = matches[:limit]
     if not matches:
         result = failed_result(None, "target_not_found", "No browser element matched the requested criteria.")
         result["recovery"]["code"] = "refresh_state_then_find"
         result["recovery"]["next_tool"] = "browser_find"
-        result["recovery"]["next_args"] = {"refresh": True, "query": query_text, "max_results": limit}
+        next_args = {"refresh": True, "query": query_text, "max_results": limit}
+        if role:
+            next_args["role"] = role
+        if control_kind:
+            next_args["control_kind"] = control_kind
+        if layer:
+            next_args["layer"] = layer
+        if frame_path is not None:
+            next_args["frame_path"] = frame_path
+        if table:
+            next_args["table"] = table
+        result["recovery"]["next_args"] = next_args
         return result
     ambiguous = len(matches) > 1 and abs(matches[0]["score"] - matches[1]["score"]) <= 0.05
     return {"status": "success", "matches": matches, "ambiguous": ambiguous, "recovery": None}

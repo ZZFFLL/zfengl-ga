@@ -72,3 +72,44 @@ def test_find_returns_target_not_found_with_recovery():
     assert result["status"] == "failed"
     assert result["stage"] == "target_not_found"
     assert result["recovery"]["code"] == "refresh_state_then_find"
+
+
+def test_find_safely_parses_string_max_results():
+    state = make_state(
+        [
+            {"index": 1, "text": "保存", "labels": [], "visible": True, "disabled": False},
+            {"index": 2, "text": "保存", "labels": [], "visible": True, "disabled": False},
+        ]
+    )
+    result = find_in_state(state, query="保存", max_results="1")
+    assert len(result["matches"]) == 1
+
+
+def test_find_invalid_max_results_falls_back_to_default():
+    state = make_state([{"index": 1, "text": "保存", "labels": [], "visible": True, "disabled": False}])
+    result = find_in_state(state, query="保存", max_results="bad")
+    assert result["status"] == "success"
+    assert result["matches"][0]["index"] == 1
+
+
+def test_find_target_not_found_recovery_preserves_constraints():
+    state = make_state([{"index": 1, "text": "保存", "labels": [], "visible": True, "disabled": False}])
+    table = {"row_text": "张三", "column_text": "审批意见"}
+    result = find_in_state(
+        state,
+        query="不存在",
+        role="textbox",
+        control_kind="contenteditable",
+        layer="modal",
+        frame_path=[0],
+        table=table,
+        max_results=5,
+    )
+    next_args = result["recovery"]["next_args"]
+    assert next_args["refresh"] is True
+    assert next_args["query"] == "不存在"
+    assert next_args["role"] == "textbox"
+    assert next_args["control_kind"] == "contenteditable"
+    assert next_args["layer"] == "modal"
+    assert next_args["frame_path"] == [0]
+    assert next_args["table"] == table
