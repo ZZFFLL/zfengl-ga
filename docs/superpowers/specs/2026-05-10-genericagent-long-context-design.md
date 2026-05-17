@@ -17,8 +17,8 @@ GenericAgent already has a layered runtime design:
 - `agent_loop.py` defines the low-level loop default as `max_turns=40`.
 - `agentmain.py` is the normal runtime entry and calls `agent_runner_loop(..., max_turns=240)`.
 - `ga.py` raises the handler limit to `480` when Plan mode starts.
-- Non-Plan mode starts `ask_user` pressure at turn `120`, then repeats every `60` turns.
-- Plan mode starts `ask_user` pressure at turn `180`, then repeats every `90` turns.
+- Non-Plan mode soft-reviews at turn `120`, then starts hard `ask_user` pressure at turn `180` and repeats every `60` turns.
+- Plan mode soft-reviews at turn `180`, then starts hard `ask_user` pressure at turn `270` and repeats every `90` turns.
 - Plan mode reads the plan file every `10` turns starting at turn `10`.
 - `ga.py` injects `[WORKING MEMORY]` each turn and keeps the latest `80` normal-mode history lines or latest `120` Plan-mode history lines directly visible.
 - Older `history_info` lines are folded into `<earlier_context>` through the existing `_fold_earlier(...)` mechanism.
@@ -32,10 +32,11 @@ Use a low-intrusion update to existing thresholds and prompts.
 ### Non-Plan Mode
 
 - Keep normal runtime `max_turns` at `240`.
-- Move the long-run `ask_user` pressure point to turn `120`, then repeat every `60` turns.
+- Add a soft long-run review at turn `120`.
+- Move the hard long-run `ask_user` pressure point to turn `180`, then repeat every `60` turns.
 - Add a periodic checkpoint reminder every `30` turns.
-- Use a normal-mode stall warning every `10` turns.
-- Refresh global memory every `20` turns.
+- Use a normal-mode stall warning every `30` turns.
+- Refresh global memory every `30` turns.
 
 The checkpoint reminder should not stop execution by itself. It should tell the Agent to update `update_working_checkpoint` when useful, focusing on:
 
@@ -48,8 +49,10 @@ The checkpoint reminder should not stop execution by itself. It should tell the 
 ### Plan Mode
 
 - Keep Plan mode `max_turns` at `480`.
-- Move the Plan-mode `ask_user` pressure point to turn `180`, then repeat every `90` turns.
+- Add a soft Plan-mode review at turn `180`.
+- Move the hard Plan-mode `ask_user` pressure point to turn `270`, then repeat every `90` turns.
 - Add a periodic checkpoint reminder every `30` turns.
+- Add a Plan-mode stall warning every `60` turns.
 - Read the plan file every `10` turns starting at turn `10`.
 
 The Plan checkpoint should complement the plan file, not replace it. It should preserve the user's extra constraints and execution facts that may not be represented in the plan checklist.
@@ -82,7 +85,8 @@ Do not change the global `context_win` default in `llmcore.py` in this pass.
 For normal long tasks:
 
 - The Agent can continue beyond the old 140-turn ceiling.
-- Around turn 120, the Agent is pushed to ask the user if progress is uncertain; after that, the pressure repeats every 60 turns.
+- Around turn 120, the Agent is asked to review state and checkpoint, but it should continue if the path is clear.
+- Around turn 180, the Agent is pushed to ask the user if progress is uncertain; after that, hard pressure repeats every 60 turns.
 - Every 30 turns, the Agent is reminded to checkpoint durable task state.
 - Recent user details survive longer in direct working memory.
 
@@ -90,7 +94,8 @@ For Plan-mode tasks:
 
 - The Agent can continue up to 480 turns.
 - It rereads the plan every 10 turns starting at turn 10.
-- Around turn 180, it is pushed to report progress and ask whether to continue; after that, the pressure repeats every 90 turns.
+- Around turn 180, it reviews plan progress and checkpoints without stopping solely because of turn count.
+- Around turn 270, it is pushed to report progress and ask whether to continue; after that, hard pressure repeats every 90 turns.
 - Every 30 turns, it is reminded to checkpoint user constraints and verified execution state.
 
 ## Files Expected To Change
@@ -118,13 +123,16 @@ Minimum verification after implementation:
 - Run existing relevant backend tests that cover `ask_user` and `update_working_checkpoint` display/projection if touched indirectly.
 - Manually inspect source to confirm:
   - normal mode uses `240`
-  - normal `ask_user` pressure starts at `120` and repeats every `60`
+  - normal soft review is `120`
+  - normal hard `ask_user` pressure starts at `180` and repeats every `60`
   - normal checkpoint interval is `30`
-  - normal stall warning interval is `10`
-  - normal global memory refresh interval is `20`
+  - normal stall warning interval is `30`
+  - normal global memory refresh interval is `30`
   - Plan mode uses `480`
-  - Plan `ask_user` pressure starts at `180` and repeats every `90`
+  - Plan soft review is `180`
+  - Plan hard `ask_user` pressure starts at `270` and repeats every `90`
   - Plan checkpoint interval is `30`
+  - Plan stall warning interval is `60`
   - Plan hint starts at `10` and repeats every `10`
   - normal working-memory window is `80`
   - Plan working-memory window is `120`

@@ -11,15 +11,18 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 
 NORMAL_WORKING_MEMORY_WINDOW = 80
 PLAN_WORKING_MEMORY_WINDOW = 120
-NORMAL_LONG_RUN_ASK_USER_TURN = 120
+NORMAL_SOFT_REVIEW_TURN = 120
+NORMAL_LONG_RUN_ASK_USER_TURN = 180
 NORMAL_ASK_USER_REPEAT_EVERY = 60
 NORMAL_CHECKPOINT_EVERY = 30
-NORMAL_STALL_WARNING_EVERY = 10
-NORMAL_GLOBAL_MEMORY_EVERY = 20
+NORMAL_STALL_WARNING_EVERY = 30
+NORMAL_GLOBAL_MEMORY_EVERY = 30
 PLAN_MAX_TURNS = 480
-PLAN_LONG_RUN_ASK_USER_TURN = 180
+PLAN_SOFT_REVIEW_TURN = 180
+PLAN_LONG_RUN_ASK_USER_TURN = 270
 PLAN_ASK_USER_REPEAT_EVERY = 90
 PLAN_CHECKPOINT_EVERY = 30
+PLAN_STALL_WARNING_EVERY = 60
 PLAN_HINT_START_TURN = 10
 PLAN_HINT_EVERY = 10
 
@@ -569,6 +572,24 @@ class GenericAgentHandler(BaseHandler):
             "\n\n[DANGER] 长程任务checkpoint：如有新增信息，请调用 update_working_checkpoint "
             "保存用户补充的关键约束、当前目标、已验证结论、失败路径和下一步。"
         )
+
+    def _soft_review_prompt(self, turn, plan=False):
+        if plan:
+            return (
+                f"\n\n[REVIEW] Plan模式已运行 {turn} 轮，已进入长程任务中段。请先判断是否仍有清晰可执行路径："
+                "如果路径清晰且正在推进，调用 update_working_checkpoint 保存计划之外的关键约束、已验证状态和下一步，然后继续执行；"
+                "如果连续受阻、关键约束不清、或需要用户决策，再调用 ask_user。不要仅因为轮次达到该值就停止。"
+            )
+        return (
+            f"\n\n[REVIEW] 已连续执行第 {turn} 轮，已进入长程任务中段。请先判断是否仍有清晰可执行路径："
+            "如果路径清晰且正在推进，调用 update_working_checkpoint 保存当前目标、已验证结论和下一步，然后继续执行；"
+            "如果连续受阻、关键约束不清、或需要用户决策，再调用 ask_user。不要仅因为轮次达到该值就停止。"
+        )
+
+    def _stall_warning_prompt(self, turn, plan=False):
+        if plan:
+            return f"\n\n[REVIEW] Plan模式已连续执行第 {turn} 轮。防止计划空转：若当前计划步骤没有实质推进，请重读计划和相关SOP，切换策略或更新checkpoint。"
+        return f"\n\n[REVIEW] 已连续执行第 {turn} 轮。防止无效重试：若无有效进展，请切换策略；如有关键上下文变化，可调用 update_working_checkpoint 保存。"
     
     def turn_end_callback(self, response, tool_calls, tool_results, turn, next_prompt, exit_reason):
         _c = re.sub(r'```.*?```|<thinking>.*?</thinking>', '', response.content, flags=re.DOTALL)
@@ -591,8 +612,10 @@ class GenericAgentHandler(BaseHandler):
             and (turn - NORMAL_LONG_RUN_ASK_USER_TURN) % NORMAL_ASK_USER_REPEAT_EVERY == 0
         ):
             next_prompt += f"\n\n[DANGER] 已连续执行第 {turn} 轮。必须总结情况进行ask_user，不允许继续重试。"
+        elif not _plan and turn == NORMAL_SOFT_REVIEW_TURN:
+            next_prompt += self._soft_review_prompt(turn, plan=False)
         elif not _plan and turn % NORMAL_STALL_WARNING_EVERY == 0:
-            next_prompt += f"\n\n[DANGER] 已连续执行第 {turn} 轮。禁止无效重试。若无有效进展，必须切换策略：1. 探测物理边界 2. 请求用户协助。如有需要，可调用 update_working_checkpoint 保存关键上下文。"
+            next_prompt += self._stall_warning_prompt(turn, plan=False)
         if not _plan and turn % NORMAL_GLOBAL_MEMORY_EVERY == 0: next_prompt += get_global_memory()
         if not _plan and turn % NORMAL_CHECKPOINT_EVERY == 0:
             next_prompt += self._checkpoint_prompt(plan=False)
@@ -607,6 +630,10 @@ class GenericAgentHandler(BaseHandler):
             and (turn - PLAN_LONG_RUN_ASK_USER_TURN) % PLAN_ASK_USER_REPEAT_EVERY == 0
         ):
             next_prompt += f"\n\n[DANGER] Plan模式已运行 {turn} 轮，已达上限。必须 ask_user 汇报进度并确认是否继续。"
+        elif _plan and turn == PLAN_SOFT_REVIEW_TURN:
+            next_prompt += self._soft_review_prompt(turn, plan=True)
+        elif _plan and turn % PLAN_STALL_WARNING_EVERY == 0:
+            next_prompt += self._stall_warning_prompt(turn, plan=True)
 
         injkeyinfo = consume_file(self.parent.task_dir, '_keyinfo')
         injprompt = consume_file(self.parent.task_dir, '_intervene')

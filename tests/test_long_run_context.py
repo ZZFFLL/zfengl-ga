@@ -25,19 +25,23 @@ class LongRunContextTests(unittest.TestCase):
             {},
         )
 
-    def test_normal_mode_long_run_ask_user_pressure_starts_at_turn_120_then_repeats_every_60(self):
+    def test_normal_mode_soft_reviews_at_120_and_asks_user_from_180(self):
         handler = self.make_handler()
 
         prompt_70 = self.callback_prompt(handler, 70)
         prompt_120 = self.callback_prompt(handler, 120)
         prompt_121 = self.callback_prompt(handler, 121)
         prompt_180 = self.callback_prompt(handler, 180)
+        prompt_181 = self.callback_prompt(handler, 181)
 
         self.assertNotIn("必须总结情况进行ask_user", prompt_70)
         self.assertIn("已连续执行第 120 轮", prompt_120)
-        self.assertIn("必须总结情况进行ask_user", prompt_120)
+        self.assertIn("不要仅因为轮次达到该值就停止", prompt_120)
+        self.assertNotIn("必须总结情况进行ask_user", prompt_120)
         self.assertNotIn("必须总结情况进行ask_user", prompt_121)
         self.assertIn("已连续执行第 180 轮", prompt_180)
+        self.assertIn("必须总结情况进行ask_user", prompt_180)
+        self.assertNotIn("必须总结情况进行ask_user", prompt_181)
 
     def test_normal_mode_max_turns_is_240(self):
         self.assertEqual(agentmain.NORMAL_RUNNER_MAX_TURNS, 240)
@@ -51,15 +55,18 @@ class LongRunContextTests(unittest.TestCase):
         self.assertIn("用户补充的关键约束", prompt)
         self.assertIn("已验证结论", prompt)
 
-    def test_normal_mode_global_memory_refresh_is_not_masked_by_stall_warning(self):
+    def test_normal_mode_stall_warning_and_global_memory_refresh_every_30_turns(self):
         handler = self.make_handler()
 
-        prompt = self.callback_prompt(handler, 20)
+        prompt_20 = self.callback_prompt(handler, 20)
+        prompt_30 = self.callback_prompt(handler, 30)
 
-        self.assertIn("[Memory]", prompt)
-        self.assertIn("禁止无效重试", prompt)
+        self.assertNotIn("[Memory]", prompt_20)
+        self.assertNotIn("禁止无效重试", prompt_20)
+        self.assertIn("[Memory]", prompt_30)
+        self.assertIn("防止无效重试", prompt_30)
 
-    def test_plan_mode_max_turns_and_ask_user_pressure_starts_at_180_then_repeats_every_90(self):
+    def test_plan_mode_soft_reviews_at_180_and_asks_user_from_270(self):
         handler = self.make_handler()
         handler.enter_plan_mode("./temp/plan.md")
 
@@ -67,13 +74,27 @@ class LongRunContextTests(unittest.TestCase):
         prompt_180 = self.callback_prompt(handler, 180, plan=True)
         prompt_181 = self.callback_prompt(handler, 181, plan=True)
         prompt_270 = self.callback_prompt(handler, 270, plan=True)
+        prompt_271 = self.callback_prompt(handler, 271, plan=True)
 
         self.assertEqual(handler.max_turns, 480)
         self.assertNotIn("必须 ask_user 汇报进度并确认是否继续", prompt_100)
         self.assertIn("Plan模式已运行 180 轮", prompt_180)
-        self.assertIn("必须 ask_user 汇报进度并确认是否继续", prompt_180)
+        self.assertIn("不要仅因为轮次达到该值就停止", prompt_180)
+        self.assertNotIn("必须 ask_user 汇报进度并确认是否继续", prompt_180)
         self.assertNotIn("必须 ask_user 汇报进度并确认是否继续", prompt_181)
         self.assertIn("Plan模式已运行 270 轮", prompt_270)
+        self.assertIn("必须 ask_user 汇报进度并确认是否继续", prompt_270)
+        self.assertNotIn("必须 ask_user 汇报进度并确认是否继续", prompt_271)
+
+    def test_plan_mode_stall_warning_every_60_turns(self):
+        handler = self.make_handler()
+        handler.enter_plan_mode("./temp/plan.md")
+
+        prompt_30 = self.callback_prompt(handler, 30, plan=True)
+        prompt_60 = self.callback_prompt(handler, 60, plan=True)
+
+        self.assertNotIn("防止计划空转", prompt_30)
+        self.assertIn("防止计划空转", prompt_60)
 
     def test_plan_mode_checkpoint_every_30_turns(self):
         handler = self.make_handler()
