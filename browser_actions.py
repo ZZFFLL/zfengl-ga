@@ -147,15 +147,43 @@ def build_browser_action_script(
     }}
   }}
 
+  function elementTreeVisible(el, elementWindow, requireBox) {{
+    if (!el) return false;
+    if (typeof el.checkVisibility === "function") {{
+      try {{
+        if (!el.checkVisibility({{ checkOpacity: true, checkVisibilityCSS: true }})) return false;
+      }} catch (e) {{
+        try {{
+          if (!el.checkVisibility()) return false;
+        }} catch (ignored) {{
+          // Fall back to computed style checks below.
+        }}
+      }}
+    }}
+    let current = el;
+    while (current && current.nodeType !== 9) {{
+      const currentWindow = (current.ownerDocument && current.ownerDocument.defaultView) || elementWindow || window;
+      const style = currentWindow.getComputedStyle(current);
+      if (
+        current.hidden ||
+        style.display === "none" ||
+        style.visibility === "hidden" ||
+        style.visibility === "collapse" ||
+        style.contentVisibility === "hidden" ||
+        Number(style.opacity || "1") <= 0
+      ) {{
+        return false;
+      }}
+      current = current.parentElement;
+    }}
+    if (!requireBox) return true;
+    const rect = el.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  }}
+
   function frameElementVisible(frame) {{
     const parentWindow = (frame && frame.ownerDocument && frame.ownerDocument.defaultView) || window;
-    const style = parentWindow.getComputedStyle(frame);
-    const rect = frame.getBoundingClientRect();
-    return style.display !== "none" &&
-      style.visibility !== "hidden" &&
-      Number(style.opacity || "1") !== 0 &&
-      rect.width > 0 &&
-      rect.height > 0;
+    return elementTreeVisible(frame, parentWindow, true);
   }}
 
   function ownerFrameChainVisible(el) {{
@@ -220,13 +248,7 @@ def build_browser_action_script(
   function visible(el) {{
     if (!ownerDocumentContains(el)) return false;
     if (!ownerFrameChainVisible(el)) return false;
-    const style = ownerWindowOf(el).getComputedStyle(el);
-    const rect = el.getBoundingClientRect();
-    return style.display !== "none" &&
-      style.visibility !== "hidden" &&
-      Number(style.opacity || "1") !== 0 &&
-      rect.width > 0 &&
-      rect.height > 0;
+    return elementTreeVisible(el, ownerWindowOf(el), true);
   }}
 
   function cachedElement(allowDetached) {{
@@ -242,10 +264,10 @@ def build_browser_action_script(
     }}
     if (!elementDocumentContains(el)) {{
       if (allowDetached === "keep") return {{ el }};
-      if (allowDetached) return {{ el: null }};
+      if (allowDetached) return {{ el: null, cachedDocument: el.ownerDocument || null }};
       return {{ error: fail("stale_index", "Element index is stale. Run browser_state again.") }};
     }}
-    return {{ el }};
+    return {{ el, cachedDocument: el.ownerDocument || null }};
   }}
 
   async function waitFor(predicate, stage, message) {{
@@ -706,10 +728,12 @@ def build_browser_action_script(
     }}
 
     let el = null;
+    let cachedDocument = null;
     if (request.index !== null && request.index !== undefined) {{
-      const located = cachedElement(request.action === "wait_enabled" ? "keep" : request.action === "wait_index" && Boolean(request.selector));
+      const located = cachedElement(request.action === "wait_index" && Boolean(request.selector));
       if (located.error) return located.error;
       el = located.el;
+      cachedDocument = located.cachedDocument || (el && el.ownerDocument) || null;
     }}
 
     if (request.action === "wait_index") {{
@@ -722,6 +746,9 @@ def build_browser_action_script(
           const resolvedDocument = documentForFramePath(request.frame_path || []);
           if (resolvedDocument.error) return resolvedDocument;
           const queryDocument = resolvedDocument.document;
+          if (cachedDocument && queryDocument !== cachedDocument) {{
+            return {{ error: fail("stale_index", "Element index is stale. Run browser_state again.") }};
+          }}
           const target = queryDocument.querySelector(request.selector);
           if (!matchesSelectorIdentity(target)) return null;
           return visible(target) ? target : null;

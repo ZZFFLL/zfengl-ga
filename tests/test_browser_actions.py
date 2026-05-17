@@ -842,6 +842,130 @@ def test_build_browser_action_script_contains_spa_wait_branches():
     assert 'request.action === "wait_enabled"' in script
 
 
+def test_browser_action_script_wait_dom_stable_runtime_succeeds_after_stable_ticks():
+    script = build_browser_action_script(
+        action="wait_dom_stable",
+        index=None,
+        text=None,
+        value=None,
+        timeout=1,
+        state_token=None,
+        selector=None,
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+let queryCalls = 0;
+document.body.innerText = "Ready";
+document.body.textContent = "Ready";
+document.querySelectorAll = (selector) => {
+  queryCalls += 1;
+  if (selector === "*") return [document.body];
+  return [];
+};
+global.__GA_TEST_PROBE__ = () => ({ queryCalls });
+""",
+    )
+
+    probe = result["probe"]
+    result = result["result"]
+    assert result["status"] == "success"
+    assert result["result"] == "dom_stable"
+    assert probe["queryCalls"] >= 4
+
+
+def test_browser_action_script_wait_not_busy_runtime_waits_until_spinner_disappears():
+    script = build_browser_action_script(
+        action="wait_not_busy",
+        index=None,
+        text=None,
+        value=None,
+        timeout=1,
+        state_token=None,
+        selector=".spinner",
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+const spinner = makeElement({ tag: "div" });
+let queryCalls = 0;
+document.querySelectorAll = (selector) => {
+  if (selector === "iframe, frame") return [];
+  if (selector === ".spinner") {
+    queryCalls += 1;
+    return queryCalls === 1 ? [spinner] : [];
+  }
+  return [];
+};
+global.__GA_TEST_PROBE__ = () => ({ queryCalls });
+""",
+    )
+
+    probe = result["probe"]
+    result = result["result"]
+    assert result["status"] == "success"
+    assert result["result"] == "not_busy"
+    assert probe["queryCalls"] == 2
+
+
+def test_browser_action_script_wait_enabled_runtime_waits_for_enabled_cached_element():
+    script = build_browser_action_script(
+        action="wait_enabled",
+        index=1,
+        text=None,
+        value=None,
+        timeout=1,
+        state_token="tok-2",
+        selector=None,
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+const input = makeElement({ tag: "input", type: "text", value: "" });
+let disabledChecks = 0;
+Object.defineProperty(input, "disabled", {
+  get() {
+    disabledChecks += 1;
+    return disabledChecks === 1;
+  }
+});
+window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [input] };
+global.__GA_TEST_PROBE__ = () => ({ disabledChecks });
+""",
+    )
+
+    probe = result["probe"]
+    result = result["result"]
+    assert result["status"] == "success"
+    assert result["result"] == "element_enabled"
+    assert probe["disabledChecks"] == 2
+
+
+def test_browser_action_script_wait_route_runtime_matches_pathname():
+    script = build_browser_action_script(
+        action="wait_route",
+        index=None,
+        text=None,
+        value="/dashboard",
+        timeout=1,
+        state_token=None,
+        selector=None,
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+global.location = { href: "https://example.test/app/dashboard?tab=1", pathname: "/app/dashboard" };
+""",
+    )
+
+    assert result["status"] == "success"
+    assert result["result"] == "route_matched"
+
+
 def test_build_browser_action_script_rejects_unsupported_keys():
     script = build_browser_action_script(
         action="keys",
@@ -1092,6 +1216,29 @@ window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [null] };
     assert result["stage"] == "stale_index"
 
 
+def test_browser_action_script_wait_enabled_detached_cached_node_returns_stale_index():
+    script = build_browser_action_script(
+        action="wait_enabled",
+        index=1,
+        text=None,
+        value=None,
+        timeout=1,
+        state_token="tok-2",
+        selector=None,
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+const input = makeElement({ tag: "input", type: "text", attached: false });
+window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [input] };
+""",
+    )
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "stale_index"
+
+
 def test_browser_action_script_wait_index_fallback_succeeds_with_tag_only_hint():
     script = build_browser_action_script(
         action="wait_index",
@@ -1321,6 +1468,60 @@ document.querySelectorAll = (selector) => selector === "iframe, frame" ? [replac
     assert result["stage"] in {"stale_index", "frame_unavailable"}
 
 
+def test_browser_action_script_wait_index_rejects_attached_iframe_replaced_document():
+    script = build_browser_action_script(
+        action="wait_index",
+        index=1,
+        text=None,
+        value=None,
+        timeout=1,
+        state_token="tok-2",
+        selector='button[name="go"]',
+        selector_tag="button",
+        selector_role="button",
+        selector_text="Go",
+        frame_path=[0],
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+const iframe = makeElement({ tag: "iframe", ownerDocument: document });
+const originalFrameWindow = { ...window, frameElement: iframe, parent: window };
+const originalFrameDocument = {
+  defaultView: originalFrameWindow,
+  contains: (_el) => false,
+  querySelector: (_selector) => null,
+  querySelectorAll: (_selector) => [],
+};
+const replacementFrameDocument = {
+  defaultView: window,
+  contains: (el) => Boolean(el && el.attached !== false && el.ownerDocument === replacementFrameDocument),
+  querySelector: (_selector) => makeElement({
+    tag: "button",
+    role: "button",
+    text: "Go",
+    visible: true,
+    ownerDocument: replacementFrameDocument
+  }),
+  querySelectorAll: (_selector) => [],
+};
+iframe.contentDocument = replacementFrameDocument;
+const cached = makeElement({
+  tag: "button",
+  role: "button",
+  text: "Go",
+  ownerDocument: originalFrameDocument
+});
+window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [cached] };
+document.querySelectorAll = (selector) => selector === "iframe, frame" ? [iframe] : [];
+""",
+    )
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "stale_index"
+
+
 def test_browser_action_script_rejects_nested_target_with_null_ancestor_window():
     script = build_browser_action_script(
         action="click",
@@ -1398,6 +1599,45 @@ const cached = makeElement({
   role: "button",
   text: "Go",
   ownerDocument: childFrameDocument
+});
+window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [cached] };
+""",
+    )
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "visibility"
+
+
+def test_browser_action_script_rejects_target_inside_iframe_hidden_by_ancestor_container():
+    script = build_browser_action_script(
+        action="click",
+        index=1,
+        text=None,
+        value=None,
+        timeout=1,
+        state_token="tok-2",
+        selector=None,
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+const hiddenContainer = makeElement({ tag: "div" });
+hiddenContainer._style = { display: "none", visibility: "visible", opacity: "1" };
+const iframe = makeElement({ tag: "iframe" });
+iframe.parentElement = hiddenContainer;
+const frameWindow = { ...window, frameElement: iframe, parent: window };
+const frameDocument = {
+  defaultView: frameWindow,
+  contains: (el) => Boolean(el && el.attached !== false && el.ownerDocument === frameDocument),
+  querySelector: (_selector) => null,
+  querySelectorAll: (_selector) => [],
+};
+const cached = makeElement({
+  tag: "button",
+  role: "button",
+  text: "Go",
+  ownerDocument: frameDocument
 });
 window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [cached] };
 """,

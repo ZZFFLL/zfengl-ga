@@ -61,14 +61,49 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
     return tag;
   }};
 
+  const elementTreeVisible = (element, elementWindow) => {{
+    if (!element) {{
+      return false;
+    }}
+    if (typeof element.checkVisibility === "function") {{
+      try {{
+        if (!element.checkVisibility({{ checkOpacity: true, checkVisibilityCSS: true }})) {{
+          return false;
+        }}
+      }} catch (error) {{
+        try {{
+          if (!element.checkVisibility()) {{
+            return false;
+          }}
+        }} catch (ignored) {{
+          // Fall back to computed style checks below.
+        }}
+      }}
+    }}
+    let current = element;
+    while (current && current.nodeType !== 9) {{
+      const currentWindow = (current.ownerDocument && current.ownerDocument.defaultView) || elementWindow || window;
+      const style = currentWindow.getComputedStyle(current);
+      if (
+        current.hidden ||
+        style.visibility === "hidden" ||
+        style.visibility === "collapse" ||
+        style.display === "none" ||
+        style.contentVisibility === "hidden" ||
+        Number(style.opacity || "1") <= 0
+      ) {{
+        return false;
+      }}
+      current = current.parentElement;
+    }}
+    return true;
+  }};
+
   const isVisible = (element, rect, elementWindow) => {{
-    const style = elementWindow.getComputedStyle(element);
     return Boolean(
       rect.width &&
       rect.height &&
-      style.visibility !== "hidden" &&
-      style.display !== "none" &&
-      Number(style.opacity || "1") > 0
+      elementTreeVisible(element, elementWindow)
     );
   }};
 

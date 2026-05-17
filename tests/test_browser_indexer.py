@@ -288,6 +288,68 @@ document.querySelectorAll = (selector) => selector === "iframe, frame" ? [editor
     assert element["action_hints"] == ["input", "verify_field_value", "keys_after_input"]
 
 
+def test_browser_state_script_emits_rich_field_and_table_metadata():
+    script = build_browser_state_script(include_invisible=False, max_elements=10)
+
+    state = run_browser_state_script(
+        script,
+        """
+const label = makeElement({ tag: "label", text: "Project Name" });
+const legend = makeElement({ tag: "legend", text: "Project Fields" });
+const fieldset = makeElement({ tag: "fieldset" });
+fieldset.querySelector = (selector) => selector === "legend" ? legend : null;
+const form = makeElement({ tag: "form", id: "project-form", name: "projectForm" });
+const cell = makeElement({ tag: "td", text: "Project Name" });
+const row = makeElement({ tag: "tr" });
+const table = makeElement({ tag: "table", attrs: { "aria-label": "Projects" } });
+row.children = [cell];
+table.querySelectorAll = (selector) => selector === "tr, [role='row']" ? [row] : [];
+const input = makeElement({
+  tag: "input",
+  id: "project",
+  name: "project",
+  type: "text",
+  value: "Apollo",
+  required: true,
+  attrs: {
+    "aria-invalid": "true",
+    "data-testid": "project-input",
+    "placeholder": "Project"
+  }
+});
+input.closest = (selector) => {
+  if (selector === "form") return form;
+  if (selector === "fieldset") return fieldset;
+  if (selector.includes("td")) return cell;
+  if (selector.includes("tr")) return row;
+  if (selector.includes("table")) return table;
+  return null;
+};
+document.querySelectorAll = (selector) => {
+  if (selector === "iframe, frame") return [];
+  if (selector.startsWith("label[")) return [label];
+  return [input];
+};
+""",
+    )
+
+    assert state["status"] == "success"
+    assert len(state["elements"]) == 1
+    element = state["elements"][0]
+    assert element["labels"] == ["Project Name", "Project"]
+    assert element["attributes"]["data_testid"] == "project-input"
+    assert element["validation"]["required"] is True
+    assert element["validation"]["invalid"] is True
+    assert element["stable_key"] == "input#project"
+    assert element["field_context"]["form_id"] == "project-form"
+    assert element["field_context"]["fieldset_legend"] == "Project Fields"
+    assert element["table_context"]["table_label"] == "Projects"
+    assert element["table_context"]["row_index"] == 1
+    assert element["table_context"]["column_index"] == 1
+    assert element["control_kind"] == "native_input"
+    assert element["action_hints"] == ["input", "verify_field_value", "keys_after_input"]
+
+
 def test_browser_state_script_omits_child_elements_when_parent_iframe_is_hidden():
     script = build_browser_state_script(include_invisible=False, max_elements=10)
 
@@ -359,6 +421,48 @@ const frameButton = makeElement({
 hiddenIframe.contentDocument = frameDocument;
 hiddenIframe.contentWindow = frameWindow;
 document.querySelectorAll = (selector) => selector === "iframe, frame" ? [hiddenIframe] : [];
+""",
+    )
+
+    assert state["status"] == "success"
+    assert state["elements"] == []
+
+
+def test_browser_state_script_omits_iframe_children_hidden_by_ancestor_container():
+    script = build_browser_state_script(include_invisible=True, max_elements=10)
+
+    state = run_browser_state_script(
+        script,
+        """
+const hiddenContainer = makeElement({ tag: "div", ownerDocument: document });
+hiddenContainer._style = { display: "none", visibility: "visible", opacity: "1" };
+const iframe = makeElement({ tag: "iframe", ownerDocument: document });
+iframe.parentElement = hiddenContainer;
+const frameWindow = {
+  ...window,
+  frameElement: iframe,
+  parent: window,
+  location: { href: "https://example.test/frame" },
+};
+const frameDocument = {
+  title: "Frame",
+  defaultView: frameWindow,
+  body: null,
+  getElementById: (_id) => null,
+  querySelectorAll: (selector) => {
+    if (selector === "iframe, frame" || selector.startsWith("label[")) return [];
+    return [frameButton];
+  },
+};
+frameDocument.body = makeElement({ tag: "body", ownerDocument: frameDocument });
+const frameButton = makeElement({
+  tag: "button",
+  text: "Inside",
+  ownerDocument: frameDocument,
+});
+iframe.contentDocument = frameDocument;
+iframe.contentWindow = frameWindow;
+document.querySelectorAll = (selector) => selector === "iframe, frame" ? [iframe] : [];
 """,
     )
 

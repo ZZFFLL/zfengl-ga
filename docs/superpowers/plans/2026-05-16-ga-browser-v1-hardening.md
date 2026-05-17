@@ -30,7 +30,7 @@
 - New wait actions return success or structured timeout: `wait_dom_stable`, `wait_not_busy`, `wait_enabled`, and `wait_route`.
 - Custom controls expose `control_kind` and `action_hints`; attempting native `select` on a custom control fails with `control_unsupported` and actionable hints.
 - Contenteditable and same-origin iframe editor bodies can be written through `input` and read back through verification.
-- SOP and checklist docs teach the simplified sequencing that avoids the `input -> state -> stale index -> keys` failure loop.
+- Browser-use SOP teaches the simplified sequencing that avoids the `input -> state -> stale index -> keys` failure loop.
 
 ## File Map
 
