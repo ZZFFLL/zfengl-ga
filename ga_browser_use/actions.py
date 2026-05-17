@@ -942,6 +942,25 @@ class BrowserActionLayer:
             return None
         return self._last_state.get("state_token")
 
+    @staticmethod
+    def _cached_state_options(last_state: dict[str, Any] | None) -> dict[str, Any]:
+        if not isinstance(last_state, dict):
+            return {}
+        options = last_state.get("state_options")
+        return options if isinstance(options, dict) else {}
+
+    def _cached_state_supports(self, *, include_invisible: bool, max_elements: int) -> bool:
+        options = self._cached_state_options(self._last_state)
+        cached_include_invisible = bool(options.get("include_invisible"))
+        cached_max_elements = options.get("max_elements")
+        try:
+            cached_max_elements_int = int(cached_max_elements)
+        except (TypeError, ValueError):
+            cached_max_elements_int = 120
+        if cached_include_invisible != include_invisible:
+            return False
+        return cached_max_elements_int >= max_elements
+
     def _ensure_driver(self, driver: Any) -> dict[str, Any] | None:
         if driver is None:
             return failed_result(None, "browser_unavailable", "没有可用的浏览器标签页。")
@@ -1076,6 +1095,10 @@ class BrowserActionLayer:
                 "elements_by_index": elements_by_index,
                 "state": state,
                 "url": state.get("url", ""),
+                "state_options": {
+                    "include_invisible": include_invisible,
+                    "max_elements": max_elements,
+                },
             }
         else:
             self._last_state = None
@@ -1118,12 +1141,19 @@ class BrowserActionLayer:
             if str(getattr(driver, "default_session_id", "") or "") != str(switch_tab_id):
                 self._reset_failure_fuse()
             driver.default_session_id = str(switch_tab_id)
-        if refresh or not self._last_state or (requested_tab_id and cached_tab_id != requested_tab_id):
+        requested_max_elements = max(120, limit)
+        should_refresh = refresh or not self._last_state or (requested_tab_id and cached_tab_id != requested_tab_id)
+        if not should_refresh and not self._cached_state_supports(
+            include_invisible=include_invisible,
+            max_elements=requested_max_elements,
+        ):
+            should_refresh = True
+        if should_refresh:
             state = self.get_state(
                 driver,
                 switch_tab_id=switch_tab_id,
                 include_invisible=include_invisible,
-                max_elements=max(120, limit),
+                max_elements=requested_max_elements,
             )
         else:
             state = self._last_state.get("state") or {}

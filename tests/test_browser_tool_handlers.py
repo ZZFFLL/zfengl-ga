@@ -255,6 +255,100 @@ def test_browser_find_refreshes_when_cached_tab_differs():
     assert driver.execute_js_calls == 1
 
 
+def test_browser_find_refreshes_visible_only_cache_for_invisible_lookup():
+    class FakeDriver:
+        default_session_id = "tab-a"
+
+        def __init__(self):
+            self.execute_js_calls = 0
+
+        def get_all_sessions(self):
+            return [{"id": "tab-a"}]
+
+        def execute_js(self, script, timeout=10):
+            self.execute_js_calls += 1
+            if self.execute_js_calls == 1:
+                return {
+                    "status": "success",
+                    "tab_id": "tab-a",
+                    "state_token": "tok-visible",
+                    "elements": [
+                        {"index": 1, "text": "可见按钮", "labels": [], "visible": True, "disabled": False},
+                    ],
+                }
+            return {
+                "status": "success",
+                "tab_id": "tab-a",
+                "state_token": "tok-all",
+                "elements": [
+                    {"index": 1, "text": "可见按钮", "labels": [], "visible": True, "disabled": False},
+                    {"index": 2, "text": "隐藏按钮", "labels": [], "visible": False, "disabled": False},
+                ],
+            }
+
+    layer = BrowserActionLayer()
+    driver = FakeDriver()
+
+    state = layer.get_state(driver, include_invisible=False, max_elements=120)
+
+    assert state["status"] == "success"
+    assert layer._last_state["state_options"] == {"include_invisible": False, "max_elements": 120}
+
+    hidden_result = layer.find(driver, query="隐藏按钮", include_invisible=True, refresh=False)
+
+    assert hidden_result["status"] == "success"
+    assert hidden_result["matches"][0]["index"] == 2
+    assert driver.execute_js_calls == 2
+    assert layer._last_state["state_options"]["include_invisible"] is True
+
+
+def test_browser_find_refreshes_invisible_cache_for_visible_only_lookup():
+    class FakeDriver:
+        default_session_id = "tab-a"
+
+        def __init__(self):
+            self.execute_js_calls = 0
+
+        def get_all_sessions(self):
+            return [{"id": "tab-a"}]
+
+        def execute_js(self, script, timeout=10):
+            self.execute_js_calls += 1
+            if self.execute_js_calls == 1:
+                return {
+                    "status": "success",
+                    "tab_id": "tab-a",
+                    "state_token": "tok-all",
+                    "elements": [
+                        {"index": 1, "text": "可见按钮", "labels": [], "visible": True, "disabled": False},
+                        {"index": 2, "text": "隐藏按钮", "labels": [], "visible": False, "disabled": False},
+                    ],
+                }
+            return {
+                "status": "success",
+                "tab_id": "tab-a",
+                "state_token": "tok-visible",
+                "elements": [
+                    {"index": 1, "text": "可见按钮", "labels": [], "visible": True, "disabled": False},
+                ],
+            }
+
+    layer = BrowserActionLayer()
+    driver = FakeDriver()
+
+    state = layer.get_state(driver, include_invisible=True, max_elements=120)
+
+    assert state["status"] == "success"
+    assert layer._last_state["state_options"] == {"include_invisible": True, "max_elements": 120}
+
+    hidden_result = layer.find(driver, query="隐藏按钮", include_invisible=False, refresh=False)
+
+    assert hidden_result["status"] == "failed"
+    assert hidden_result["stage"] == "target_not_found"
+    assert driver.execute_js_calls == 2
+    assert layer._last_state["state_options"]["include_invisible"] is False
+
+
 def test_browser_find_recovery_preserves_tab_and_visibility_context():
     class FakeDriver:
         default_session_id = "tab-a"

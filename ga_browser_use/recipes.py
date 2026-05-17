@@ -26,6 +26,10 @@ class BrowserRecipeRunner:
         self._component_wait_poll_interval = 0.2
 
     @staticmethod
+    def _tab_kwargs(switch_tab_id: str | None) -> dict[str, str]:
+        return {"switch_tab_id": switch_tab_id} if switch_tab_id else {}
+
+    @staticmethod
     def _target_index(target: dict[str, Any] | None) -> int | None:
         if not isinstance(target, dict) or target.get("index") is None:
             return None
@@ -88,6 +92,7 @@ class BrowserRecipeRunner:
         confirm_text: str | None = None,
         timeout: int | None = None,
         max_results: int | None = None,
+        switch_tab_id: str | None = None,
     ) -> dict[str, Any] | None:
         args: dict[str, Any] = {"recipe": recipe}
         if recipe in {"custom_select", "layer_select"}:
@@ -101,6 +106,8 @@ class BrowserRecipeRunner:
             args["timeout"] = timeout
         if max_results is not None:
             args["max_results"] = max_results
+        if switch_tab_id:
+            args["switch_tab_id"] = switch_tab_id
         return args
 
     @staticmethod
@@ -113,6 +120,7 @@ class BrowserRecipeRunner:
         confirm_text: str | None = None,
         timeout: int | None = None,
         max_results: int | None = None,
+        switch_tab_id: str | None = None,
     ) -> dict[str, Any]:
         if recipe == "layer_select":
             if stage == "ambiguous_target":
@@ -126,6 +134,7 @@ class BrowserRecipeRunner:
                 confirm_text=confirm_text,
                 timeout=timeout,
                 max_results=max_results,
+                switch_tab_id=switch_tab_id,
             )
             if next_args is None:
                 return {
@@ -151,6 +160,7 @@ class BrowserRecipeRunner:
                 option_text=option_text,
                 timeout=timeout,
                 max_results=max_results,
+                switch_tab_id=switch_tab_id,
             )
             if next_args is None:
                 return {
@@ -203,6 +213,7 @@ class BrowserRecipeRunner:
         recipe: str,
         target: dict[str, Any] | None = None,
         recovery_args: dict[str, Any] | None = None,
+        switch_tab_id: str | None = None,
         **kwargs: Any,
     ) -> tuple[dict[str, Any], dict[str, Any] | None]:
         target = target or {}
@@ -216,6 +227,7 @@ class BrowserRecipeRunner:
             driver,
             query=target.get("query") or kwargs.pop("query", None),
             max_results=kwargs.pop("max_results", 5),
+            **self._tab_kwargs(switch_tab_id),
             **kwargs,
         )
         if result.get("status") != "success":
@@ -298,8 +310,9 @@ class BrowserRecipeRunner:
         recovery_args: dict[str, Any],
         steps: list[dict[str, Any]],
         require_overlay_closed: bool,
+        switch_tab_id: str | None,
     ) -> dict[str, Any] | None:
-        state = self.layer.get_state(driver, max_elements=120)
+        state = self.layer.get_state(driver, max_elements=120, **self._tab_kwargs(switch_tab_id))
         steps.append({"tool": "browser_state", "status": state.get("status")})
         if state.get("status") != "success":
             state["recipe"] = recipe
@@ -313,6 +326,7 @@ class BrowserRecipeRunner:
                 target=target,
                 max_results=max_results,
                 recovery_args=recovery_args,
+                switch_tab_id=switch_tab_id,
             )
             steps.append({"tool": "browser_find", **target_find})
             if target_find.get("status") != "success":
@@ -340,6 +354,7 @@ class BrowserRecipeRunner:
             target={"query": option_text},
             max_results=max_results,
             recovery_args=recovery_args,
+            switch_tab_id=switch_tab_id,
         )
         steps.append({"tool": "browser_find", **option_find})
         if option_find.get("status") == "success" and self._prefer_overlay_match(option_find, option):
@@ -363,6 +378,7 @@ class BrowserRecipeRunner:
         timeout: int,
         max_results: int,
         require_overlay_closed: bool = True,
+        switch_tab_id: str | None = None,
     ) -> dict[str, Any]:
         target_error = self._validate_target("custom_select", target)
         if target_error:
@@ -374,6 +390,7 @@ class BrowserRecipeRunner:
             "option_text": option_text,
             "timeout": timeout,
             "max_results": max_results,
+            "switch_tab_id": switch_tab_id,
         }
         trigger_find, trigger = self._find_one(
             driver,
@@ -381,19 +398,26 @@ class BrowserRecipeRunner:
             target=target,
             max_results=max_results,
             recovery_args=recovery_args,
+            switch_tab_id=switch_tab_id,
         )
         steps.append({"tool": "browser_find", **trigger_find})
         if not trigger:
             return self._with_steps(trigger_find, steps)
 
         trigger_index = trigger["index"]
-        click_trigger = self.layer.run_action(driver, action="click", index=trigger_index, timeout=timeout)
+        click_trigger = self.layer.run_action(
+            driver,
+            action="click",
+            index=trigger_index,
+            timeout=timeout,
+            **self._tab_kwargs(switch_tab_id),
+        )
         steps.append({"tool": "browser_action", **click_trigger})
         if click_trigger.get("status") != "success":
             click_trigger["recipe"] = "custom_select"
             return self._with_steps(click_trigger, steps)
 
-        state = self.layer.get_state(driver, max_elements=120)
+        state = self.layer.get_state(driver, max_elements=120, **self._tab_kwargs(switch_tab_id))
         steps.append({"tool": "browser_state", "status": state.get("status")})
 
         option_find, option = self._find_one(
@@ -402,6 +426,7 @@ class BrowserRecipeRunner:
             target={"query": option_text},
             max_results=max_results,
             recovery_args=recovery_args,
+            switch_tab_id=switch_tab_id,
         )
         option = self._prefer_overlay_match(option_find, option)
         steps.append({"tool": "browser_find", **option_find})
@@ -416,7 +441,13 @@ class BrowserRecipeRunner:
             return self._with_steps(option_find, steps)
 
         option_index = option["index"]
-        click_option = self.layer.run_action(driver, action="click", index=option_index, timeout=timeout)
+        click_option = self.layer.run_action(
+            driver,
+            action="click",
+            index=option_index,
+            timeout=timeout,
+            **self._tab_kwargs(switch_tab_id),
+        )
         steps.append({"tool": "browser_action", **click_option})
         if click_option.get("status") != "success":
             click_option["recipe"] = "custom_select"
@@ -431,6 +462,7 @@ class BrowserRecipeRunner:
             recovery_args=recovery_args,
             steps=steps,
             require_overlay_closed=require_overlay_closed,
+            switch_tab_id=switch_tab_id,
         )
         if verification:
             return verification
@@ -445,6 +477,7 @@ class BrowserRecipeRunner:
         confirm_text: str | None,
         timeout: int,
         max_results: int,
+        switch_tab_id: str | None = None,
     ) -> dict[str, Any]:
         target_error = self._validate_target("layer_select", target)
         if target_error:
@@ -457,6 +490,7 @@ class BrowserRecipeRunner:
             timeout=timeout,
             max_results=max_results,
             require_overlay_closed=not bool(confirm_text),
+            switch_tab_id=switch_tab_id,
         )
         result["recipe"] = "layer_select"
         if result.get("status") != "success":
@@ -470,6 +504,7 @@ class BrowserRecipeRunner:
                     confirm_text=confirm_text,
                     timeout=timeout,
                     max_results=max_results,
+                    switch_tab_id=switch_tab_id,
                 )
             return result
 
@@ -480,6 +515,7 @@ class BrowserRecipeRunner:
                 "confirm_text": confirm_text,
                 "timeout": timeout,
                 "max_results": max_results,
+                "switch_tab_id": switch_tab_id,
             }
             confirm_find, confirm = self._find_one(
                 driver,
@@ -487,6 +523,7 @@ class BrowserRecipeRunner:
                 target={"query": confirm_text},
                 max_results=max_results,
                 recovery_args=recovery_args,
+                switch_tab_id=switch_tab_id,
             )
             confirm = self._prefer_overlay_match(confirm_find, confirm)
             result["steps"].append({"tool": "browser_find", **confirm_find})
@@ -501,19 +538,32 @@ class BrowserRecipeRunner:
                 else:
                     confirm_find["recipe"] = "layer_select"
                 return self._with_steps(confirm_find, result["steps"])
-            confirm_click = self.layer.run_action(driver, action="click", index=confirm["index"], timeout=timeout)
+            confirm_click = self.layer.run_action(
+                driver,
+                action="click",
+                index=confirm["index"],
+                timeout=timeout,
+                **self._tab_kwargs(switch_tab_id),
+            )
             result["steps"].append({"tool": "browser_action", **confirm_click})
             if confirm_click.get("status") != "success":
                 confirm_click["recipe"] = "layer_select"
                 return self._with_steps(confirm_click, result["steps"])
         return result
 
-    def _table_locate(self, driver: Any, *, table: dict[str, Any] | None, max_results: int) -> dict[str, Any]:
+    def _table_locate(
+        self,
+        driver: Any,
+        *,
+        table: dict[str, Any] | None,
+        max_results: int,
+        switch_tab_id: str | None = None,
+    ) -> dict[str, Any]:
         table = table or {}
         if not any(table.get(key) for key in ("row_text", "column_text", "header_text")):
             return failed_result(None, "invalid_args", "table_locate requires row_text, column_text, or header_text.")
 
-        result = self.layer.find(driver, table=table, max_results=max_results)
+        result = self.layer.find(driver, table=table, max_results=max_results, **self._tab_kwargs(switch_tab_id))
         step = {"tool": "browser_find", **result}
         result["steps"] = [step]
         if result.get("status") == "success":
@@ -587,10 +637,16 @@ class BrowserRecipeRunner:
         last_find: dict[str, Any] | None = None
 
         while True:
-            state = self.layer.get_state(driver, max_elements=120)
+            state = self.layer.get_state(driver, max_elements=120, **self._tab_kwargs(switch_tab_id))
             steps.append({"tool": "browser_state", "status": state.get("status")})
 
-            find_result, match = self._find_one(driver, recipe="component_wait", target=target, max_results=max_results)
+            find_result, match = self._find_one(
+                driver,
+                recipe="component_wait",
+                target=target,
+                max_results=max_results,
+                switch_tab_id=switch_tab_id,
+            )
             last_find = find_result
             steps.append({"tool": "browser_find", **find_result})
             if find_result.get("status") != "success":
@@ -666,7 +722,14 @@ class BrowserRecipeRunner:
         if recipe == "custom_select":
             if not option_text:
                 return failed_result(None, "invalid_args", "option_text is required for custom_select.")
-            return self._custom_select(driver, target=target, option_text=option_text, timeout=timeout, max_results=max_results)
+            return self._custom_select(
+                driver,
+                target=target,
+                option_text=option_text,
+                timeout=timeout,
+                max_results=max_results,
+                switch_tab_id=switch_tab_id,
+            )
         if recipe == "layer_select":
             if not option_text:
                 return failed_result(None, "invalid_args", "option_text is required for layer_select.")
@@ -677,9 +740,10 @@ class BrowserRecipeRunner:
                 confirm_text=confirm_text,
                 timeout=timeout,
                 max_results=max_results,
+                switch_tab_id=switch_tab_id,
             )
         if recipe == "table_locate":
-            return self._table_locate(driver, table=table, max_results=max_results)
+            return self._table_locate(driver, table=table, max_results=max_results, switch_tab_id=switch_tab_id)
         return self._component_wait(
             driver,
             condition=condition or "",

@@ -163,6 +163,37 @@ def test_custom_select_overlay_recovery_preserves_executable_args():
     }
 
 
+def test_custom_select_switch_tab_id_reaches_layer_calls_and_recovery_args():
+    layer = FakeLayer()
+    layer.find_results = [
+        {"status": "success", "matches": [{"index": 10, "element": {"index": 10, "layer": "main"}}], "ambiguous": False},
+        {"status": "success", "matches": [{"index": 22, "element": {"index": 22, "layer": "main"}}], "ambiguous": False},
+    ]
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(
+        None,
+        recipe="custom_select",
+        target={"query": "所属部门"},
+        option_text="研发部",
+        timeout=6,
+        max_results=3,
+        switch_tab_id="tab-b",
+    )
+
+    assert result["status"] == "failed"
+    assert result["recovery"]["next_args"] == {
+        "recipe": "custom_select",
+        "target": {"query": "所属部门"},
+        "option_text": "研发部",
+        "timeout": 6,
+        "max_results": 3,
+        "switch_tab_id": "tab-b",
+    }
+    assert [call[0] for call in layer.calls] == ["find", "action", "state", "find"]
+    assert all(call[1].get("switch_tab_id") == "tab-b" for call in layer.calls)
+
+
 def test_custom_select_fails_when_post_click_field_value_did_not_land():
     layer = FakeLayer()
     layer.find_results = [
@@ -326,6 +357,39 @@ def test_layer_select_ambiguous_option_recovery_preserves_executable_args():
     }
 
 
+def test_layer_select_switch_tab_id_reaches_layer_calls_and_recovery_args():
+    layer = FakeLayer()
+    layer.find_results = [
+        {"status": "success", "matches": [{"index": 10, "element": {"index": 10, "layer": "main"}}], "ambiguous": False},
+        {"status": "success", "matches": [{"index": 22, "element": {"index": 22, "layer": "main"}}], "ambiguous": False},
+    ]
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(
+        None,
+        recipe="layer_select",
+        target={"query": "人员"},
+        option_text="张三",
+        confirm_text="确定",
+        timeout=8,
+        max_results=4,
+        switch_tab_id="tab-b",
+    )
+
+    assert result["status"] == "failed"
+    assert result["recovery"]["next_args"] == {
+        "recipe": "layer_select",
+        "target": {"query": "人员"},
+        "option_text": "张三",
+        "confirm_text": "确定",
+        "timeout": 8,
+        "max_results": 4,
+        "switch_tab_id": "tab-b",
+    }
+    assert [call[0] for call in layer.calls] == ["find", "action", "state", "find"]
+    assert all(call[1].get("switch_tab_id") == "tab-b" for call in layer.calls)
+
+
 def test_layer_select_fails_when_post_click_field_value_did_not_land():
     layer = FakeLayer()
     layer.find_results = [
@@ -417,11 +481,12 @@ def test_table_locate_failure_includes_steps_without_action():
     layer.find_results = [{"status": "failed", "stage": "target_not_found", "recovery": {"code": "refresh_state_then_find"}}]
     runner = BrowserRecipeRunner(layer)
 
-    result = runner.run(None, recipe="table_locate", table={"row_text": "张三"})
+    result = runner.run(None, recipe="table_locate", table={"row_text": "张三"}, switch_tab_id="tab-b")
 
     assert result["status"] == "failed"
     assert result["steps"][0]["tool"] == "browser_find"
     assert [call[0] for call in layer.calls] == ["find"]
+    assert layer.calls[0][1]["switch_tab_id"] == "tab-b"
 
 
 def test_table_locate_refuses_ambiguous_match():
