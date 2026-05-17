@@ -1107,7 +1107,7 @@ class BrowserActionLayer:
             )
         else:
             state = self._last_state.get("state") or {}
-        return find_in_state(
+        result = find_in_state(
             state,
             query=query,
             role=role,
@@ -1117,6 +1117,19 @@ class BrowserActionLayer:
             table=table,
             max_results=limit,
         )
+        recovery = result.get("recovery")
+        if result.get("status") == "failed" and isinstance(recovery, dict):
+            next_args = dict(recovery.get("next_args") or {})
+            if switch_tab_id:
+                next_args["switch_tab_id"] = switch_tab_id
+            if include_invisible:
+                next_args["include_invisible"] = True
+            if next_args:
+                recovery = dict(recovery)
+                recovery["next_args"] = next_args
+                result = dict(result)
+                result["recovery"] = recovery
+        return result
 
     def run_action(
         self,
@@ -1273,7 +1286,7 @@ class BrowserActionLayer:
         result = dict(raw)
         result.setdefault("tab_id", driver.default_session_id)
         raw_result = dict(result)
-        if result.get("status") == "success":
+        if result.get("status") == "success" and action in STATE_MUTATING_ACTIONS:
             self._reset_failure_fuse()
         else:
             result = add_recovery(result, action=action, index=safe_index)

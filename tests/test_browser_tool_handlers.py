@@ -255,6 +255,37 @@ def test_browser_find_refreshes_when_cached_tab_differs():
     assert driver.execute_js_calls == 1
 
 
+def test_browser_find_recovery_preserves_tab_and_visibility_context():
+    class FakeDriver:
+        default_session_id = "tab-a"
+
+        def __init__(self):
+            self.execute_js_calls = 0
+
+        def get_all_sessions(self):
+            return [{"id": "tab-b"}]
+
+        def execute_js(self, script, timeout=10):
+            self.execute_js_calls += 1
+            return {
+                "status": "success",
+                "tab_id": "tab-b",
+                "state_token": "tok-b",
+                "elements": [],
+            }
+
+    layer = BrowserActionLayer()
+    driver = FakeDriver()
+
+    result = layer.find(driver, query="隐藏按钮", switch_tab_id="tab-b", include_invisible=True, refresh=True)
+
+    assert result["status"] == "failed"
+    next_args = result["recovery"]["next_args"]
+    assert next_args["switch_tab_id"] == "tab-b"
+    assert next_args["include_invisible"] is True
+    assert driver.execute_js_calls == 1
+
+
 def test_browser_find_exception_result_includes_recovery(monkeypatch):
     class BrokenLayer:
         def find(self, driver, **kwargs):

@@ -299,7 +299,15 @@ class BrowserRecipeRunner:
         result["timeout"] = safe_timeout
         result["recovery"]["code"] = "wait_component"
         result["recovery"]["next_tool"] = "browser_recipe"
-        result["recovery"]["next_args"] = {"recipe": "component_wait", "condition": condition, "timeout": safe_timeout}
+        next_args: dict[str, Any] = {
+            "recipe": "component_wait",
+            "condition": condition,
+            "timeout": safe_timeout,
+            "max_results": max_results,
+        }
+        if target:
+            next_args["target"] = dict(target)
+        result["recovery"]["next_args"] = next_args
         result["last_find"] = last_find
         result["steps"] = steps
         return result

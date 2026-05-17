@@ -399,10 +399,11 @@ SPA 页面没有稳定文本或 selector 时，再按页面形态选有界等待
 - SPA waits 都是有界等待：`wait_dom_stable`、`wait_not_busy`、`wait_enabled`、`wait_route` 不应被当成无限等待或业务成功保证。
 - `browser_find` 是只读定位层：复用或刷新当前 state，按 `query`、`role`、`control_kind`、`layer`、`frame_path`、`table` 做过滤和评分，`max_results` 被限制在 1-20；它只返回候选 index，不执行动作。
 - `browser_find` 的 `ambiguous=true` 是硬信号：候选分数接近，必须增加约束，不允许直接拿第一个候选操作。
+- `browser_find` 的 recovery 会保留 `switch_tab_id` 和 `include_invisible`，避免重试时跑到错误标签页或可见性模式。
 - `browser_recipe` 只支持 `custom_select`、`layer_select`、`table_locate`、`component_wait` 四类有界 recipe；不接受自由文本流程，也不会变成自动浏览器代理。
 - `custom_select` / `layer_select` 内部按 `browser_find` -> `click` -> `browser_state` -> `browser_find` -> `click` 编排；`layer_select` 只有传入 `confirm_text` 才会点击确认按钮。
 - `table_locate` 只调用 `browser_find` 定位候选，要求至少提供 `row_text`、`column_text` 或 `header_text` 之一；它不负责分页、虚拟滚动、单元格写入或提交。
-- `component_wait` 当前是有界组件条件等待型 recipe：在 timeout 内按 `browser_state` -> `browser_find` 轮询判断 `layer_open`、`layer_closed`、`options_visible`、`field_value`、`element_enabled`、`not_busy`，不是网络空闲等待，也不是业务完成判断。
+- `component_wait` 当前是有界组件条件等待型 recipe：在 timeout 内按 `browser_state` -> `browser_find` 轮询判断 `layer_open`、`layer_closed`、`options_visible`、`field_value`、`element_enabled`、`not_busy`，recovery 会保留原 target/max_results，不能被当成网络空闲等待或业务完成判断。
 - 工具失败时会返回结构化结果：`status=failed`，并带 `stage`、`error`；部分场景会额外带 `hint` / `suggested_args`。
 - 新失败结果优先带 `recovery`；`recovery.stop_retry=true` 或 `stage=repeat_blocked` 时必须停止重复同一动作，改用 `browser_find` / `browser_recipe` 或低层路径。
 

@@ -180,6 +180,8 @@ def test_component_wait_returns_component_not_ready_on_timeout():
     assert result["status"] == "failed"
     assert result["stage"] == "component_not_ready"
     assert result["recovery"]["code"] == "wait_component"
+    assert result["recovery"]["next_args"]["target"] == {"query": "研发部"}
+    assert result["recovery"]["next_args"]["max_results"] == 5
 
 
 def test_component_wait_polls_until_later_find_satisfies_condition():

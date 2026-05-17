@@ -2670,6 +2670,39 @@ def test_run_action_blocks_repeated_failure_even_after_state_refresh():
     assert len(driver.calls) == 5
 
 
+def test_run_action_wait_success_does_not_reset_repeated_failure_fuse():
+    layer = BrowserActionLayer()
+    layer._last_state = {
+        "tab_id": "7",
+        "state_token": "tok-1",
+        "url": "https://example.test/form",
+        "elements_by_index": {
+            1: {"index": 1, "text": "Save", "labels": [], "visible": True, "disabled": False, "stable_key": "button#save", "selector_hint": "button#save"}
+        },
+    }
+    driver = FakeDriver(
+        [
+            {"data": {"status": "failed", "stage": "dom_event", "error": "boom"}},
+            {"data": {"status": "success", "action": "wait_text", "result": "text_found"}},
+            {"data": {"status": "failed", "stage": "dom_event", "error": "boom"}},
+            {"data": {"status": "success", "action": "wait_selector", "result": "selector_found"}},
+        ]
+    )
+
+    first = layer.run_action(driver, action="click", index=1)
+    wait_text = layer.run_action(driver, action="wait_text", text="Ready")
+    second = layer.run_action(driver, action="click", index=1)
+    wait_selector = layer.run_action(driver, action="wait_selector", selector="#ready")
+    third = layer.run_action(driver, action="click", index=1)
+
+    assert first["stage"] == "dom_event"
+    assert wait_text["status"] == "success"
+    assert second["recovery"]["stop_retry"] is True
+    assert wait_selector["status"] == "success"
+    assert third["stage"] == "repeat_blocked"
+    assert len(driver.calls) == 4
+
+
 def test_run_action_preflight_blocks_third_repeated_js_failure_before_execute():
     layer = BrowserActionLayer()
     layer._last_state = {
@@ -2750,26 +2783,29 @@ def test_run_action_repeat_blocked_verify_failure_page_change_invalidates_state(
 
 def test_run_action_success_resets_fuse_for_js_failures():
     layer = BrowserActionLayer()
-    layer._last_state = {
+    cached_state = {
         "tab_id": "7",
         "state_token": "tok-1",
         "elements_by_index": {
-            1: {"index": 1, "stable_key": "button#save", "selector_hint": "button#save", "text": "Save"}
+            1: {"index": 1, "stable_key": "button#save", "selector_hint": "button#save", "text": "Save"},
+            2: {"index": 2, "stable_key": "button#cancel", "selector_hint": "button#cancel", "text": "Cancel"},
         },
     }
+    layer._last_state = dict(cached_state)
     driver = FakeDriver(
         [
             {"data": {"status": "failed", "stage": "dom_event", "error": "boom"}},
             {"data": {"status": "failed", "stage": "dom_event", "error": "boom"}},
-            {"data": {"status": "success", "action": "wait_index", "index": 1, "result": "element_visible"}},
+            {"data": {"status": "success", "action": "click", "index": 2}},
             {"data": {"status": "failed", "stage": "dom_event", "error": "boom"}},
         ]
     )
 
-    first = layer.run_action(driver, action="wait_index", index=1)
-    second = layer.run_action(driver, action="wait_index", index=1)
-    success = layer.run_action(driver, action="wait_index", index=2)
-    after_success = layer.run_action(driver, action="wait_index", index=1)
+    first = layer.run_action(driver, action="click", index=1)
+    second = layer.run_action(driver, action="click", index=1)
+    success = layer.run_action(driver, action="click", index=2)
+    layer._last_state = dict(cached_state)
+    after_success = layer.run_action(driver, action="click", index=1)
 
     assert first["recovery"]["stop_retry"] is False
     assert second["recovery"]["stop_retry"] is True
