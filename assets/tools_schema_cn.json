@@ -66,7 +66,7 @@
     "parameters": {"type": "object", "properties": {
       "query": {"type": "string", "description": "要查找的标签、文本或值"},
       "role": {"type": "string", "description": "可选 role 硬过滤"},
-      "control_kind": {"type": "string", "description": "可选控件类型硬过滤，例如 contenteditable、native_input、custom_select_trigger"},
+      "control_kind": {"type": "string", "description": "可选控件类型硬过滤，例如 contenteditable、native_input、custom_select"},
       "layer": {"type": "string", "description": "可选层级过滤，例如 main、modal、drawer、popover"},
       "frame_path": {"type": "array", "items": {"type": "integer"}, "description": "可选同源 iframe 路径过滤"},
       "table": {"type": "object", "description": "可选表格定位条件，包含 row_text 和 column_text"},
@@ -80,7 +80,7 @@
     "description": "在真实 Chrome 页面运行有边界的浏览器操作编排。recipe 是确定性的，遇到歧义会失败并返回候选。用于 custom_select、layer_select、table_locate、component_wait。",
     "parameters": {"type": "object", "properties": {
       "recipe": {"type": "string", "enum": ["custom_select", "layer_select", "table_locate", "component_wait"], "description": "要运行的 recipe"},
-      "target": {"type": "object", "description": "目标定位条件，通常包含 index 或 query"},
+      "target": {"type": "object", "description": "目标定位条件。custom_select/layer_select 需要 index 或 query；component_wait 只接受 query 目标"},
       "option_text": {"type": "string", "description": "custom_select 或 layer_select 的选项文本"},
       "confirm_text": {"type": "string", "description": "layer_select 中显式确认按钮文本"},
       "table": {"type": "object", "description": "table_locate 的表格定位条件，例如 row_text 和 column_text"},

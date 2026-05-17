@@ -367,8 +367,8 @@ Initial public arguments:
 Rules:
 
 - `recipe` is required and must be one of the supported enum values.
-- `target.index` is preferred when GA already has a recent state.
-- `target.query` is used through `browser_find` when index is missing or stale.
+- Mutating recipes require a bounded target before any action: `custom_select` / `layer_select` accept `target.index` or non-empty `target.query`.
+- `component_wait` accepts query targets only; indexed visibility/enabled waits belong to `browser_action(wait_index|wait_enabled)`.
 - `option_text` is required for `custom_select` and `layer_select`.
 - `confirm_text` is only used by `layer_select`.
 - `table_locate` uses `table.row_text` and `table.column_text` instead of `option_text`.

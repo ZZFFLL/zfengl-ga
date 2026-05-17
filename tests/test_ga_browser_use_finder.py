@@ -140,3 +140,17 @@ def test_find_target_not_found_recovery_preserves_constraints():
     assert next_args["layer"] == "modal"
     assert next_args["frame_path"] == [0]
     assert next_args["table"] == table
+
+
+def test_find_returns_disabled_candidates_for_read_only_location():
+    state = make_state(
+        [
+            {"index": 1, "text": "提交", "labels": [], "visible": True, "disabled": True},
+        ]
+    )
+
+    result = find_in_state(state, query="提交", max_results=5)
+
+    assert result["status"] == "success"
+    assert result["matches"][0]["index"] == 1
+    assert result["matches"][0]["element"]["disabled"] is True

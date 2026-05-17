@@ -1081,7 +1081,7 @@ In `assets/tools_schema.json`, insert after `browser_state`:
   "parameters": {"type": "object", "properties": {
     "query": {"type": "string", "description": "Target label/text/value to find"},
     "role": {"type": "string", "description": "Optional role hard filter"},
-    "control_kind": {"type": "string", "description": "Optional control kind hard filter such as contenteditable, native_input, custom_select_trigger"},
+    "control_kind": {"type": "string", "description": "Optional control kind hard filter such as contenteditable, native_input, custom_select"},
     "layer": {"type": "string", "description": "Optional layer filter such as main, modal, drawer, popover"},
     "frame_path": {"type": "array", "items": {"type": "integer"}, "description": "Optional same-origin frame path filter"},
     "table": {"type": "object", "description": "Optional table locator with row_text and column_text"},
@@ -1101,7 +1101,7 @@ In `assets/tools_schema_cn.json`, insert the equivalent:
   "parameters": {"type": "object", "properties": {
     "query": {"type": "string", "description": "要查找的标签、文本或值"},
     "role": {"type": "string", "description": "可选 role 硬过滤"},
-    "control_kind": {"type": "string", "description": "可选控件类型硬过滤，例如 contenteditable、native_input、custom_select_trigger"},
+    "control_kind": {"type": "string", "description": "可选控件类型硬过滤，例如 contenteditable、native_input、custom_select"},
     "layer": {"type": "string", "description": "可选层级过滤，例如 main、modal、drawer、popover"},
     "frame_path": {"type": "array", "items": {"type": "integer"}, "description": "可选同源 iframe 路径过滤"},
     "table": {"type": "object", "description": "可选表格定位条件，包含 row_text 和 column_text"},
@@ -1642,7 +1642,7 @@ In `assets/tools_schema.json`, insert after `browser_find`:
   "description": "Run a bounded browser operation recipe in the real Chrome page. Recipes are deterministic and fail closed on ambiguity. Use for custom_select, layer_select, table_locate, and component_wait.",
   "parameters": {"type": "object", "properties": {
     "recipe": {"type": "string", "enum": ["custom_select", "layer_select", "table_locate", "component_wait"], "description": "Recipe to run"},
-    "target": {"type": "object", "description": "Target locator, usually index or query"},
+    "target": {"type": "object", "description": "Target locator. custom_select/layer_select require index or query; component_wait accepts query targets only."},
     "option_text": {"type": "string", "description": "Option text for custom_select or layer_select"},
     "confirm_text": {"type": "string", "description": "Explicit confirm button text for layer_select"},
     "table": {"type": "object", "description": "Table locator such as row_text and column_text for table_locate"},
@@ -1662,7 +1662,7 @@ In `assets/tools_schema_cn.json`, insert:
   "description": "在真实 Chrome 页面运行有边界的浏览器操作编排。recipe 是确定性的，遇到歧义会失败并返回候选。用于 custom_select、layer_select、table_locate、component_wait。",
   "parameters": {"type": "object", "properties": {
     "recipe": {"type": "string", "enum": ["custom_select", "layer_select", "table_locate", "component_wait"], "description": "要运行的 recipe"},
-    "target": {"type": "object", "description": "目标定位条件，通常包含 index 或 query"},
+    "target": {"type": "object", "description": "目标定位条件。custom_select/layer_select 需要 index 或 query；component_wait 只接受 query 目标"},
     "option_text": {"type": "string", "description": "custom_select 或 layer_select 的选项文本"},
     "confirm_text": {"type": "string", "description": "layer_select 中显式确认按钮文本"},
     "table": {"type": "object", "description": "table_locate 的表格定位条件，例如 row_text 和 column_text"},

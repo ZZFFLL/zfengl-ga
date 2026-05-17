@@ -66,7 +66,7 @@
     "parameters": {"type": "object", "properties": {
       "query": {"type": "string", "description": "Target label/text/value to find"},
       "role": {"type": "string", "description": "Optional role hard filter"},
-      "control_kind": {"type": "string", "description": "Optional control kind hard filter such as contenteditable, native_input, custom_select_trigger"},
+      "control_kind": {"type": "string", "description": "Optional control kind hard filter such as contenteditable, native_input, custom_select"},
       "layer": {"type": "string", "description": "Optional layer filter such as main, modal, drawer, popover"},
       "frame_path": {"type": "array", "items": {"type": "integer"}, "description": "Optional same-origin frame path filter"},
       "table": {"type": "object", "description": "Optional table locator with row_text and column_text"},
@@ -80,7 +80,7 @@
     "description": "Run a bounded browser operation recipe in the real Chrome page. Recipes are deterministic and fail closed on ambiguity. Use for custom_select, layer_select, table_locate, and component_wait.",
     "parameters": {"type": "object", "properties": {
       "recipe": {"type": "string", "enum": ["custom_select", "layer_select", "table_locate", "component_wait"], "description": "Recipe to run"},
-      "target": {"type": "object", "description": "Target locator, usually index or query"},
+      "target": {"type": "object", "description": "Target locator. custom_select/layer_select require index or query; component_wait accepts query targets only."},
       "option_text": {"type": "string", "description": "Option text for custom_select or layer_select"},
       "confirm_text": {"type": "string", "description": "Explicit confirm button text for layer_select"},
       "table": {"type": "object", "description": "Table locator such as row_text and column_text for table_locate"},

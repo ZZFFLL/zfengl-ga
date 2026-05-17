@@ -35,6 +35,42 @@ def test_custom_select_recipe_runs_trigger_state_option_click():
     assert result["steps"][-1]["index"] == 22
 
 
+def test_custom_select_requires_bounded_target_before_any_action():
+    layer = FakeLayer()
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="custom_select", option_text="研发部")
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "invalid_args"
+    assert "target.query or target.index" in result["error"]
+    assert layer.calls == []
+
+
+def test_layer_select_requires_bounded_target_before_any_action():
+    layer = FakeLayer()
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="layer_select", target={"query": "   "}, option_text="张三")
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "invalid_args"
+    assert "target.query or target.index" in result["error"]
+    assert layer.calls == []
+
+
+def test_custom_select_rejects_invalid_index_before_any_find():
+    layer = FakeLayer()
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="custom_select", target={"index": 0}, option_text="研发部")
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "invalid_args"
+    assert "target.index must be a positive integer" in result["error"]
+    assert layer.calls == []
+
+
 def test_custom_select_option_search_does_not_hard_filter_popover():
     layer = FakeLayer()
     runner = BrowserRecipeRunner(layer)
@@ -219,6 +255,26 @@ def test_component_wait_polls_until_later_find_satisfies_condition():
     assert [call[0] for call in layer.calls] == ["state", "find", "state", "find"]
 
 
+def test_component_wait_element_enabled_can_use_later_enabled_match():
+    layer = FakeLayer()
+    layer.find_results = [
+        {
+            "status": "success",
+            "matches": [
+                {"index": 3, "element": {"index": 3, "disabled": True}},
+                {"index": 4, "element": {"index": 4, "disabled": False}},
+            ],
+            "ambiguous": False,
+        },
+    ]
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="component_wait", condition="element_enabled", target={"query": "提交"}, timeout=0)
+
+    assert result["status"] == "success"
+    assert result["match"]["index"] == 4
+
+
 def test_component_wait_clamps_large_string_timeout():
     layer = FakeLayer()
     layer.find_results = [
@@ -245,32 +301,82 @@ def test_component_wait_negative_timeout_clamps_to_minimum():
     assert result["timeout"] == 1
 
 
-def test_component_wait_index_target_uses_refreshed_state_metadata():
+def test_component_wait_rejects_index_target_for_indexed_wait_action():
     layer = FakeLayer()
-    layer.find_results = []
-    layer.get_state = lambda driver, **kwargs: {
-        "status": "success",
-        "elements": [{"index": 5, "disabled": True, "layer": "main"}],
-    }
     runner = BrowserRecipeRunner(layer)
 
-    result = runner.run(None, recipe="component_wait", condition="element_enabled", target={"index": 5}, timeout=0)
+    result = runner.run(
+        None,
+        recipe="component_wait",
+        condition="element_enabled",
+        target={"index": 5},
+        timeout=7,
+        switch_tab_id="tab-b",
+    )
 
     assert result["status"] == "failed"
-    assert result["stage"] == "component_not_ready"
-    assert result["last_find"]["matches"][0]["element"]["disabled"] is True
+    assert result["stage"] == "invalid_args"
+    assert result["recovery"]["next_tool"] == "browser_action"
+    assert result["recovery"]["next_args"] == {
+        "action": "wait_enabled",
+        "index": 5,
+        "timeout": 7,
+        "switch_tab_id": "tab-b",
+    }
+    assert layer.calls == []
 
 
-def test_component_wait_index_target_missing_can_satisfy_layer_closed():
+def test_component_wait_rejects_index_target_with_query_recovery_for_value_condition():
     layer = FakeLayer()
-    layer.find_results = []
-    layer.get_state = lambda driver, **kwargs: {"status": "success", "elements": []}
     runner = BrowserRecipeRunner(layer)
 
-    result = runner.run(None, recipe="component_wait", condition="layer_closed", target={"index": 5}, timeout=0)
+    result = runner.run(
+        None,
+        recipe="component_wait",
+        condition="field_value",
+        target={"index": 5, "query": "审批意见"},
+        timeout=4,
+        switch_tab_id="tab-b",
+    )
 
-    assert result["status"] == "success"
-    assert result["match"] is None
+    assert result["status"] == "failed"
+    assert result["stage"] == "invalid_args"
+    assert result["recovery"]["next_tool"] == "browser_recipe"
+    assert result["recovery"]["next_args"] == {
+        "recipe": "component_wait",
+        "condition": "field_value",
+        "target": {"query": "审批意见"},
+        "timeout": 4,
+        "switch_tab_id": "tab-b",
+    }
+    assert layer.calls == []
+
+
+def test_component_wait_rejects_index_target_without_wait_index_for_closed_condition():
+    layer = FakeLayer()
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="component_wait", condition="layer_closed", target={"index": 5}, timeout=4)
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "invalid_args"
+    assert result["recovery"]["next_tool"] == "browser_state"
+    assert result["recovery"]["code"] == "use_query_component_wait"
+    assert result["recovery"].get("next_args", {}) != {"action": "wait_index", "index": 5}
+    assert layer.calls == []
+
+
+def test_component_wait_rejects_invalid_index_before_recovery():
+    layer = FakeLayer()
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="component_wait", condition="element_enabled", target={"index": 0}, timeout=4)
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "invalid_args"
+    assert "target.index must be a positive integer" in result["error"]
+    assert result["recovery"]["next_tool"] == "browser_find"
+    assert layer.calls == []
 
 
 def test_component_wait_layer_closed_does_not_treat_state_missing_as_success():

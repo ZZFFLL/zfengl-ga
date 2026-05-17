@@ -307,6 +307,7 @@ def browser_recipe(
             condition=condition,
             timeout=timeout,
             max_results=max_results,
+            switch_tab_id=switch_tab_id,
         )
     except Exception as e:
         result = failed_result(None, "browser_unavailable", format_error(e))

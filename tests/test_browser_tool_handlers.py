@@ -306,11 +306,14 @@ def test_browser_recipe_uses_recipe_runner(monkeypatch):
     class FakeLayer:
         pass
 
+    calls = []
+
     class FakeRunner:
         def __init__(self, layer):
             self.layer = layer
 
         def run(self, driver, **kwargs):
+            calls.append(kwargs)
             return {"status": "success", "recipe": kwargs["recipe"], "steps": []}
 
     fake_driver = SimpleNamespace(default_session_id="9", get_all_sessions=lambda: [{"id": "9"}])
@@ -318,10 +321,11 @@ def test_browser_recipe_uses_recipe_runner(monkeypatch):
     monkeypatch.setattr(ga, "browser_action_layer", FakeLayer())
     monkeypatch.setattr(ga, "BrowserRecipeRunner", FakeRunner)
 
-    result = ga.browser_recipe(recipe="custom_select", option_text="研发部")
+    result = ga.browser_recipe(recipe="custom_select", option_text="研发部", switch_tab_id="tab-b")
 
     assert result["status"] == "success"
     assert result["recipe"] == "custom_select"
+    assert calls[0]["switch_tab_id"] == "tab-b"
 
 
 def test_browser_recipe_exception_result_includes_recovery(monkeypatch):

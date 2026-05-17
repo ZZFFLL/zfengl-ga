@@ -60,9 +60,6 @@ def _score_element(
         return 0.0, []
     if frame_path is not None and element.get("frame_path") != frame_path:
         return 0.0, []
-    if element.get("disabled") is True:
-        return 0.0, []
-
     score = 0.0
     parts = _text_parts(element)
     labels = [str(label) for label in (element.get("labels") or [])]
@@ -105,6 +102,9 @@ def _score_element(
     if control_kind:
         score += 10
         reasons.append("control_kind")
+    if element.get("disabled") is True:
+        score -= 2
+        reasons.append("disabled")
     return score, reasons
 
 
