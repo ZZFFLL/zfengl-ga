@@ -270,8 +270,41 @@ def test_custom_select_index_target_does_not_verify_against_stale_refreshed_inde
 
     result = runner.run(None, recipe="custom_select", target={"index": 5}, option_text="研发部")
 
-    assert result["status"] == "success"
+    assert result["status"] == "failed"
+    assert result["stage"] == "component_not_ready"
+    assert result["recipe"] == "custom_select"
     assert [call[0] for call in layer.calls] == ["action", "state", "find", "action", "state", "find"]
+
+
+def test_layer_select_index_target_does_not_return_unverified_success():
+    layer = FakeLayer()
+    layer.find_results = [
+        {"status": "success", "matches": [{"index": 22, "element": {"index": 22, "layer": "dropdown", "text": "张三"}}], "ambiguous": False},
+        {"status": "failed", "stage": "target_not_found", "recovery": {"code": "refresh_state_then_find"}},
+    ]
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="layer_select", target={"index": 5}, option_text="张三")
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "component_not_ready"
+    assert result["recipe"] == "layer_select"
+
+
+def test_layer_select_index_target_runs_confirm_before_unverified_failure():
+    layer = FakeLayer()
+    layer.find_results = [
+        {"status": "success", "matches": [{"index": 22, "element": {"index": 22, "layer": "dropdown", "text": "张三"}}], "ambiguous": False},
+        {"status": "success", "matches": [{"index": 30, "element": {"index": 30, "layer": "modal", "text": "确定"}}], "ambiguous": False},
+    ]
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="layer_select", target={"index": 5}, option_text="张三", confirm_text="确定")
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "component_not_ready"
+    assert result["recipe"] == "layer_select"
+    assert [call[0] for call in layer.calls] == ["action", "state", "find", "action", "state", "find", "action"]
 
 
 def test_layer_select_refuses_ambiguous_option():
@@ -620,6 +653,61 @@ def test_component_wait_field_value_does_not_accept_label_text_without_value():
     assert result["stage"] == "component_not_ready"
 
 
+def test_component_wait_field_value_accepts_native_input_value():
+    layer = FakeLayer()
+    layer.find_results = [
+        {
+            "status": "success",
+            "matches": [
+                {"index": 3, "element": {"index": 3, "control_kind": "native_input", "value": "已回填"}}
+            ],
+            "ambiguous": False,
+        },
+    ]
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="component_wait", condition="field_value", target={"query": "审批意见"}, timeout=0)
+
+    assert result["status"] == "success"
+    assert result["match"]["index"] == 3
+
+
+def test_component_wait_field_value_does_not_accept_button_value():
+    layer = FakeLayer()
+    layer.find_results = [
+        {
+            "status": "success",
+            "matches": [{"index": 4, "element": {"index": 4, "control_kind": "button", "value": "提交"}}],
+            "ambiguous": False,
+        },
+    ]
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="component_wait", condition="field_value", target={"query": "提交"}, timeout=0)
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "component_not_ready"
+
+
+def test_component_wait_field_value_accepts_contenteditable_text_without_value():
+    layer = FakeLayer()
+    layer.find_results = [
+        {
+            "status": "success",
+            "matches": [
+                {"index": 3, "element": {"index": 3, "control_kind": "contenteditable", "value": "", "text": "已回填"}}
+            ],
+            "ambiguous": False,
+        },
+    ]
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="component_wait", condition="field_value", target={"query": "审批意见"}, timeout=0)
+
+    assert result["status"] == "success"
+    assert result["match"]["index"] == 3
+
+
 def test_component_wait_clamps_large_string_timeout():
     layer = FakeLayer()
     layer.find_results = [
@@ -734,8 +822,68 @@ def test_component_wait_layer_closed_does_not_treat_state_missing_as_success():
     result = runner.run(None, recipe="component_wait", condition="layer_closed", target={"query": "弹层"}, timeout=0)
 
     assert result["status"] == "failed"
+    assert result["stage"] == "state_missing"
+    assert result["recipe"] == "component_wait"
+    assert result["recovery"] == {"code": "refresh_state"}
+    assert result["steps"][1]["stage"] == "state_missing"
+
+
+def test_component_wait_returns_browser_state_failure_without_component_not_ready():
+    class StateFailureLayer(FakeLayer):
+        def get_state(self, driver, **kwargs):
+            self.calls.append(("state", kwargs))
+            return {"status": "failed", "stage": "browser_unavailable", "recovery": {"code": "restart_browser"}}
+
+    layer = StateFailureLayer()
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="component_wait", condition="options_visible", target={"query": "研发部"}, timeout=0)
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "browser_unavailable"
+    assert result["recipe"] == "component_wait"
+    assert result["recovery"] == {"code": "restart_browser"}
+    assert [call[0] for call in layer.calls] == ["state"]
+
+
+def test_component_wait_not_busy_treats_ambiguous_as_still_busy_until_not_found():
+    layer = FakeLayer()
+    layer.find_results = [
+        {
+            "status": "success",
+            "matches": [{"index": 1, "element": {"index": 1}}, {"index": 2, "element": {"index": 2}}],
+            "ambiguous": True,
+        },
+        {"status": "failed", "stage": "target_not_found", "recovery": {"code": "refresh_state_then_find"}},
+    ]
+    runner = BrowserRecipeRunner(layer)
+    runner._component_wait_poll_interval = 0
+
+    result = runner.run(None, recipe="component_wait", condition="not_busy", target={"query": "加载中"}, timeout=1)
+
+    assert result["status"] == "success"
+    assert result["condition"] == "not_busy"
+    assert [call[0] for call in layer.calls] == ["state", "find", "state", "find"]
+
+
+def test_component_wait_layer_closed_times_out_on_repeated_ambiguous_target():
+    layer = FakeLayer()
+    layer.find_results = [
+        {
+            "status": "success",
+            "matches": [{"index": 1, "element": {"index": 1}}, {"index": 2, "element": {"index": 2}}],
+            "ambiguous": True,
+        }
+    ]
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="component_wait", condition="layer_closed", target={"query": "弹层"}, timeout=0)
+
+    assert result["status"] == "failed"
     assert result["stage"] == "component_not_ready"
-    assert result["last_find"]["stage"] == "state_missing"
+    assert result["last_find"]["stage"] == "ambiguous_target"
+
+
 
 
 def test_component_wait_layer_closed_succeeds_on_target_not_found():

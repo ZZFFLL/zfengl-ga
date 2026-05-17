@@ -1223,6 +1223,87 @@ global.__GA_TEST_PROBE__ = () => ({
     assert probe["iframeEvents"] == []
 
 
+def test_browser_action_script_enter_submits_focused_input_form():
+    script = build_browser_action_script(
+        action="keys",
+        index=None,
+        text="Enter",
+        value=None,
+        timeout=1,
+        state_token=None,
+        selector=None,
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+const form = {
+  submitted: 0,
+  requestSubmit() {
+    this.submitted += 1;
+  },
+};
+const input = makeElement({ tag: "input", type: "text", value: "openai" });
+input.form = form;
+document.activeElement = input;
+global.__GA_TEST_PROBE__ = () => ({
+  submitted: form.submitted,
+  inputEvents: input.dispatched || [],
+});
+""",
+    )
+
+    probe = result["probe"]
+    result = result["result"]
+    assert result["status"] == "success"
+    assert result["result"] == "Enter"
+    assert probe["inputEvents"] == ["keydown", "keyup"]
+    assert probe["submitted"] == 1
+
+
+def test_browser_action_script_enter_does_not_submit_when_keydown_is_canceled():
+    script = build_browser_action_script(
+        action="keys",
+        index=None,
+        text="Enter",
+        value=None,
+        timeout=1,
+        state_token=None,
+        selector=None,
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+const form = {
+  submitted: 0,
+  requestSubmit() {
+    this.submitted += 1;
+  },
+};
+const input = makeElement({ tag: "input", type: "text", value: "openai" });
+input.form = form;
+input.dispatchEvent = (event) => {
+  input.dispatched = input.dispatched || [];
+  input.dispatched.push(event.type);
+  return event.type !== "keydown";
+};
+document.activeElement = input;
+global.__GA_TEST_PROBE__ = () => ({
+  submitted: form.submitted,
+  inputEvents: input.dispatched || [],
+});
+""",
+    )
+
+    probe = result["probe"]
+    result = result["result"]
+    assert result["status"] == "success"
+    assert result["result"] == "Enter"
+    assert probe["inputEvents"] == ["keydown", "keyup"]
+    assert probe["submitted"] == 0
+
+
 def test_build_browser_action_script_wait_index_uses_selector_hint_when_available():
     script = build_browser_action_script(
         action="wait_index",

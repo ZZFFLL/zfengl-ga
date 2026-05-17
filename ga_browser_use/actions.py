@@ -581,7 +581,27 @@ def build_browser_action_script(
   }}
 
   function keyboardEvent(target, type, key) {{
-    target.dispatchEvent(new KeyboardEvent(type, {{ key, bubbles: true, cancelable: true }}));
+    return target.dispatchEvent(new KeyboardEvent(type, {{ key, bubbles: true, cancelable: true }}));
+  }}
+
+  function shouldSubmitFormOnEnter(target, key) {{
+    if (key !== "Enter" || tagOf(target) !== "input" || !target.form) return false;
+    const type = String(target.getAttribute("type") || "text").toLowerCase();
+    return !["button", "submit", "reset", "checkbox", "radio", "file", "image", "range", "color", "hidden"].includes(type);
+  }}
+
+  function submitFormOnEnter(target) {{
+    const form = target && target.form;
+    if (!form) return false;
+    if (typeof form.requestSubmit === "function") {{
+      form.requestSubmit();
+      return true;
+    }}
+    if (typeof form.submit === "function") {{
+      form.submit();
+      return true;
+    }}
+    return false;
   }}
 
   function blockedForAction(el, action) {{
@@ -916,8 +936,11 @@ def build_browser_action_script(
         target.value = String(target.value || "").slice(0, -1);
         dispatchInputEvents(target);
       }} else {{
-        keyboardEvent(target, "keydown", key);
+        const keydownAccepted = keyboardEvent(target, "keydown", key);
         keyboardEvent(target, "keyup", key);
+        if (keydownAccepted !== false && shouldSubmitFormOnEnter(target, key)) {{
+          submitFormOnEnter(target);
+        }}
       }}
       return finalizeMutatingAction({{ status: "success", action: "keys", index: request.index, result: key, page_changed: true }}, target);
     }}

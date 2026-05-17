@@ -253,7 +253,16 @@ class BrowserRecipeRunner:
             return match is not None and element.get("disabled") is not True
         if condition == "field_value":
             element = (match or {}).get("element", {})
-            return match is not None and bool(element.get("value"))
+            if match is None:
+                return False
+            if (
+                element.get("control_kind") in {"native_input", "textarea", "date_input", "native_select"}
+                and element.get("value")
+            ):
+                return True
+            if element.get("control_kind") == "contenteditable":
+                return bool(str(element.get("text") or "").strip())
+            return False
         return False
 
     def _match_for_condition(
@@ -319,7 +328,8 @@ class BrowserRecipeRunner:
             return self._with_steps(state, steps)
 
         target_match: dict[str, Any] | None = None
-        if str(target.get("query") or "").strip():
+        has_query_target = bool(str(target.get("query") or "").strip())
+        if has_query_target:
             target_find, target_match = self._find_one(
                 driver,
                 recipe=recipe,
@@ -337,7 +347,7 @@ class BrowserRecipeRunner:
             # an overlay, a refreshed state may legitimately renumber elements.
             target_match = None
 
-        if str(target.get("query") or "").strip() and not self._selection_landed(target_match, option_text):
+        if has_query_target and not self._selection_landed(target_match, option_text):
             return self._component_not_ready(
                 recipe,
                 "Selection did not land on the target field after clicking the option.",
@@ -367,6 +377,13 @@ class BrowserRecipeRunner:
         if option_find.get("status") != "success" and option_find.get("stage") != "target_not_found":
             option_find["recipe"] = recipe
             return self._with_steps(option_find, steps)
+        if not has_query_target:
+            return self._component_not_ready(
+                recipe,
+                "Selection cannot be verified for an index target after clicking the option.",
+                recovery_args=recovery_args,
+                steps=steps,
+            )
         return None
 
     def _custom_select(
@@ -549,6 +566,13 @@ class BrowserRecipeRunner:
             if confirm_click.get("status") != "success":
                 confirm_click["recipe"] = "layer_select"
                 return self._with_steps(confirm_click, result["steps"])
+            if not str((target or {}).get("query") or "").strip():
+                return self._component_not_ready(
+                    "layer_select",
+                    "Selection cannot be verified for an index target after confirming the option.",
+                    recovery_args=recovery_args,
+                    steps=result["steps"],
+                )
         return result
 
     def _table_locate(
@@ -639,6 +663,9 @@ class BrowserRecipeRunner:
         while True:
             state = self.layer.get_state(driver, max_elements=120, **self._tab_kwargs(switch_tab_id))
             steps.append({"tool": "browser_state", "status": state.get("status")})
+            if state.get("status") != "success":
+                state["recipe"] = "component_wait"
+                return self._with_steps(state, steps)
 
             find_result, match = self._find_one(
                 driver,
@@ -654,13 +681,17 @@ class BrowserRecipeRunner:
                     return {
                         "status": "success",
                         "recipe": "component_wait",
-                    "condition": condition,
-                    "match": None,
-                    "timeout": safe_timeout,
-                    "steps": steps,
-                    "recovery": None,
-                }
-                if find_result.get("stage") == "ambiguous_target":
+                        "condition": condition,
+                        "match": None,
+                        "timeout": safe_timeout,
+                        "steps": steps,
+                        "recovery": None,
+                    }
+                if condition in {"layer_closed", "not_busy"} and find_result.get("stage") == "ambiguous_target":
+                    pass
+                elif find_result.get("stage") == "target_not_found":
+                    pass
+                else:
                     find_result["recipe"] = "component_wait"
                     return self._with_steps(find_result, steps)
             else:
