@@ -510,6 +510,90 @@ document.querySelectorAll = (selector) => {
     assert element["action_hints"] == ["input", "verify_field_value", "keys_after_input"]
 
 
+def test_browser_state_script_emits_adjacent_table_field_context_for_custom_select():
+    script = build_browser_state_script(include_invisible=False, max_elements=10)
+
+    state = run_browser_state_script(
+        script,
+        """
+const table = makeElement({ tag: "table", attrs: { "aria-label": "Daily Form" } });
+const row = makeElement({ tag: "tr" });
+const labelCell = makeElement({ tag: "td", text: "是否休假" });
+const controlCell = makeElement({ tag: "td", text: "" });
+row.children = [labelCell, controlCell];
+table.querySelectorAll = (selector) => selector === "tr, [role='row']" ? [row] : [];
+const trigger = makeElement({
+  tag: "div",
+  role: "combobox",
+  id: "field5956",
+  name: "sfxj",
+  text: "请选择",
+  attrs: { "aria-haspopup": "listbox", class: "ant-select wea-select" }
+});
+trigger.closest = (selector) => {
+  if (selector.includes(".wea-select") || selector.includes(".ant-select")) return trigger;
+  if (selector.includes("td")) return controlCell;
+  if (selector.includes("tr")) return row;
+  if (selector.includes("table")) return table;
+  return null;
+};
+document.querySelectorAll = (selector) => {
+  if (selector === "iframe, frame" || selector.startsWith("label[")) return [];
+  return [trigger];
+};
+""",
+    )
+
+    assert state["status"] == "success"
+    element = state["elements"][0]
+    assert element["control_kind"] == "custom_select"
+    assert element["field_context"]["nearby_text"] == "是否休假"
+    assert element["field_context"]["row_label"] == "是否休假"
+    assert element["field_context"]["previous_cell_text"] == "是否休假"
+    assert element["field_context"]["field_id"] == "field5956"
+    assert element["field_context"]["field_name"] == "sfxj"
+    assert element["field_context"]["field_container_hint"] == "td"
+
+
+def test_browser_state_script_inherits_field_context_for_browser_search_button():
+    script = build_browser_state_script(include_invisible=False, max_elements=10)
+
+    state = run_browser_state_script(
+        script,
+        """
+const row = makeElement({ tag: "tr" });
+const labelCell = makeElement({ tag: "td", text: "项目名称" });
+const controlCell = makeElement({ tag: "td", text: "" });
+row.children = [labelCell, controlCell];
+const table = makeElement({ tag: "table" });
+table.querySelectorAll = (selector) => selector === "tr, [role='row']" ? [row] : [];
+const browser = makeElement({ tag: "div", attrs: { class: "wea-browser" } });
+const searchButton = makeElement({
+  tag: "button",
+  text: "",
+  attrs: { class: "anticon anticon-search", "aria-label": "搜索" }
+});
+searchButton.closest = (selector) => {
+  if (selector.includes(".wea-browser")) return browser;
+  if (selector.includes("td")) return controlCell;
+  if (selector.includes("tr")) return row;
+  if (selector.includes("table")) return table;
+  return null;
+};
+document.querySelectorAll = (selector) => {
+  if (selector === "iframe, frame" || selector.startsWith("label[")) return [];
+  return [searchButton];
+};
+""",
+    )
+
+    assert state["status"] == "success"
+    element = state["elements"][0]
+    assert element["control_kind"] == "button"
+    assert element["field_context"]["nearby_text"] == "项目名称"
+    assert element["field_context"]["field_container_hint"] == "td"
+
+
 def test_browser_state_script_emits_row_and_column_for_later_table_cell():
     script = build_browser_state_script(include_invisible=False, max_elements=10)
 

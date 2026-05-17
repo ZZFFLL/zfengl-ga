@@ -264,16 +264,67 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
     return `${{tag}}:${{role}}:${{boundedText(textOf(element))}}`;
   }};
 
+  const textFromNode = (node) => boundedText(node ? (node.innerText || node.textContent || "") : "");
+
+  const previousCellTextOf = (element) => {{
+    const cell = element.closest && element.closest("td, th, [role='cell'], [role='gridcell'], [role='columnheader'], [role='rowheader']");
+    const row = element.closest && element.closest("tr, [role='row']");
+    if (!cell || !row) return "";
+    const children = Array.from(row.children || []);
+    const columnIndex = children.indexOf(cell);
+    if (columnIndex <= 0) return "";
+    for (let index = columnIndex - 1; index >= 0; index -= 1) {{
+      const text = textFromNode(children[index]);
+      if (text) return text;
+    }}
+    return "";
+  }};
+
+  const fieldAttrFrom = (element, attrName) => {{
+    let current = element;
+    for (let depth = 0; current && depth < 6; depth += 1) {{
+      const value = current.getAttribute && current.getAttribute(attrName);
+      if (value && /field\\d+(?:_\\d+)?/i.test(String(value))) return String(value);
+      current = current.parentElement;
+    }}
+    const own = element && element.getAttribute && element.getAttribute(attrName);
+    return own ? String(own) : "";
+  }};
+
+  const fieldContainerHintOf = (element) => {{
+    const cell = element.closest && element.closest("td, th, [role='cell'], [role='gridcell']");
+    if (cell) {{
+      return String(cell.tagName || (cell.getAttribute && cell.getAttribute("role")) || "").toLowerCase();
+    }}
+    const container = element.closest && element.closest(".wea-field, .wea-browser, .wea-select, .ant-select, .ant-picker");
+    if (!container) return "";
+    const className = String(container.getAttribute && container.getAttribute("class") || "");
+    if (className.includes("wea-field")) return "wea-field";
+    if (className.includes("wea-browser")) return "wea-browser";
+    if (className.includes("wea-select")) return "wea-select";
+    if (className.includes("ant-select")) return "ant-select";
+    if (className.includes("ant-picker")) return "ant-picker";
+    return String(container.tagName || "").toLowerCase();
+  }};
+
   const fieldContextOf = (element) => {{
     const form = element.closest && element.closest("form");
     const fieldset = element.closest && element.closest("fieldset");
     const legend = fieldset && fieldset.querySelector("legend");
+    const previousCellText = previousCellTextOf(element);
     return {{
       labels: labelsOf(element),
       placeholder: element.getAttribute("placeholder") || "",
       form_id: form ? (form.getAttribute("id") || "") : "",
       form_name: form ? (form.getAttribute("name") || "") : "",
       fieldset_legend: legend ? boundedText(legend.innerText || legend.textContent || "") : "",
+      nearby_text: previousCellText,
+      row_label: previousCellText,
+      previous_cell_text: previousCellText,
+      next_cell_text: "",
+      field_id: fieldAttrFrom(element, "id"),
+      field_name: fieldAttrFrom(element, "name"),
+      field_container_hint: fieldContainerHintOf(element),
     }};
   }};
 
@@ -584,6 +635,16 @@ def normalize_state_result(result):
 
         if str(normalized.get("type", "")).lower() == "password" and normalized.get("value"):
             normalized["value"] = "[REDACTED]"
+
+        field_context = normalized.get("field_context")
+        if isinstance(field_context, dict) and field_context:
+            field_context.setdefault("nearby_text", "")
+            field_context.setdefault("row_label", "")
+            field_context.setdefault("previous_cell_text", "")
+            field_context.setdefault("next_cell_text", "")
+            field_context.setdefault("field_id", "")
+            field_context.setdefault("field_name", "")
+            field_context.setdefault("field_container_hint", "")
 
         normalized_elements.append(normalized)
 
