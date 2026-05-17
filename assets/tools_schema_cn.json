@@ -45,7 +45,7 @@
   }},
   {"type": "function", "function": {
     "name": "web_execute_js",
-    "description": "执行JS。支持Multi-call，用不同switch_tab_id并行操作多标签页。禁止猜测，准确操作以减少 web_scan 调用。无script参数时执行正文 ```javascript 块，以免转义",
+    "description": "在真实 Chrome 页面执行 JavaScript，作为与 browser_* 平级的低层浏览器控制工具，适合页面/框架状态探测、复杂 DOM 读取、CDP/特殊操作，以及 indexed 工具无法安全表达的动作。它不是 browser_* 的上级或下级；按任务形态选择。支持 Multi-call，可用不同 switch_tab_id 操作多标签页。no_monitor 仅用于只读探测。无 script 参数时执行正文 ```javascript 块，以免转义",
     "parameters": {"type": "object", "properties": {
       "script": {"type": "string", "description": "[Optional] JS代码或路径。为免转义建议留空，改用正文代码块（与此参数互斥）"},
       "save_to_file": {"type": "string", "description": "结果存文件，适合返回值较长时"},
@@ -54,7 +54,7 @@
   }},
   {"type": "function", "function": {
     "name": "browser_state",
-    "description": "从真实 Chrome 页面获取带索引的浏览器状态，用于准确定位可操作元素，包含同源 iframe 元数据以及更丰富的 field/control/layer 上下文。索引可能变化时，先调用本工具再执行 browser_action。",
+    "description": "从真实 Chrome 页面获取结构化索引快照，用于可恢复的元素定位，包含同源 iframe 元数据以及 field/control/layer 上下文。它不是网页全文抽取工具，也不负责复杂 DOM 推理。索引可能变化时，先调用本工具再执行 browser_action。",
     "parameters": {"type": "object", "properties": {
       "switch_tab_id": {"type": "string", "description": "可选的标签页 ID，读取状态前切换到该标签页"},
       "include_invisible": {"type": "boolean", "description": "是否包含可见 frame 链内的不可见元素；隐藏父 iframe 子树不会暴露", "default": false},
@@ -62,7 +62,7 @@
   }},
   {"type": "function", "function": {
     "name": "browser_find",
-      "description": "只读定位真实 Chrome 页面中的 indexed 元素。必须提供真实语义定位：query 或 table。role/layer/control_kind/frame_path 是可选过滤条件，单独使用不足以定位；没有 query 或 table 的调用会被拒绝，避免返回任意可见元素。返回候选 index、评分、原因和是否歧义，不执行点击或输入。",
+      "description": "只读定位真实 Chrome 页面中的 indexed 元素，并提供语义定位能力。必须提供 query 或 table 作为真实语义定位条件；role/layer/control_kind/frame_path 只是可选过滤条件，单独使用不足以定位。它不是全局搜索引擎，也不是 browser_state 替代品。返回候选 index、评分、原因和是否歧义，不执行点击或输入。",
     "parameters": {"type": "object", "properties": {
       "query": {"type": "string", "description": "要查找的标签、文本或值"},
       "role": {"type": "string", "description": "可选 role 硬过滤"},
@@ -77,7 +77,7 @@
   }},
   {"type": "function", "function": {
     "name": "browser_recipe",
-    "description": "在真实 Chrome 页面运行有边界的浏览器操作编排。recipe 是确定性的，遇到歧义会失败并返回候选。用于 custom_select、layer_select、table_locate、component_wait。",
+    "description": "在真实 Chrome 页面运行固定且确定性的有界浏览器操作 recipe。recipe 遇到歧义会 fail closed 并返回候选，不是通用规划器。只用于 custom_select、layer_select、table_locate、component_wait。",
     "parameters": {"type": "object", "properties": {
       "recipe": {"type": "string", "enum": ["custom_select", "layer_select", "table_locate", "component_wait"], "description": "要运行的 recipe"},
       "target": {"type": "object", "description": "目标定位条件。custom_select/layer_select 需要 index 或 query；component_wait 只接受 query 目标"},
@@ -91,7 +91,7 @@
   }},
   {"type": "function", "function": {
     "name": "browser_action",
-    "description": "在真实 Chrome 页面中，基于最新 browser_state 的索引元素执行浏览器动作。原生 select 仍然只表示原生 select，自定义下拉不是 select。输入后提交/搜索时，调用 keys 且 text 为 Enter，并且不要传 index，让按键发送到当前焦点元素。SPA 等待动作包括 wait_dom_stable、wait_not_busy、wait_route，以及需要索引的 wait_enabled。verify/verify_text/verify_value/verify_selector 只支持 click/input/select/keys；等待动作会拒绝 verify。验证失败返回 stage verify_failed。selector 支持 wait_selector，也可作为 wait_not_busy 的自定义忙碌选择器。",
+    "description": "在真实 Chrome 页面中，基于最新 browser_state 元素执行有边界的索引动作；它不是任意 selector 自动化，也不是表单规划器。原生 select 仍然只表示原生 select，自定义下拉不是 select。输入后提交/搜索时，调用 keys 且 text 为 Enter，并且不要传 index，让按键发送到当前焦点元素。SPA 等待动作包括 wait_dom_stable、wait_not_busy、wait_route，以及需要索引的 wait_enabled。verify/verify_text/verify_value/verify_selector 只支持 click/input/select/keys；等待动作会拒绝 verify。验证失败返回 stage verify_failed。selector 支持 wait_selector，也可作为 wait_not_busy 的自定义忙碌选择器。",
     "parameters": {"type": "object", "properties": {
       "action": {"type": "string", "enum": ["click", "input", "select", "keys", "wait_index", "wait_text", "wait_selector", "wait_dom_stable", "wait_not_busy", "wait_enabled", "wait_route"], "description": "要执行的浏览器动作，包括有边界的 SPA 稳定性等待"},
       "index": {"type": "integer", "description": "来自 browser_state 的元素索引。input 后继续 keys 时不要传 index，让按键发送到当前焦点元素。"},

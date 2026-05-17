@@ -143,3 +143,68 @@ def test_chinese_schema_exposes_browser_tools():
     assert recipe["parameters"]["properties"]["timeout"]["default"] == 10
     assert recipe["parameters"]["properties"]["timeout"]["maximum"] == 60
     assert recipe["parameters"]["properties"]["max_results"]["default"] == 5
+
+
+def test_browser_tool_descriptions_use_parallel_boundary_terms():
+    english = load_tools("assets/tools_schema.json")
+    chinese = load_tools("assets/tools_schema_cn.json")
+
+    en_web_js = tool_by_name(english, "web_execute_js")
+    en_state = tool_by_name(english, "browser_state")
+    en_find = tool_by_name(english, "browser_find")
+    en_recipe = tool_by_name(english, "browser_recipe")
+    en_action = tool_by_name(english, "browser_action")
+
+    cn_web_js = tool_by_name(chinese, "web_execute_js")
+    cn_state = tool_by_name(chinese, "browser_state")
+    cn_find = tool_by_name(chinese, "browser_find")
+    cn_recipe = tool_by_name(chinese, "browser_recipe")
+    cn_action = tool_by_name(chinese, "browser_action")
+
+    assert "peer low-level browser-control tool" in en_web_js["description"]
+    assert "not above or below browser_* tools" in en_web_js["description"]
+    assert "structured indexed snapshot" in en_state["description"]
+    assert "not full-page extraction" in en_state["description"]
+    assert "semantic locator" in en_find["description"]
+    assert "query or table" in en_find["description"]
+    assert "not a global search engine" in en_find["description"]
+    assert "fixed deterministic" in en_recipe["description"]
+    assert "not a general planner" in en_recipe["description"]
+    assert "bounded indexed browser actions" in en_action["description"]
+    assert "not arbitrary selector automation" in en_action["description"]
+
+    assert "平级" in cn_web_js["description"]
+    assert "低层浏览器控制工具" in cn_web_js["description"]
+    assert "不是 browser_* 的上级或下级" in cn_web_js["description"]
+    assert "结构化索引快照" in cn_state["description"]
+    assert "不是网页全文抽取" in cn_state["description"]
+    assert "语义定位" in cn_find["description"]
+    assert "query 或 table" in cn_find["description"]
+    assert "不是全局搜索引擎" in cn_find["description"]
+    assert "固定且确定性" in cn_recipe["description"]
+    assert "不是通用规划器" in cn_recipe["description"]
+    assert "有边界的索引动作" in cn_action["description"]
+    assert "不是任意 selector 自动化" in cn_action["description"]
+
+    forbidden_english = [
+        "primary browser " + "action tool",
+        "default ordinary " + "interaction path",
+        "fallback" + "-only",
+    ]
+    forbidden_chinese = [
+        "优先使用" + "工具",
+        "普通交互" + "首选",
+        "只能作为" + "兜底",
+    ]
+    english_descriptions = "\n".join(
+        tool_by_name(english, name)["description"]
+        for name in ["web_execute_js", "browser_state", "browser_find", "browser_recipe", "browser_action"]
+    )
+    chinese_descriptions = "\n".join(
+        tool_by_name(chinese, name)["description"]
+        for name in ["web_execute_js", "browser_state", "browser_find", "browser_recipe", "browser_action"]
+    )
+    for phrase in forbidden_english:
+        assert phrase not in english_descriptions
+    for phrase in forbidden_chinese:
+        assert phrase not in chinese_descriptions

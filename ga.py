@@ -470,7 +470,7 @@ class GenericAgentHandler(BaseHandler):
         return StepOutcome(result, next_prompt=next_prompt)
     
     def do_web_execute_js(self, args, response):
-        '''web情况下的优先使用工具，执行任何js达成对浏览器的*完全*控制。支持将结果保存到文件供后续读取分析。'''
+        '''与 browser_* 平级的低层 JS/CDP/探测工具；用于直接脚本、框架状态读取、特殊控制和高层索引工具无法安全表达的动作。支持将长结果保存到文件供后续读取分析。'''
         script = args.get("script", "") or self._extract_code_block(response, "javascript")
         if not script: return StepOutcome("[Error] Script missing. Use ```javascript block or 'script' arg.", next_prompt="\n")
         abs_path = self._get_abs_path(script.strip())

@@ -6,9 +6,10 @@
 
 ## 核心定位
 
-- `web_scan` / `web_execute_js`：低层网页观察与 JS/CDP 操作，适合调试、复杂页面、CDP、文件上传、跨域 iframe、截图等细节控制。
-- `browser_state` / `browser_find` / `browser_action` / `browser_recipe`：高层浏览器操作工具，适合像用户一样定位、点击、输入、原生选择、按键、等待元素或文本，并能处理同源 iframe 中被索引的元素。
-- 优先策略：普通网页交互先用 `browser_state` / `browser_find` 定位，再用 `browser_action` 或有界 `browser_recipe` 执行；遇到 isTrusted、文件上传、跨域 iframe、截图诊断、复杂自定义组件无法索引/点击、CDP 坐标点击时，再回到 `tmwebdriver_sop` 的 `web_execute_js` / CDP 桥方案。
+- `web_scan` / `web_execute_js`：低层网页观察与 JS/CDP 操作，适合调试、复杂页面、框架状态探测、CDP、文件上传、跨域 iframe、截图等细节控制。
+- `browser_state` / `browser_find` / `browser_action` / `browser_recipe`：结构化、可验证、可恢复的高层浏览器操作工具，适合像用户一样定位、点击、输入、原生选择、按键、等待元素或文本，并能处理同源 iframe 中被索引的元素。
+- 平级策略：`web_execute_js` 不是 browser_* 的上级或下级，browser_* 也不是万能浏览器代理。先判断任务形态和组件类型，再选择低层 JS/CDP 轨道或结构化 indexed-action 轨道；不要为了完成目标把任一工具强行扩成通用自动化层。两条轨道互补，不按固定优先级排序。
+- 记忆短句：web_execute_js 不是 browser_* 的上级或下级。
 
 ## 四个工具的职责
 
@@ -471,13 +472,12 @@ SPA 页面没有稳定文本或 selector 时，再按页面形态选有界等待
 
 ## 和旧工具的配合
 
-推荐决策：
-1. 只是看页面摘要或 DOM 文本：`web_scan`。
-2. 想执行普通用户动作：`browser_state` / `browser_find` 定位，`browser_action` 执行。
-3. 想处理常见自定义下拉、弹层选择、表格目标定位、组件条件检查：优先 `browser_recipe`。
-4. 想导航：`web_execute_js` 执行 `location.href='...'`，或在已有页面中点链接。
-5. 想执行复杂 JS / CDP / 上传 / 截图 / 跨域 iframe：读 `tmwebdriver_sop`，用 `web_execute_js`。
-6. 新能力失败两次以上，或出现 `repeat_blocked`：不要原地反复试，切换到 `tmwebdriver_sop` 的低层调试路径。
+任务形态决策：
+1. 页面读数、框架状态、隐藏字段、复杂 DOM、CDP、上传、截图、跨域 iframe：选择 `web_scan` / `web_execute_js` 低层轨道。
+2. 已知要操作页面上的可交互元素，并且目标能被索引：选择 `browser_state` / `browser_find` / `browser_action` 结构化轨道。
+3. 常见自定义下拉、弹层选择、表格目标定位、组件条件检查：选择固定 `browser_recipe`，让它在歧义时 fail closed。
+4. 导航既可以用 `web_execute_js` 执行明确的 `location.href='...'`，也可以在已有页面中通过 indexed link/button 点击；按页面上下文选择，不做固定优先级。
+5. browser_* 连续失败且 recovery 已要求停止重复时，不要原地撞墙；补充 query/table/layer/frame 约束，或切换到 `web_execute_js` / CDP 低层轨道。
 
 ## 禁止/反模式
 
@@ -489,15 +489,15 @@ SPA 页面没有稳定文本或 selector 时，再按页面形态选有界等待
 - 禁止在 `ambiguous=true` 时直接使用第一个候选 index。
 - 禁止在 `recovery.stop_retry=true` 或 `repeat_blocked` 后继续重复同一动作。
 - 禁止把 `component_wait` 当成业务完成或无限等待器；它只在 `timeout` 内做 state/find 有界轮询。
-- 禁止把 `browser_recipe` 当成自由规划工具；它只支持四个固定 recipe。
+- 禁止把 `browser_recipe` 当成自由规划工具；browser_recipe 不是自由规划器，只支持四个固定 recipe。
 - 禁止遇到复杂自定义组件时无脑重复 click；先按 recovery/recipe 处理，仍失败再读 `tmwebdriver_sop`。
 
 ## 最小心智模型
 
 记住五句话：
 
-1. 要操作页面元素，先 `browser_state`，再用 index。
-2. state 太长或目标不明确，先 `browser_find`，不要猜 index。
-3. 成功输入后要提交，直接 `keys Enter`，不要传 index。
-4. 常见下拉/弹层/表格定位先试固定 `browser_recipe`，歧义就补约束。
+1. 先判断任务形态和组件类型，再选 `web_execute_js` 低层轨道或 browser_* 结构化轨道。
+2. 选择 browser_* 轨道时，先 `browser_state`，再用 index；state 太长或目标不明确时，用带 query/table 的 `browser_find` 缩小候选。
+3. `browser_recipe` 不是自由规划器，只用于固定的 `custom_select`、`layer_select`、`table_locate`、`component_wait`，歧义就补约束。
+4. `browser_action(keys, text="Enter")` 可以不传 index，输入后提交/搜索时优先复用当前焦点。
 5. 失败先读 `recovery.stop_retry` / `recovery.next_args`；页面结构变了，旧 index 作废，要么按焦点继续，要么重新 `browser_state`，需要缩小候选时再用带 query/table 的 `browser_find(refresh=true)`。
