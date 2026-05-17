@@ -112,6 +112,41 @@ def test_find_rejects_unbounded_locator():
     assert result["recovery"]["stop_retry"] is True
 
 
+def test_find_rejects_role_filter_without_semantic_locator():
+    state = make_state([{"index": 1, "role": "button", "text": "保存", "labels": [], "visible": True, "disabled": False}])
+
+    result = find_in_state(state, role="button", max_results=5)
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "invalid_args"
+    assert result["recovery"]["code"] == "provide_locator"
+    assert result["recovery"]["stop_retry"] is True
+
+
+def test_find_rejects_control_layer_and_frame_without_semantic_locator():
+    state = make_state(
+        [
+            {
+                "index": 1,
+                "control_kind": "contenteditable",
+                "layer": "modal",
+                "frame_path": [0],
+                "text": "保存",
+                "labels": [],
+                "visible": True,
+                "disabled": False,
+            }
+        ]
+    )
+
+    result = find_in_state(state, control_kind="contenteditable", layer="modal", frame_path=[0], max_results=5)
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "invalid_args"
+    assert result["recovery"]["code"] == "provide_locator"
+    assert result["recovery"]["stop_retry"] is True
+
+
 def test_find_preserves_state_failure_stage():
     state = {
         "status": "failed",

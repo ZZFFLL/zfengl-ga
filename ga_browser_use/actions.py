@@ -1099,10 +1099,6 @@ class BrowserActionLayer:
         limit = safe_max_results(max_results)
         has_locator = (
             str(query or "").strip()
-            or role
-            or control_kind
-            or layer
-            or frame_path is not None
             or (isinstance(table, dict) and any(table.get(key) for key in ("row_text", "column_text", "header_text")))
         )
         if not has_locator:

@@ -338,6 +338,35 @@ def test_browser_find_unbounded_call_does_not_refresh_page_state():
     assert driver.execute_js_calls == 0
 
 
+def test_browser_find_role_only_does_not_refresh_page_state():
+    class FakeDriver:
+        default_session_id = "tab-a"
+
+        def __init__(self):
+            self.execute_js_calls = 0
+
+        def get_all_sessions(self):
+            return [{"id": "tab-a"}]
+
+        def execute_js(self, script, timeout=10):
+            self.execute_js_calls += 1
+            return {
+                "status": "success",
+                "elements": [{"index": 1, "role": "button", "text": "保存", "visible": True}],
+            }
+
+    layer = BrowserActionLayer()
+    driver = FakeDriver()
+
+    result = layer.find(driver, role="button", refresh=True)
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "invalid_args"
+    assert result["recovery"]["code"] == "provide_locator"
+    assert result["recovery"]["stop_retry"] is True
+    assert driver.execute_js_calls == 0
+
+
 def test_browser_find_exception_result_includes_recovery(monkeypatch):
     class BrokenLayer:
         def find(self, driver, **kwargs):

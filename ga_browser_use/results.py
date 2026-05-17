@@ -35,10 +35,10 @@ def recovery_for_stage(stage: str, *, action: str | None = None) -> dict[str, An
         )
     if stage == "stale_index":
         return _base_recovery(
-            "refresh_state_then_find",
-            "The cached index is stale. Refresh state and locate the target again before retrying.",
-            next_tool="browser_find",
-            next_args={"refresh": True, "max_results": 5},
+            "refresh_state",
+            "The cached index is stale. Run browser_state before choosing a fresh index and retrying.",
+            next_tool="browser_state",
+            next_args={"max_elements": 120},
         )
     if stage == "control_unsupported" and action == "select":
         return _base_recovery(
@@ -49,10 +49,10 @@ def recovery_for_stage(stage: str, *, action: str | None = None) -> dict[str, An
         )
     if stage == "verify_failed":
         return _base_recovery(
-            "refresh_state_then_find",
-            "The action ran but verification failed. Refresh state and inspect the target before retrying.",
-            next_tool="browser_find",
-            next_args={"refresh": True, "max_results": 5},
+            "refresh_state",
+            "The action ran but verification failed. Run browser_state to inspect the current page before retrying.",
+            next_tool="browser_state",
+            next_args={"max_elements": 120},
         )
     if stage == "repeat_blocked":
         recovery = _base_recovery(

@@ -80,47 +80,120 @@ class BrowserRecipeRunner:
         return fallback if layer and layer != "main" else None
 
     @staticmethod
-    def _recipe_recovery(recipe: str, stage: str) -> dict[str, Any]:
+    def _recipe_retry_args(
+        recipe: str,
+        *,
+        target: dict[str, Any] | None = None,
+        option_text: str | None = None,
+        confirm_text: str | None = None,
+        timeout: int | None = None,
+        max_results: int | None = None,
+    ) -> dict[str, Any] | None:
+        args: dict[str, Any] = {"recipe": recipe}
+        if recipe in {"custom_select", "layer_select"}:
+            if not isinstance(target, dict) or not option_text:
+                return None
+            args["target"] = dict(target)
+            args["option_text"] = option_text
+            if recipe == "layer_select" and confirm_text:
+                args["confirm_text"] = confirm_text
+        if timeout is not None:
+            args["timeout"] = timeout
+        if max_results is not None:
+            args["max_results"] = max_results
+        return args
+
+    @staticmethod
+    def _recipe_recovery(
+        recipe: str,
+        stage: str,
+        *,
+        target: dict[str, Any] | None = None,
+        option_text: str | None = None,
+        confirm_text: str | None = None,
+        timeout: int | None = None,
+        max_results: int | None = None,
+    ) -> dict[str, Any]:
         if recipe == "layer_select":
             if stage == "ambiguous_target":
                 message = "Retry layer_select with a more specific target, option_text, or confirm_text so only one overlay candidate matches."
             else:
                 message = "Retry layer_select with bounded target, option_text, and optional confirm_text that match the opened overlay."
+            next_args = BrowserRecipeRunner._recipe_retry_args(
+                recipe,
+                target=target,
+                option_text=option_text,
+                confirm_text=confirm_text,
+                timeout=timeout,
+                max_results=max_results,
+            )
+            if next_args is None:
+                return {
+                    "code": "use_layer_select_recipe",
+                    "message": f"{message} The current failure does not include enough arguments to retry safely.",
+                    "stop_retry": True,
+                }
             return {
                 "code": "use_layer_select_recipe",
                 "message": message,
                 "stop_retry": False,
                 "next_tool": "browser_recipe",
-                "next_args": {"recipe": "layer_select"},
+                "next_args": next_args,
             }
         if recipe == "custom_select":
             if stage == "ambiguous_target":
                 message = "Retry custom_select with a more specific target or option_text so only one overlay candidate matches."
             else:
                 message = "Retry custom_select with a bounded trigger target and option_text that appears in the opened overlay."
+            next_args = BrowserRecipeRunner._recipe_retry_args(
+                recipe,
+                target=target,
+                option_text=option_text,
+                timeout=timeout,
+                max_results=max_results,
+            )
+            if next_args is None:
+                return {
+                    "code": "use_custom_select_recipe",
+                    "message": f"{message} The current failure does not include enough arguments to retry safely.",
+                    "stop_retry": True,
+                }
             return {
                 "code": "use_custom_select_recipe",
                 "message": message,
                 "stop_retry": False,
                 "next_tool": "browser_recipe",
-                "next_args": {"recipe": "custom_select"},
+                "next_args": next_args,
             }
         return dict(failed_result(None, stage, "Recipe recovery is unavailable.")["recovery"])
 
-    def _overlay_target_not_found(self, recipe: str, find_result: dict[str, Any], target_name: str) -> dict[str, Any]:
+    def _overlay_target_not_found(
+        self,
+        recipe: str,
+        find_result: dict[str, Any],
+        target_name: str,
+        *,
+        recovery_args: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         result = failed_result(None, "target_not_found", f"Recipe {target_name} was not found in an overlay layer.")
         result["recipe"] = recipe
         result["candidates"] = find_result.get("matches", [])
         if recipe in {"layer_select", "custom_select"}:
-            result["recovery"] = self._recipe_recovery(recipe, "target_not_found")
+            result["recovery"] = self._recipe_recovery(recipe, "target_not_found", **(recovery_args or {}))
         return result
 
-    def _ambiguous(self, recipe: str, find_result: dict[str, Any]) -> dict[str, Any]:
+    def _ambiguous(
+        self,
+        recipe: str,
+        find_result: dict[str, Any],
+        *,
+        recovery_args: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         result = failed_result(None, "ambiguous_target", "Recipe target is ambiguous.")
         result["recipe"] = recipe
         result["candidates"] = find_result.get("matches", [])
         if recipe in {"layer_select", "custom_select"}:
-            result["recovery"] = self._recipe_recovery(recipe, "ambiguous_target")
+            result["recovery"] = self._recipe_recovery(recipe, "ambiguous_target", **(recovery_args or {}))
         return result
 
     def _find_one(
@@ -129,6 +202,7 @@ class BrowserRecipeRunner:
         *,
         recipe: str,
         target: dict[str, Any] | None = None,
+        recovery_args: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> tuple[dict[str, Any], dict[str, Any] | None]:
         target = target or {}
@@ -147,7 +221,7 @@ class BrowserRecipeRunner:
         if result.get("status") != "success":
             return result, None
         if result.get("ambiguous"):
-            return self._ambiguous(recipe, result), None
+            return self._ambiguous(recipe, result, recovery_args=recovery_args), None
         matches = result.get("matches") or []
         return result, matches[0] if matches else None
 
@@ -183,6 +257,103 @@ class BrowserRecipeRunner:
                 return candidate
         return fallback
 
+    @staticmethod
+    def _selection_texts(match: dict[str, Any] | None) -> list[str]:
+        element = (match or {}).get("element", {})
+        if not isinstance(element, dict):
+            return []
+        values = [element.get("value"), element.get("text")]
+        values.extend(element.get("labels") or [])
+        return [str(value) for value in values if str(value or "").strip()]
+
+    @classmethod
+    def _selection_landed(cls, match: dict[str, Any] | None, option_text: str) -> bool:
+        expected = str(option_text or "").strip()
+        if not expected:
+            return False
+        return any(expected in value for value in cls._selection_texts(match))
+
+    def _component_not_ready(
+        self,
+        recipe: str,
+        message: str,
+        *,
+        recovery_args: dict[str, Any],
+        steps: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        result = failed_result(None, "component_not_ready", message)
+        result["recipe"] = recipe
+        result["recovery"] = self._recipe_recovery(recipe, "component_not_ready", **recovery_args)
+        return self._with_steps(result, steps)
+
+    def _verify_select_landed(
+        self,
+        driver: Any,
+        *,
+        recipe: str,
+        target: dict[str, Any],
+        option_text: str,
+        timeout: int,
+        max_results: int,
+        recovery_args: dict[str, Any],
+        steps: list[dict[str, Any]],
+        require_overlay_closed: bool,
+    ) -> dict[str, Any] | None:
+        state = self.layer.get_state(driver, max_elements=120)
+        steps.append({"tool": "browser_state", "status": state.get("status")})
+        if state.get("status") != "success":
+            state["recipe"] = recipe
+            return self._with_steps(state, steps)
+
+        target_match: dict[str, Any] | None = None
+        if str(target.get("query") or "").strip():
+            target_find, target_match = self._find_one(
+                driver,
+                recipe=recipe,
+                target=target,
+                max_results=max_results,
+                recovery_args=recovery_args,
+            )
+            steps.append({"tool": "browser_find", **target_find})
+            if target_find.get("status") != "success":
+                target_find["recipe"] = recipe
+                return self._with_steps(target_find, steps)
+        else:
+            # Indexes are scoped to the previous snapshot. After a select opens/closes
+            # an overlay, a refreshed state may legitimately renumber elements.
+            target_match = None
+
+        if str(target.get("query") or "").strip() and not self._selection_landed(target_match, option_text):
+            return self._component_not_ready(
+                recipe,
+                "Selection did not land on the target field after clicking the option.",
+                recovery_args=recovery_args,
+                steps=steps,
+            )
+
+        if not require_overlay_closed:
+            return None
+
+        option_find, option = self._find_one(
+            driver,
+            recipe=recipe,
+            target={"query": option_text},
+            max_results=max_results,
+            recovery_args=recovery_args,
+        )
+        steps.append({"tool": "browser_find", **option_find})
+        if option_find.get("status") == "success" and self._prefer_overlay_match(option_find, option):
+            return self._component_not_ready(
+                recipe,
+                "Selection overlay is still open after clicking the option.",
+                recovery_args=recovery_args,
+                steps=steps,
+            )
+        if option_find.get("status") != "success" and option_find.get("stage") != "target_not_found":
+            option_find["recipe"] = recipe
+            return self._with_steps(option_find, steps)
+        return None
+
     def _custom_select(
         self,
         driver: Any,
@@ -191,13 +362,26 @@ class BrowserRecipeRunner:
         option_text: str,
         timeout: int,
         max_results: int,
+        require_overlay_closed: bool = True,
     ) -> dict[str, Any]:
         target_error = self._validate_target("custom_select", target)
         if target_error:
             return target_error
 
         steps: list[dict[str, Any]] = []
-        trigger_find, trigger = self._find_one(driver, recipe="custom_select", target=target, max_results=max_results)
+        recovery_args = {
+            "target": target,
+            "option_text": option_text,
+            "timeout": timeout,
+            "max_results": max_results,
+        }
+        trigger_find, trigger = self._find_one(
+            driver,
+            recipe="custom_select",
+            target=target,
+            max_results=max_results,
+            recovery_args=recovery_args,
+        )
         steps.append({"tool": "browser_find", **trigger_find})
         if not trigger:
             return self._with_steps(trigger_find, steps)
@@ -217,12 +401,18 @@ class BrowserRecipeRunner:
             recipe="custom_select",
             target={"query": option_text},
             max_results=max_results,
+            recovery_args=recovery_args,
         )
         option = self._prefer_overlay_match(option_find, option)
         steps.append({"tool": "browser_find", **option_find})
         if not option:
             if option_find.get("status") == "success":
-                option_find = self._overlay_target_not_found("custom_select", option_find, "option")
+                option_find = self._overlay_target_not_found(
+                    "custom_select",
+                    option_find,
+                    "option",
+                    recovery_args=recovery_args,
+                )
             return self._with_steps(option_find, steps)
 
         option_index = option["index"]
@@ -231,6 +421,19 @@ class BrowserRecipeRunner:
         if click_option.get("status") != "success":
             click_option["recipe"] = "custom_select"
             return self._with_steps(click_option, steps)
+        verification = self._verify_select_landed(
+            driver,
+            recipe="custom_select",
+            target=target or {},
+            option_text=option_text,
+            timeout=timeout,
+            max_results=max_results,
+            recovery_args=recovery_args,
+            steps=steps,
+            require_overlay_closed=require_overlay_closed,
+        )
+        if verification:
+            return verification
         return {"status": "success", "recipe": "custom_select", "steps": steps, "recovery": None}
 
     def _layer_select(
@@ -253,26 +456,48 @@ class BrowserRecipeRunner:
             option_text=option_text,
             timeout=timeout,
             max_results=max_results,
+            require_overlay_closed=not bool(confirm_text),
         )
         result["recipe"] = "layer_select"
         if result.get("status") != "success":
             recovery = result.get("recovery")
             if not (isinstance(recovery, dict) and recovery.get("stop_retry") is True):
-                result["recovery"] = self._recipe_recovery("layer_select", str(result.get("stage") or ""))
+                result["recovery"] = self._recipe_recovery(
+                    "layer_select",
+                    str(result.get("stage") or ""),
+                    target=target,
+                    option_text=option_text,
+                    confirm_text=confirm_text,
+                    timeout=timeout,
+                    max_results=max_results,
+                )
             return result
 
         if confirm_text:
+            recovery_args = {
+                "target": target,
+                "option_text": option_text,
+                "confirm_text": confirm_text,
+                "timeout": timeout,
+                "max_results": max_results,
+            }
             confirm_find, confirm = self._find_one(
                 driver,
                 recipe="layer_select",
                 target={"query": confirm_text},
                 max_results=max_results,
+                recovery_args=recovery_args,
             )
             confirm = self._prefer_overlay_match(confirm_find, confirm)
             result["steps"].append({"tool": "browser_find", **confirm_find})
             if not confirm:
                 if confirm_find.get("status") == "success":
-                    confirm_find = self._overlay_target_not_found("layer_select", confirm_find, "confirm target")
+                    confirm_find = self._overlay_target_not_found(
+                        "layer_select",
+                        confirm_find,
+                        "confirm target",
+                        recovery_args=recovery_args,
+                    )
                 else:
                     confirm_find["recipe"] = "layer_select"
                 return self._with_steps(confirm_find, result["steps"])

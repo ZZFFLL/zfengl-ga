@@ -2610,7 +2610,7 @@ def test_run_action_state_missing_includes_structured_recovery():
     assert result["recovery"]["next_tool"] == "browser_state"
 
 
-def test_run_action_stale_tab_includes_find_recovery():
+def test_run_action_stale_tab_includes_state_recovery():
     layer = BrowserActionLayer()
     layer._last_state = {"tab_id": "old-tab", "state_token": "tok", "elements_by_index": {1: {"index": 1}}}
     driver = FakeDriver([])
@@ -2619,8 +2619,10 @@ def test_run_action_stale_tab_includes_find_recovery():
     result = layer.run_action(driver, action="click", index=1)
 
     assert result["stage"] == "stale_index"
-    assert result["recovery"]["code"] == "refresh_state_then_find"
-    assert result["recovery"]["next_tool"] == "browser_find"
+    assert result["recovery"]["code"] == "refresh_state"
+    assert result["recovery"]["next_tool"] == "browser_state"
+    assert "browser_state" in result["recovery"]["message"]
+    assert result["recovery"]["next_args"] == {"max_elements": 120}
 
 
 def test_run_action_select_custom_control_recovery_includes_target_and_option():

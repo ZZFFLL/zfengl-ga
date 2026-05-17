@@ -62,7 +62,7 @@
   }},
   {"type": "function", "function": {
     "name": "browser_find",
-      "description": "Read-only locator for indexed browser elements from the real Chrome page. Provide at least one bounded locator such as query, table, layer, frame_path, role, or control_kind; unbounded calls are rejected to avoid arbitrary visible candidates. Returns candidate indexes with score, reason, and ambiguity instead of acting.",
+      "description": "Read-only locator for indexed browser elements from the real Chrome page. Provide a real semantic locator: query or table. role/layer/control_kind/frame_path are optional filters and are not sufficient by themselves; calls without query or table are rejected to avoid arbitrary visible candidates. Returns candidate indexes with score, reason, and ambiguity instead of acting.",
     "parameters": {"type": "object", "properties": {
       "query": {"type": "string", "description": "Target label/text/value to find"},
       "role": {"type": "string", "description": "Optional role hard filter"},

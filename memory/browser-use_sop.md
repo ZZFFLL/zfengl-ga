@@ -33,7 +33,7 @@
 用途：只读定位真实 Chrome 当前页面中的 indexed 元素。它不会点击、输入、选择或按键，只返回候选 index、评分、原因和是否歧义。
 
 优先使用场景：
-- `browser_action` 返回 `recovery.next_tool="browser_find"`。
+- `browser_state` 输出太长，或失败 recovery 已明确给出可执行的 `browser_find` 参数。
 - `browser_state` 输出太长，需要按 label、field、table、layer、frame 缩小目标。
 - 旧 index 失效后，需要刷新并重新定位目标。
 - 表格、弹层、AntD 选项存在多个相似文本，需要先判断候选。
@@ -327,14 +327,14 @@ SPA 页面没有稳定文本或 selector 时，再按页面形态选有界等待
 处理：
 - 优先读 `recovery.next_tool` / `recovery.next_args`。
 - 如果是 `keys` 且目的是 input 后回车/Tab/Escape：重试 `keys` 且不要传 index。
-- 如果是 `click` / `input` / `select` / `wait_index`：先 `browser_state` 或 `browser_find(refresh=true)` 再重试。
+- 如果是 `click` / `input` / `select` / `wait_index`：先按 recovery 默认调用 `browser_state`；只有已有 query/table 语义定位时，才用 `browser_find(refresh=true)` 缩小候选。
 
 ### stale_index
 
 含义：index 来源过期，或 tab 已切换。
 
 处理：
-1. 优先调用 `browser_find(refresh=true)` 按语义重新定位，或调用 `browser_state` 获取新 index。
+1. 优先按 recovery 调用 `browser_state` 获取新 index；如果已经有 query/table 语义定位，再调用 `browser_find(refresh=true)` 重新缩小候选。
 2. 重新选择目标元素。
 3. 再执行 action。
 
@@ -399,7 +399,7 @@ SPA 页面没有稳定文本或 selector 时，再按页面形态选有界等待
 - `input` 支持直接写入 contenteditable，也支持同源 iframe contenteditable / designMode editor body；建议用 `verify="field_value"` + 非空 `verify_value` 确认实际值。它不保证调用编辑器私有 API，也不保证跨域 iframe。
 - `select` 只支持原生 `<select>`，并会拒绝 disabled option / disabled optgroup。React/AntD/MUI/Vue 自定义下拉优先用 `browser_recipe(custom_select)`；recipe 歧义或失败后再拆成 click -> state/find -> click。
 - SPA waits 都是有界等待：`wait_dom_stable`、`wait_not_busy`、`wait_enabled`、`wait_route` 不应被当成无限等待或业务成功保证。
-- `browser_find` 是只读定位层：复用或刷新当前 state，按 `query`、`role`、`control_kind`、`layer`、`frame_path`、`table` 做过滤和评分，`max_results` 被限制在 1-20；必须至少提供一个定位约束，无约束调用会被拒绝，避免返回任意可见元素；它只返回候选 index，不执行动作。
+- `browser_find` 是只读定位层：复用或刷新当前 state，必须提供真实语义定位 `query` 或 `table`，再用 `role`、`control_kind`、`layer`、`frame_path` 做可选过滤和评分，`max_results` 被限制在 1-20；只给 role/layer/control_kind/frame_path 会被拒绝，避免返回任意可见元素；它只返回候选 index，不执行动作。
 - `browser_find` 会返回 disabled 候选，方便判断控件存在或后续等待启用；真正的 disabled/read-only 拒绝仍由 `browser_action` 执行层负责。
 - `browser_find` 的 `ambiguous=true` 是硬信号：候选分数接近，必须增加约束，不允许直接拿第一个候选操作。
 - `browser_find` 的可重试 recovery 会保留 `switch_tab_id` 和 `include_invisible`，避免重试时跑到错误标签页或可见性模式；如果 `refresh=true` 后仍找不到目标，会返回 `stop_retry=true`，需要补充更强约束或换策略。
@@ -408,14 +408,14 @@ SPA 页面没有稳定文本或 selector 时，再按页面形态选有界等待
 - `table_locate` 只调用 `browser_find` 定位候选，要求至少提供 `row_text`、`column_text` 或 `header_text` 之一；它不负责分页、虚拟滚动、单元格写入或提交。
 - `component_wait` 当前是有界组件条件等待型 recipe：在 timeout 内按 `browser_state` -> `browser_find` 轮询 query 目标，判断 `layer_open`、`layer_closed`、`options_visible`、`field_value`、`element_enabled`、`not_busy`；已有 index 的可见/启用等待交给 `browser_action(wait_index|wait_enabled)`，其他条件改用 query。
 - 工具失败时会返回结构化结果：`status=failed`，并带 `stage`、`error`；部分场景会额外带 `hint` / `suggested_args`。
-- 新失败结果优先带 `recovery`；`recovery.stop_retry=true` 或 `stage=repeat_blocked` 时必须停止重复同一动作，改用 `browser_find` / `browser_recipe` 或低层路径。
+- 新失败结果优先带 `recovery`；`stale_index` / `verify_failed` 默认先回到 `browser_state` 取新索引，不再无语义地调用 `browser_find(refresh=true)`；`recovery.stop_retry=true` 或 `stage=repeat_blocked` 时必须停止重复同一动作，改用有 query/table 的 `browser_find`、固定 `browser_recipe` 或低层路径。
 
 ### 适合
 
 - 对用户真实 Chrome 当前页面做普通交互：点击、输入、原生 select、按 Enter/Escape/Tab、等待文本或 selector。
 - 已登录页面中的轻量操作，因为底层仍沿用 TMWebDriver / Chrome 扩展接管用户浏览器。
 - 同源 iframe 内已被 `browser_state` 索引出的元素操作。
-- `browser_state` 输出过长或候选过多时，用 `browser_find` 按语义、控件类型、弹层、frame 或表格上下文缩小范围。
+- `browser_state` 输出过长或候选过多时，用 `browser_find` 按 query 或 table 语义定位，再叠加控件类型、弹层、frame 等过滤条件缩小范围。
 - 常见 AntD/React 自定义下拉、弹层选择和表格目标定位：优先用固定 `browser_recipe`，让工具在歧义时 fail closed。
 - 搜索框、评论框、普通表单等“输入后回车”的流程：`input(index)` 后直接 `keys(text="Enter")`，不要传 index。
 - SPA 中短暂重渲染后的等待：`wait_index` 可在原节点 detached 后基于 selector hint + tag/role/text 做受限 fallback。
@@ -500,4 +500,4 @@ SPA 页面没有稳定文本或 selector 时，再按页面形态选有界等待
 2. state 太长或目标不明确，先 `browser_find`，不要猜 index。
 3. 成功输入后要提交，直接 `keys Enter`，不要传 index。
 4. 常见下拉/弹层/表格定位先试固定 `browser_recipe`，歧义就补约束。
-5. 失败先读 `recovery.stop_retry` / `recovery.next_args`；页面结构变了，旧 index 作废，要么按焦点继续，要么重新 `browser_state` / `browser_find(refresh=true)`。
+5. 失败先读 `recovery.stop_retry` / `recovery.next_args`；页面结构变了，旧 index 作废，要么按焦点继续，要么重新 `browser_state`，需要缩小候选时再用带 query/table 的 `browser_find(refresh=true)`。

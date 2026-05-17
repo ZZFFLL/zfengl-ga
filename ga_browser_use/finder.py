@@ -50,7 +50,7 @@ def _has_locator_constraint(
     frame_path: list[Any] | None,
     table: dict[str, Any] | None,
 ) -> bool:
-    if query or role or control_kind or layer or frame_path is not None:
+    if query:
         return True
     return isinstance(table, dict) and any(table.get(key) for key in ("row_text", "column_text", "header_text"))
 
@@ -150,9 +150,9 @@ def find_in_state(
         frame_path=frame_path,
         table=table,
     ):
-        result = failed_result(None, "invalid_args", "browser_find requires query, table, layer, frame_path, role, or control_kind.")
+        result = failed_result(None, "invalid_args", "browser_find requires query or table; role, control_kind, layer, and frame_path are filters only.")
         result["recovery"]["code"] = "provide_locator"
-        result["recovery"]["message"] = "Provide a bounded locator before using browser_find; do not search every visible element."
+        result["recovery"]["message"] = "Provide query or table before using browser_find; role, control_kind, layer, and frame_path are filters only."
         result["recovery"]["stop_retry"] = True
         result["recovery"].pop("next_tool", None)
         result["recovery"].pop("next_args", None)
@@ -187,6 +187,7 @@ def find_in_state(
     if not matches:
         result = failed_result(None, "target_not_found", "No browser element matched the requested criteria.")
         result["recovery"]["code"] = "refresh_state_then_find"
+        result["recovery"]["message"] = "Refresh browser_state and retry browser_find with the same semantic locator."
         result["recovery"]["next_tool"] = "browser_find"
         next_args = {"refresh": True, "query": query_text, "max_results": limit}
         if role:

@@ -43,6 +43,9 @@ def test_english_schema_exposes_browser_tools():
     assert "field/control/layer" in state["description"].lower()
     assert state["parameters"]["properties"]["max_elements"]["default"] == 120
     assert "read-only" in find["description"].lower()
+    assert "real semantic locator" in find["description"].lower()
+    assert "role/layer/control_kind/frame_path" in find["description"]
+    assert "not sufficient by themselves" in find["description"].lower()
     assert "query" in find["parameters"]["properties"]
     assert "refresh" in find["parameters"]["properties"]
     assert find["parameters"]["properties"]["max_results"]["default"] == 5
@@ -97,6 +100,9 @@ def test_chinese_schema_exposes_browser_tools():
     assert state["parameters"]["properties"]["include_invisible"]["default"] is False
     assert state["parameters"]["properties"]["max_elements"]["default"] == 120
     assert "只读定位" in find["description"]
+    assert "真实语义定位" in find["description"]
+    assert "role/layer/control_kind/frame_path" in find["description"]
+    assert "单独使用不足以定位" in find["description"]
     assert "query" in find["parameters"]["properties"]
     assert "refresh" in find["parameters"]["properties"]
     assert find["parameters"]["properties"]["max_results"]["default"] == 5

@@ -24,6 +24,24 @@ def test_recovery_for_custom_select_misuse_points_to_recipe():
     assert recovery["next_args"]["recipe"] == "custom_select"
 
 
+def test_stale_index_recovery_refreshes_state_before_retrying():
+    recovery = recovery_for_stage("stale_index", action="click")
+
+    assert recovery["code"] == "refresh_state"
+    assert recovery["next_tool"] == "browser_state"
+    assert "browser_state" in recovery["message"]
+    assert recovery["next_args"] == {"max_elements": 120}
+
+
+def test_verify_failed_recovery_refreshes_state_before_retrying():
+    recovery = recovery_for_stage("verify_failed", action="input")
+
+    assert recovery["code"] == "refresh_state"
+    assert recovery["next_tool"] == "browser_state"
+    assert "browser_state" in recovery["message"]
+    assert recovery["next_args"] == {"max_elements": 120}
+
+
 def test_add_recovery_preserves_hint_and_suggested_args():
     result = {"status": "failed", "stage": "state_missing", "hint": "old", "suggested_args": {"action": "keys"}}
 

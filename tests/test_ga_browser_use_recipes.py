@@ -7,6 +7,8 @@ class FakeLayer:
         self.find_results = [
             {"status": "success", "matches": [{"index": 10, "score": 0.9, "element": {"index": 10, "layer": "main"}}], "ambiguous": False},
             {"status": "success", "matches": [{"index": 22, "score": 0.95, "element": {"index": 22, "layer": "dropdown"}}], "ambiguous": False},
+            {"status": "success", "matches": [{"index": 10, "score": 0.9, "element": {"index": 10, "layer": "main", "value": "研发部"}}], "ambiguous": False},
+            {"status": "failed", "stage": "target_not_found", "recovery": {"code": "refresh_state_then_find"}},
         ]
 
     def find(self, driver, **kwargs):
@@ -31,8 +33,8 @@ def test_custom_select_recipe_runs_trigger_state_option_click():
     result = runner.run(None, recipe="custom_select", target={"query": "所属部门"}, option_text="研发部")
 
     assert result["status"] == "success"
-    assert [call[0] for call in layer.calls] == ["find", "action", "state", "find", "action"]
-    assert result["steps"][-1]["index"] == 22
+    assert [call[0] for call in layer.calls] == ["find", "action", "state", "find", "action", "state", "find", "find"]
+    assert result["steps"][4]["index"] == 22
 
 
 def test_custom_select_requires_bounded_target_before_any_action():
@@ -123,8 +125,122 @@ def test_custom_select_overlay_target_not_found_has_recipe_recovery():
         "message": "Retry custom_select with a bounded trigger target and option_text that appears in the opened overlay.",
         "stop_retry": False,
         "next_tool": "browser_recipe",
-        "next_args": {"recipe": "custom_select"},
+        "next_args": {
+            "recipe": "custom_select",
+            "target": {"query": "所属部门"},
+            "option_text": "研发部",
+            "timeout": 10,
+            "max_results": 5,
+        },
     }
+
+
+def test_custom_select_overlay_recovery_preserves_executable_args():
+    layer = FakeLayer()
+    layer.find_results = [
+        {"status": "success", "matches": [{"index": 10, "element": {"index": 10, "layer": "main"}}], "ambiguous": False},
+        {"status": "success", "matches": [{"index": 22, "element": {"index": 22, "layer": "main"}}], "ambiguous": False},
+    ]
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(
+        None,
+        recipe="custom_select",
+        target={"query": "所属部门"},
+        option_text="研发部",
+        timeout=6,
+        max_results=3,
+    )
+
+    assert result["status"] == "failed"
+    assert result["recovery"]["next_tool"] == "browser_recipe"
+    assert result["recovery"]["next_args"] == {
+        "recipe": "custom_select",
+        "target": {"query": "所属部门"},
+        "option_text": "研发部",
+        "timeout": 6,
+        "max_results": 3,
+    }
+
+
+def test_custom_select_fails_when_post_click_field_value_did_not_land():
+    layer = FakeLayer()
+    layer.find_results = [
+        {"status": "success", "matches": [{"index": 10, "element": {"index": 10, "layer": "main", "value": ""}}], "ambiguous": False},
+        {"status": "success", "matches": [{"index": 22, "element": {"index": 22, "layer": "dropdown", "text": "研发部"}}], "ambiguous": False},
+        {"status": "success", "matches": [{"index": 10, "element": {"index": 10, "layer": "main", "value": ""}}], "ambiguous": False},
+    ]
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="custom_select", target={"query": "所属部门"}, option_text="研发部")
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "component_not_ready"
+    assert result["recipe"] == "custom_select"
+    assert [call[0] for call in layer.calls] == ["find", "action", "state", "find", "action", "state", "find"]
+
+
+def test_custom_select_fails_when_overlay_stays_open_after_option_click():
+    layer = FakeLayer()
+    layer.find_results = [
+        {"status": "success", "matches": [{"index": 10, "element": {"index": 10, "layer": "main", "value": ""}}], "ambiguous": False},
+        {"status": "success", "matches": [{"index": 22, "element": {"index": 22, "layer": "dropdown", "text": "研发部"}}], "ambiguous": False},
+        {"status": "success", "matches": [{"index": 10, "element": {"index": 10, "layer": "main", "value": "研发部"}}], "ambiguous": False},
+        {"status": "success", "matches": [{"index": 22, "element": {"index": 22, "layer": "dropdown", "text": "研发部"}}], "ambiguous": False},
+    ]
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="custom_select", target={"query": "所属部门"}, option_text="研发部")
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "component_not_ready"
+    assert result["recipe"] == "custom_select"
+
+
+def test_custom_select_fails_closed_when_overlay_check_is_ambiguous():
+    layer = FakeLayer()
+    layer.find_results = [
+        {"status": "success", "matches": [{"index": 10, "element": {"index": 10, "layer": "main", "value": ""}}], "ambiguous": False},
+        {"status": "success", "matches": [{"index": 22, "element": {"index": 22, "layer": "dropdown", "text": "研发部"}}], "ambiguous": False},
+        {"status": "success", "matches": [{"index": 10, "element": {"index": 10, "layer": "main", "value": "研发部"}}], "ambiguous": False},
+        {
+            "status": "success",
+            "matches": [
+                {"index": 10, "element": {"index": 10, "layer": "main", "value": "研发部"}},
+                {"index": 22, "element": {"index": 22, "layer": "dropdown", "text": "研发部"}},
+            ],
+            "ambiguous": True,
+        },
+    ]
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="custom_select", target={"query": "所属部门"}, option_text="研发部")
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "ambiguous_target"
+    assert result["recipe"] == "custom_select"
+
+
+def test_custom_select_index_target_does_not_verify_against_stale_refreshed_index():
+    class IndexLayer(FakeLayer):
+        def __init__(self):
+            super().__init__()
+            self.find_results = [
+                {"status": "success", "matches": [{"index": 22, "element": {"index": 22, "layer": "dropdown", "text": "研发部"}}], "ambiguous": False},
+                {"status": "failed", "stage": "target_not_found", "recovery": {"code": "refresh_state_then_find"}},
+            ]
+
+        def get_state(self, driver, **kwargs):
+            self.calls.append(("state", kwargs))
+            return {"status": "success", "elements": [{"index": 5, "value": "旧值"}]}
+
+    layer = IndexLayer()
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="custom_select", target={"index": 5}, option_text="研发部")
+
+    assert result["status"] == "success"
+    assert [call[0] for call in layer.calls] == ["action", "state", "find", "action", "state", "find"]
 
 
 def test_layer_select_refuses_ambiguous_option():
@@ -166,8 +282,64 @@ def test_layer_select_ambiguous_target_has_recipe_recovery():
         "message": "Retry layer_select with a more specific target, option_text, or confirm_text so only one overlay candidate matches.",
         "stop_retry": False,
         "next_tool": "browser_recipe",
-        "next_args": {"recipe": "layer_select"},
+        "next_args": {
+            "recipe": "layer_select",
+            "target": {"query": "人员"},
+            "option_text": "张三",
+            "timeout": 10,
+            "max_results": 5,
+        },
     }
+
+
+def test_layer_select_ambiguous_option_recovery_preserves_executable_args():
+    layer = FakeLayer()
+    layer.find_results = [
+        {"status": "success", "matches": [{"index": 10, "element": {"index": 10}}], "ambiguous": False},
+        {
+            "status": "success",
+            "matches": [{"index": 21, "element": {"index": 21}}, {"index": 22, "element": {"index": 22}}],
+            "ambiguous": True,
+        },
+    ]
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(
+        None,
+        recipe="layer_select",
+        target={"query": "人员"},
+        option_text="张三",
+        confirm_text="确定",
+        timeout=8,
+        max_results=4,
+    )
+
+    assert result["status"] == "failed"
+    assert result["recovery"]["next_tool"] == "browser_recipe"
+    assert result["recovery"]["next_args"] == {
+        "recipe": "layer_select",
+        "target": {"query": "人员"},
+        "option_text": "张三",
+        "confirm_text": "确定",
+        "timeout": 8,
+        "max_results": 4,
+    }
+
+
+def test_layer_select_fails_when_post_click_field_value_did_not_land():
+    layer = FakeLayer()
+    layer.find_results = [
+        {"status": "success", "matches": [{"index": 10, "element": {"index": 10, "layer": "main", "value": ""}}], "ambiguous": False},
+        {"status": "success", "matches": [{"index": 22, "element": {"index": 22, "layer": "dropdown", "text": "张三"}}], "ambiguous": False},
+        {"status": "success", "matches": [{"index": 10, "element": {"index": 10, "layer": "main", "value": ""}}], "ambiguous": False},
+    ]
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="layer_select", target={"query": "人员"}, option_text="张三")
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "component_not_ready"
+    assert result["recipe"] == "layer_select"
 
 
 def test_layer_select_refuses_main_layer_singleton_confirm_after_open():
@@ -175,6 +347,7 @@ def test_layer_select_refuses_main_layer_singleton_confirm_after_open():
     layer.find_results = [
         {"status": "success", "matches": [{"index": 10, "element": {"index": 10, "layer": "main"}}], "ambiguous": False},
         {"status": "success", "matches": [{"index": 22, "element": {"index": 22, "layer": "dropdown"}}], "ambiguous": False},
+        {"status": "success", "matches": [{"index": 10, "element": {"index": 10, "layer": "main", "value": "张三"}}], "ambiguous": False},
         {"status": "success", "matches": [{"index": 30, "element": {"index": 30, "layer": "main"}}], "ambiguous": False},
     ]
     runner = BrowserRecipeRunner(layer)
@@ -184,7 +357,7 @@ def test_layer_select_refuses_main_layer_singleton_confirm_after_open():
     assert result["status"] == "failed"
     assert result["stage"] == "target_not_found"
     assert result["recipe"] == "layer_select"
-    assert [call[0] for call in layer.calls] == ["find", "action", "state", "find", "action", "find"]
+    assert [call[0] for call in layer.calls] == ["find", "action", "state", "find", "action", "state", "find", "find"]
 
 
 def test_layer_select_preserves_hard_stop_from_custom_select_failure():
@@ -213,6 +386,7 @@ def test_layer_select_confirm_search_does_not_hard_filter_popover():
     layer.find_results = [
         {"status": "success", "matches": [{"index": 10, "element": {"index": 10, "layer": "main"}}], "ambiguous": False},
         {"status": "success", "matches": [{"index": 22, "element": {"index": 22, "layer": "dropdown"}}], "ambiguous": False},
+        {"status": "success", "matches": [{"index": 10, "element": {"index": 10, "layer": "main", "value": "张三"}}], "ambiguous": False},
         {"status": "success", "matches": [{"index": 30, "element": {"index": 30, "layer": "modal"}}], "ambiguous": False},
     ]
     runner = BrowserRecipeRunner(layer)
@@ -310,6 +484,25 @@ def test_component_wait_recovery_preserves_switch_tab_id():
 
     assert result["status"] == "failed"
     assert result["recovery"]["next_args"]["switch_tab_id"] == "tab-b"
+
+
+def test_component_wait_closed_index_recovery_preserves_switch_tab_id_without_invalid_recipe_retry():
+    layer = FakeLayer()
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(
+        None,
+        recipe="component_wait",
+        condition="layer_closed",
+        target={"index": 5},
+        timeout=4,
+        switch_tab_id="tab-b",
+    )
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "invalid_args"
+    assert result["recovery"]["next_tool"] == "browser_state"
+    assert result["recovery"]["next_args"] == {"switch_tab_id": "tab-b"}
 
 
 def test_component_wait_polls_until_later_find_satisfies_condition():
