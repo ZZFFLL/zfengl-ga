@@ -183,7 +183,6 @@ def find_in_state(
         )
     matches.sort(key=lambda item: item["score"], reverse=True)
     limit = safe_max_results(max_results)
-    matches = matches[:limit]
     if not matches:
         result = failed_result(None, "target_not_found", "No browser element matched the requested criteria.")
         result["recovery"]["code"] = "refresh_state_then_find"
@@ -203,4 +202,5 @@ def find_in_state(
         result["recovery"]["next_args"] = next_args
         return result
     ambiguous = len(matches) > 1 and abs(matches[0]["score"] - matches[1]["score"]) <= 0.05
+    matches = matches[:limit]
     return {"status": "success", "matches": matches, "ambiguous": ambiguous, "recovery": None}

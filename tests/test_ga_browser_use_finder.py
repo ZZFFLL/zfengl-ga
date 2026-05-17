@@ -171,7 +171,22 @@ def test_find_safely_parses_string_max_results():
         ]
     )
     result = find_in_state(state, query="保存", max_results="1")
+    assert result["status"] == "success"
     assert len(result["matches"]) == 1
+    assert result["ambiguous"] is True
+
+
+def test_find_keeps_ambiguity_when_integer_max_results_truncates_matches():
+    state = make_state(
+        [
+            {"index": 1, "text": "保存", "labels": [], "visible": True, "disabled": False},
+            {"index": 2, "text": "保存", "labels": [], "visible": True, "disabled": False},
+        ]
+    )
+    result = find_in_state(state, query="保存", max_results=1)
+    assert result["status"] == "success"
+    assert len(result["matches"]) == 1
+    assert result["ambiguous"] is True
 
 
 def test_find_invalid_max_results_falls_back_to_default():
