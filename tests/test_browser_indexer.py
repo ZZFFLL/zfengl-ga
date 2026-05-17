@@ -309,6 +309,55 @@ document.querySelectorAll = (selector) => {
     assert by_kind["date_input"]["action_hints"] == ["input", "verify_field_value", "keys_after_input"]
 
 
+def test_browser_state_script_marks_ant_select_trigger_and_overlay_option():
+    script = build_browser_state_script(include_invisible=False, max_elements=10)
+
+    state = run_browser_state_script(
+        script,
+        """
+const trigger = makeElement({
+  tag: "div",
+  id: "leave-select",
+  text: "Select leave",
+  role: "combobox",
+  attrs: { "aria-haspopup": "listbox" },
+});
+const dropdownRoot = makeElement({
+  tag: "div",
+  attrs: { class: "ant-select-dropdown" },
+});
+dropdownRoot.matches = (selector) => selector.includes(".ant-select-dropdown");
+const option = makeElement({
+  tag: "div",
+  text: "Yes",
+  role: "option",
+});
+option.closest = (selector) => {
+  if (selector.includes(".ant-select-dropdown") || selector.includes("[role='listbox']")) return dropdownRoot;
+  return null;
+};
+document.querySelectorAll = (selector) => {
+  if (selector === "iframe, frame" || selector.startsWith("label[")) return [];
+  if (selector.includes(".ant-select-dropdown") && selector.includes("[role='listbox']")) return [dropdownRoot];
+  return [trigger, option];
+};
+""",
+    )
+
+    assert state["status"] == "success"
+    by_text = {element["text"]: element for element in state["elements"]}
+    assert by_text["Select leave"]["control_kind"] == "custom_select"
+    assert by_text["Select leave"]["action_hints"] == [
+        "click_to_open",
+        "state_after_open",
+        "select_option_by_click",
+    ]
+    assert by_text["Yes"]["control_kind"] == "option"
+    assert by_text["Yes"]["action_hints"] == ["click_to_select"]
+    assert by_text["Yes"]["layer"] == "dropdown"
+    assert by_text["Yes"]["modal_rank"] == 1
+
+
 def test_browser_state_script_emits_rich_field_and_table_metadata():
     script = build_browser_state_script(include_invisible=False, max_elements=10)
 
@@ -369,6 +418,46 @@ document.querySelectorAll = (selector) => {
     assert element["table_context"]["column_index"] == 1
     assert element["control_kind"] == "native_input"
     assert element["action_hints"] == ["input", "verify_field_value", "keys_after_input"]
+
+
+def test_browser_state_script_emits_row_and_column_for_later_table_cell():
+    script = build_browser_state_script(include_invisible=False, max_elements=10)
+
+    state = run_browser_state_script(
+        script,
+        """
+const table = makeElement({ tag: "table", attrs: { "aria-label": "Daily Detail" } });
+const row1 = makeElement({ tag: "tr" });
+const row2 = makeElement({ tag: "tr" });
+const row2Cell1 = makeElement({ tag: "td", text: "Work content" });
+const row2Cell2 = makeElement({ tag: "td", text: "Hours" });
+row1.children = [makeElement({ tag: "td", text: "Header A" }), makeElement({ tag: "td", text: "Header B" })];
+row2.children = [row2Cell1, row2Cell2];
+table.querySelectorAll = (selector) => selector === "tr, [role='row']" ? [row1, row2] : [];
+const hoursInput = makeElement({ tag: "input", type: "text", value: "1.00" });
+hoursInput.closest = (selector) => {
+  if (selector.includes("td")) return row2Cell2;
+  if (selector.includes("tr")) return row2;
+  if (selector.includes("table")) return table;
+  return null;
+};
+document.querySelectorAll = (selector) => {
+  if (selector === "iframe, frame" || selector.startsWith("label[")) return [];
+  return [hoursInput];
+};
+""",
+    )
+
+    assert state["status"] == "success"
+    element = state["elements"][0]
+    assert element["table_context"] == {
+        "table_role": "table",
+        "table_label": "Daily Detail",
+        "row_index": 2,
+        "column_index": 2,
+        "cell_role": "td",
+        "cell_text": "Hours",
+    }
 
 
 def test_browser_state_script_omits_child_elements_when_parent_iframe_is_hidden():
@@ -611,12 +700,139 @@ document.querySelectorAll = (selector) => selector === "iframe, frame" ? [hidden
     assert state["elements"] == []
 
 
+def test_browser_state_script_indexes_nested_same_origin_frame_with_full_frame_path():
+    script = build_browser_state_script(include_invisible=False, max_elements=10)
+
+    state = run_browser_state_script(
+        script,
+        """
+const outerIframe = makeElement({ tag: "iframe", ownerDocument: document });
+const outerWindow = {
+  ...window,
+  frameElement: outerIframe,
+  parent: window,
+  location: { href: "https://example.test/outer" },
+};
+const innerIframe = makeElement({ tag: "iframe" });
+const outerDocument = {
+  title: "Outer",
+  defaultView: outerWindow,
+  body: null,
+  getElementById: (_id) => null,
+  contains: (element) => element === innerIframe || element === outerDocument.body,
+  querySelectorAll: (selector) => selector === "iframe, frame" ? [innerIframe] : [],
+};
+outerDocument.body = makeElement({ tag: "body", ownerDocument: outerDocument });
+innerIframe.ownerDocument = outerDocument;
+
+const innerWindow = {
+  ...window,
+  frameElement: innerIframe,
+  parent: outerWindow,
+  location: { href: "https://example.test/inner" },
+};
+const innerDocument = {
+  title: "Inner",
+  defaultView: innerWindow,
+  body: null,
+  getElementById: (_id) => null,
+  contains: (element) => element === nestedButton || element === innerDocument.body,
+  querySelectorAll: (selector) => {
+    if (selector === "iframe, frame" || selector.startsWith("label[")) return [];
+    return [nestedButton];
+  },
+};
+innerDocument.body = makeElement({ tag: "body", ownerDocument: innerDocument });
+const nestedButton = makeElement({ tag: "button", text: "Nested", ownerDocument: innerDocument });
+outerIframe.contentDocument = outerDocument;
+outerIframe.contentWindow = outerWindow;
+innerIframe.contentDocument = innerDocument;
+innerIframe.contentWindow = innerWindow;
+document.contains = (element) => element === outerIframe || element === document.body;
+document.querySelectorAll = (selector) => selector === "iframe, frame" ? [outerIframe] : [];
+""",
+    )
+
+    assert state["status"] == "success"
+    assert len(state["elements"]) == 1
+    element = state["elements"][0]
+    assert element["text"] == "Nested"
+    assert element["frame_path"] == [0, 0]
+    assert element["frame_depth"] == 2
+    assert element["frame_url"] == "https://example.test/inner"
+    assert element["frame_title"] == "Inner"
+
+
 def test_build_browser_state_script_uses_collision_resistant_token():
     script = build_browser_state_script()
 
     assert "window.__GA_BROWSER_STATE_COUNTER__" in script
     assert "Math.random().toString(36).slice(2)" in script
     assert "const stateToken = `${Date.now()}:${window.__GA_BROWSER_STATE_COUNTER__}:${randomPart}:${elements.length}`;" in script
+
+
+def test_browser_state_script_max_elements_can_truncate_later_frame_elements():
+    script = build_browser_state_script(include_invisible=False, max_elements=1)
+
+    state = run_browser_state_script(
+        script,
+        """
+const topButton = makeElement({ tag: "button", text: "Top" });
+const iframe = makeElement({ tag: "iframe", ownerDocument: document });
+const frameWindow = {
+  ...window,
+  frameElement: iframe,
+  parent: window,
+  location: { href: "https://example.test/frame" },
+};
+const frameDocument = {
+  title: "Frame",
+  defaultView: frameWindow,
+  body: null,
+  getElementById: (_id) => null,
+  querySelectorAll: (selector) => {
+    if (selector === "iframe, frame" || selector.startsWith("label[")) return [];
+    return [makeElement({ tag: "button", text: "Inside", ownerDocument: frameDocument })];
+  },
+};
+frameDocument.body = makeElement({ tag: "body", ownerDocument: frameDocument });
+iframe.contentDocument = frameDocument;
+iframe.contentWindow = frameWindow;
+document.querySelectorAll = (selector) => {
+  if (selector === "iframe, frame") return [iframe];
+  if (selector.startsWith("label[")) return [];
+  return [topButton];
+};
+""",
+    )
+
+    assert state["status"] == "success"
+    assert len(state["elements"]) == 1
+    assert state["elements"][0]["text"] == "Top"
+    assert state["elements"][0]["frame_path"] == []
+
+
+def test_browser_state_script_documents_unsemantic_framework_icon_boundary():
+    script = build_browser_state_script(include_invisible=False, max_elements=10)
+
+    state = run_browser_state_script(
+        script,
+        """
+const browserIcon = makeElement({
+  tag: "i",
+  text: "",
+  attrs: { class: "ui-icon ui-browser" },
+});
+document.querySelectorAll = (selector) => {
+  if (selector === "iframe, frame" || selector.startsWith("label[")) return [];
+  if (selector.includes(".ui-icon") || selector.includes(".ui-browser")) return [browserIcon];
+  return [];
+};
+""",
+    )
+
+    assert state["status"] == "success"
+    assert state["elements"] == []
 
 
 def test_build_browser_state_script_bounds_snapshot_text_and_value():

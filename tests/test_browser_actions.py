@@ -468,6 +468,34 @@ def test_run_action_rejects_indexed_action_when_cached_tab_mismatches_switch():
     assert len(driver.responses) == 1
 
 
+def test_run_action_rejects_indexed_action_after_state_from_different_tab():
+    layer = BrowserActionLayer()
+    driver = FakeDriver(
+        [
+            {
+                "data": {
+                    "status": "success",
+                    "state_token": "tok-8",
+                    "elements": [{"index": 1, "tag": "button", "text": "Go"}],
+                }
+            },
+            {"data": {"status": "success", "action": "click", "index": 1, "result": "clicked"}},
+        ]
+    )
+
+    state = layer.get_state(driver, switch_tab_id="8")
+    result = layer.run_action(driver, action="click", index=1, switch_tab_id="7")
+
+    assert state["status"] == "success"
+    assert state["tab_id"] == "8"
+    assert result["status"] == "failed"
+    assert result["stage"] == "stale_index"
+    assert "current tab" in result["error"]
+    assert result["tab_id"] == "7"
+    assert len(driver.calls) == 1
+    assert len(driver.responses) == 1
+
+
 def test_run_action_allows_wait_text_without_cached_state():
     layer = BrowserActionLayer()
     driver = FakeDriver([{"data": {"status": "success", "action": "wait_text", "result": "text_found"}}])
@@ -565,6 +593,47 @@ document.querySelectorAll = (selector) => selector === "iframe, frame" ? [iframe
 
     assert result["status"] == "success"
     assert result["result"] == "selector_found"
+
+
+def test_browser_action_script_verify_selector_searches_same_origin_frames():
+    script = build_browser_action_script(
+        action="click",
+        index=1,
+        text=None,
+        value=None,
+        timeout=1,
+        state_token="tok-2",
+        selector=None,
+        verify="selector",
+        verify_selector=".post-click",
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+const button = makeElement({ tag: "button", text: "Open" });
+const iframe = makeElement({ tag: "iframe" });
+const frameWindow = { ...window, frameElement: iframe, parent: window };
+const frameDocument = {
+  defaultView: frameWindow,
+  body: { innerText: "", textContent: "" },
+  querySelector: (selector) => selector === ".post-click" ? makeElement({ tag: "div", text: "Ready" }) : null,
+  querySelectorAll: (_selector) => [],
+};
+iframe.contentDocument = frameDocument;
+document.querySelector = (_selector) => null;
+document.querySelectorAll = (selector) => selector === "iframe, frame" ? [iframe] : [];
+window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [button] };
+""",
+    )
+
+    assert result["status"] == "success"
+    assert result["verification"] == {
+        "type": "selector",
+        "observed": ".post-click",
+        "expected": ".post-click",
+        "passed": True,
+    }
 
 
 def test_browser_action_script_wait_text_skips_hidden_same_origin_frames():
@@ -945,6 +1014,49 @@ global.__GA_TEST_PROBE__ = () => ({ queryCalls });
     assert probe["queryCalls"] == 2
 
 
+def test_browser_action_script_wait_not_busy_searches_same_origin_frames():
+    script = build_browser_action_script(
+        action="wait_not_busy",
+        index=None,
+        text=None,
+        value=None,
+        timeout=1,
+        state_token=None,
+        selector=".spinner",
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+const iframe = makeElement({ tag: "iframe" });
+const frameWindow = { ...window, frameElement: iframe, parent: window };
+const spinner = makeElement({ tag: "div" });
+let frameQueryCalls = 0;
+const frameDocument = {
+  defaultView: frameWindow,
+  body: { innerText: "", textContent: "" },
+  querySelectorAll: (selector) => {
+    if (selector === "iframe, frame") return [];
+    if (selector === ".spinner") {
+      frameQueryCalls += 1;
+      return frameQueryCalls === 1 ? [spinner] : [];
+    }
+    return [];
+  },
+};
+iframe.contentDocument = frameDocument;
+document.querySelectorAll = (selector) => selector === "iframe, frame" ? [iframe] : [];
+global.__GA_TEST_PROBE__ = () => ({ frameQueryCalls });
+""",
+    )
+
+    probe = result["probe"]
+    result = result["result"]
+    assert result["status"] == "success"
+    assert result["result"] == "not_busy"
+    assert probe["frameQueryCalls"] == 2
+
+
 def test_browser_action_script_wait_enabled_runtime_waits_for_enabled_cached_element():
     script = build_browser_action_script(
         action="wait_enabled",
@@ -999,6 +1111,30 @@ global.location = { href: "https://example.test/app/dashboard?tab=1", pathname: 
 
     assert result["status"] == "success"
     assert result["result"] == "route_matched"
+
+
+def test_browser_action_script_wait_route_ignores_component_text_without_url_change():
+    script = build_browser_action_script(
+        action="wait_route",
+        index=None,
+        text="details",
+        value=None,
+        timeout=1,
+        state_token=None,
+        selector=None,
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+global.location = { href: "https://example.test/app/home", pathname: "/app/home" };
+document.body.innerText = "details component mounted";
+document.body.textContent = "details component mounted";
+""",
+    )
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "timeout"
 
 
 def test_build_browser_action_script_rejects_unsupported_keys():
@@ -2003,6 +2139,45 @@ window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [input] };
     assert "without index" in result["next_action_hint"]
     assert "focused element" in result["next_action_hint"]
     assert result["suggested_next_action"] == {"action": "keys", "text": "Enter"}
+
+
+def test_browser_action_script_input_detects_framework_rejected_value_setter():
+    script = build_browser_action_script(
+        action="input",
+        index=1,
+        text="1.00",
+        value=None,
+        timeout=1,
+        state_token="tok-2",
+        selector=None,
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+const input = makeElement({ tag: "input", type: "text" });
+let storedValue = "";
+let attemptedValue = "";
+Object.defineProperty(input, "value", {
+  get() {
+    return storedValue;
+  },
+  set(nextValue) {
+    attemptedValue = nextValue;
+  },
+  configurable: true,
+});
+window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [input] };
+global.__GA_TEST_PROBE__ = () => ({ storedValue, attemptedValue });
+""",
+    )
+
+    probe = result["probe"]
+    result = result["result"]
+    assert result["status"] == "failed"
+    assert result["stage"] == "dom_event"
+    assert result["error"] == "Input value was not accepted."
+    assert probe == {"storedValue": "", "attemptedValue": "1.00"}
 
 
 def test_browser_action_script_native_select_still_selects_option():
