@@ -131,6 +131,45 @@ def test_build_browser_state_script_includes_aria_haspopup_listbox_trigger():
     assert '[aria-haspopup="listbox"]' in script
 
 
+def test_build_browser_state_script_includes_antd_picker_and_ui_browser_patterns():
+    script = build_browser_state_script()
+
+    assert ".ant-picker" in script
+    assert ".ant-select-selector" in script
+    assert ".ui-browser" in script
+
+
+def test_browser_state_script_indexes_ui_browser_actionable_item_but_not_naked_icon():
+    script = build_browser_state_script(max_elements=20)
+
+    result = run_browser_state_script(
+        script,
+        """
+const decorativeIcon = makeElement({
+  tag: "span",
+  text: "decorative",
+  attrs: { class: "ui-icon" },
+});
+const targetNode = makeElement({
+  tag: "div",
+  text: "目标节点",
+  attrs: { class: "ui-browser-item", tabindex: "0" },
+});
+document.querySelectorAll = (selector) => {
+  if (selector === "iframe, frame" || selector.startsWith("label[")) return [];
+  const matches = [];
+  if (selector.includes(".ui-icon")) matches.push(decorativeIcon);
+  if (selector.includes(".ui-browser-item")) matches.push(targetNode);
+  return matches;
+};
+""",
+    )
+
+    texts = [element["text"] for element in result["elements"]]
+    assert "目标节点" in texts
+    assert "decorative" not in texts
+
+
 def test_build_browser_state_script_defaults_to_visible_elements_only():
     script = build_browser_state_script()
 

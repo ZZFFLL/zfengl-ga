@@ -6,7 +6,8 @@ INTERACTIVE_SELECTOR = (
     'a[href], button, input, textarea, select, [role="button"], [role="link"], '
     '[role="textbox"], [role="checkbox"], [role="radio"], [role="combobox"], '
     '[role="listbox"], [role="option"], [aria-haspopup="listbox"], [role="menuitem"], [onclick], '
-    '[tabindex], [contenteditable="true"]'
+    '[tabindex], [contenteditable="true"], .ant-select-selector, .ant-picker, '
+    '.ui-browser-item, .ui-browser [role="treeitem"], .ui-browser [role="menuitem"]'
 )
 
 
@@ -46,6 +47,12 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
 
   const boundedText = (value) => {{
     return String(value || "").slice(0, 240);
+  }};
+
+  const isDecorativeIconOnly = (element) => {{
+    const className = String(element.getAttribute("class") || "");
+    const hasActionSignal = element.getAttribute("role") || element.getAttribute("tabindex") || element.getAttribute("onclick");
+    return !hasActionSignal && /\\b(ui-icon|anticon|iconfont)\\b/.test(className);
   }};
 
   const selectorHint = (element) => {{
@@ -353,6 +360,9 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
       return;
     }}
     if (!frameChainVisible(frameWindow)) {{
+      return;
+    }}
+    if (isDecorativeIconOnly(element)) {{
       return;
     }}
 
