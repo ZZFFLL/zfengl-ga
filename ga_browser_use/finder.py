@@ -76,6 +76,18 @@ def _score_field_context(field_context: dict[str, Any], query: str) -> tuple[flo
     return score, reasons
 
 
+def _score_label_text(parts: list[str], labels: list[str], query: str) -> tuple[float, list[str]]:
+    if not query:
+        return 0.0, []
+    if any(_norm(label) == _norm(query) for label in labels):
+        return 70.0, ["exact label"]
+    if any(_contains(label, query) for label in labels):
+        return 50.0, ["label"]
+    if any(_contains(part, query) for part in parts):
+        return 25.0, ["text"]
+    return 0.0, []
+
+
 def _has_locator_constraint(
     *,
     query: str,
@@ -115,20 +127,14 @@ def _score_element(
     field_context = element.get("field_context") or {}
     if query:
         field_score, field_reasons = _score_field_context(field_context, query)
-        if field_score:
-            score += field_score
-            reasons.extend(field_reasons)
-        elif any(_norm(label) == _norm(query) for label in labels):
-            score += 70
-            reasons.append("exact label")
-        elif any(_contains(label, query) for label in labels):
-            score += 50
-            reasons.append("label")
-        elif any(_contains(part, query) for part in parts):
-            score += 25
-            reasons.append("text")
-        else:
+        label_text_score, label_text_reasons = _score_label_text(parts, labels, query)
+        semantic_score, semantic_reasons = label_text_score, label_text_reasons
+        if field_score > label_text_score:
+            semantic_score, semantic_reasons = field_score, field_reasons
+        if not semantic_score:
             return 0.0, []
+        score += semantic_score
+        reasons.extend(semantic_reasons)
 
     table_context = element.get("table_context") or {}
     if table:
@@ -216,7 +222,7 @@ def find_in_state(
         matches.append(
             {
                 "index": element.get("index"),
-                "score": round(score / 100, 3),
+                "score": min(round(score / 100, 3), 1.0),
                 "reason": "; ".join(reasons),
                 "element": element,
             }

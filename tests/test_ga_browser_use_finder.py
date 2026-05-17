@@ -323,3 +323,65 @@ def test_find_keeps_ambiguous_for_duplicate_field_labels():
     assert result["status"] == "success"
     assert result["ambiguous"] is True
     assert [match["index"] for match in result["matches"][:2]] == [1, 2]
+
+
+def test_find_keeps_exact_label_when_field_context_is_weaker():
+    state = make_state(
+        [
+            {
+                "index": 1,
+                "text": "休假",
+                "labels": ["休假"],
+                "control_kind": "custom_select",
+                "visible": True,
+                "disabled": False,
+                "field_context": {
+                    "nearby_text": "是否休假",
+                    "row_label": "是否休假",
+                    "previous_cell_text": "是否休假",
+                },
+            },
+            {
+                "index": 2,
+                "text": "是否休假",
+                "labels": [],
+                "control_kind": "custom_select",
+                "visible": True,
+                "disabled": False,
+                "field_context": {
+                    "nearby_text": "是否休假",
+                    "row_label": "是否休假",
+                    "previous_cell_text": "是否休假",
+                },
+            },
+        ]
+    )
+
+    result = find_in_state(state, query="休假", control_kind="custom_select", max_results=5)
+
+    assert result["status"] == "success"
+    assert result["ambiguous"] is False
+    assert result["matches"][0]["index"] == 1
+    assert "exact label" in result["matches"][0]["reason"]
+
+
+def test_find_caps_public_match_score_at_one():
+    state = make_state(
+        [
+            {
+                "index": 3,
+                "text": "",
+                "labels": [],
+                "control_kind": "native_input",
+                "visible": True,
+                "disabled": False,
+                "field_context": {"field_id": "field6358_0", "field_name": "field6358_0"},
+            }
+        ]
+    )
+
+    result = find_in_state(state, query="field6358_0", control_kind="native_input", max_results=5)
+
+    assert result["status"] == "success"
+    assert result["matches"][0]["index"] == 3
+    assert result["matches"][0]["score"] <= 1.0
