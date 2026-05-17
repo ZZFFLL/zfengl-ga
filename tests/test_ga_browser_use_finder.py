@@ -231,3 +231,95 @@ def test_find_returns_disabled_candidates_for_read_only_location():
     assert result["status"] == "success"
     assert result["matches"][0]["index"] == 1
     assert result["matches"][0]["element"]["disabled"] is True
+
+
+def test_find_matches_adjacent_row_label_for_custom_select():
+    state = make_state(
+        [
+            {
+                "index": 4,
+                "text": "请选择",
+                "labels": [],
+                "control_kind": "custom_select",
+                "visible": True,
+                "disabled": False,
+                "field_context": {
+                    "nearby_text": "是否休假",
+                    "row_label": "是否休假",
+                    "previous_cell_text": "是否休假",
+                    "field_id": "field5956",
+                    "field_name": "sfxj",
+                },
+            },
+            {
+                "index": 9,
+                "text": "是否休假说明",
+                "labels": [],
+                "control_kind": "button",
+                "visible": True,
+                "disabled": False,
+            },
+        ]
+    )
+
+    result = find_in_state(state, query="是否休假", control_kind="custom_select", max_results=5)
+
+    assert result["status"] == "success"
+    assert result["ambiguous"] is False
+    assert result["matches"][0]["index"] == 4
+    assert "field row label" in result["matches"][0]["reason"]
+
+
+def test_find_matches_field_id_and_field_name():
+    state = make_state(
+        [
+            {
+                "index": 3,
+                "text": "",
+                "labels": [],
+                "control_kind": "native_input",
+                "visible": True,
+                "disabled": False,
+                "field_context": {"field_id": "field6358_0", "field_name": "workType"},
+            }
+        ]
+    )
+
+    by_id = find_in_state(state, query="field6358_0", control_kind="native_input", max_results=5)
+    by_name = find_in_state(state, query="workType", control_kind="native_input", max_results=5)
+
+    assert by_id["matches"][0]["index"] == 3
+    assert "field id" in by_id["matches"][0]["reason"]
+    assert by_name["matches"][0]["index"] == 3
+    assert "field name" in by_name["matches"][0]["reason"]
+
+
+def test_find_keeps_ambiguous_for_duplicate_field_labels():
+    state = make_state(
+        [
+            {
+                "index": 1,
+                "text": "",
+                "labels": [],
+                "control_kind": "custom_select",
+                "visible": True,
+                "disabled": False,
+                "field_context": {"row_label": "工作类型", "previous_cell_text": "工作类型"},
+            },
+            {
+                "index": 2,
+                "text": "",
+                "labels": [],
+                "control_kind": "custom_select",
+                "visible": True,
+                "disabled": False,
+                "field_context": {"row_label": "工作类型", "previous_cell_text": "工作类型"},
+            },
+        ]
+    )
+
+    result = find_in_state(state, query="工作类型", control_kind="custom_select", max_results=5)
+
+    assert result["status"] == "success"
+    assert result["ambiguous"] is True
+    assert [match["index"] for match in result["matches"][:2]] == [1, 2]

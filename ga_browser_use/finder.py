@@ -41,6 +41,41 @@ def _table_value(table_context: dict[str, Any], *names: str) -> str:
     return ""
 
 
+def _field_value(field_context: dict[str, Any], *names: str) -> str:
+    for name in names:
+        value = field_context.get(name)
+        if value:
+            return str(value)
+    return ""
+
+
+def _score_field_context(field_context: dict[str, Any], query: str) -> tuple[float, list[str]]:
+    if not query:
+        return 0.0, []
+    score = 0.0
+    reasons: list[str] = []
+    row_label = _field_value(field_context, "row_label", "previous_cell_text")
+    nearby_text = _field_value(field_context, "nearby_text")
+    field_id = _field_value(field_context, "field_id")
+    field_name = _field_value(field_context, "field_name")
+    if row_label and _norm(row_label) == _norm(query):
+        score += 68
+        reasons.append("field row label")
+    elif row_label and _contains(row_label, query):
+        score += 52
+        reasons.append("field row label")
+    elif nearby_text and _contains(nearby_text, query):
+        score += 44
+        reasons.append("nearby field text")
+    if field_id and _norm(field_id) == _norm(query):
+        score += 70
+        reasons.append("field id")
+    if field_name and _norm(field_name) == _norm(query):
+        score += 70
+        reasons.append("field name")
+    return score, reasons
+
+
 def _has_locator_constraint(
     *,
     query: str,
@@ -77,8 +112,13 @@ def _score_element(
     score = 0.0
     parts = _text_parts(element)
     labels = [str(label) for label in (element.get("labels") or [])]
+    field_context = element.get("field_context") or {}
     if query:
-        if any(_norm(label) == _norm(query) for label in labels):
+        field_score, field_reasons = _score_field_context(field_context, query)
+        if field_score:
+            score += field_score
+            reasons.extend(field_reasons)
+        elif any(_norm(label) == _norm(query) for label in labels):
             score += 70
             reasons.append("exact label")
         elif any(_contains(label, query) for label in labels):
