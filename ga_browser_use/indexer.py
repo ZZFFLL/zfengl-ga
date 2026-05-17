@@ -282,7 +282,7 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
 
   const fieldAttrFrom = (element, attrName) => {{
     let current = element;
-    for (let depth = 0; current && depth < 6; depth += 1) {{
+    while (current) {{
       const value = current.getAttribute && current.getAttribute(attrName);
       if (value && /field\\d+(?:_\\d+)?/i.test(String(value))) return String(value);
       current = current.parentElement;

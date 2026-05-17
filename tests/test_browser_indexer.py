@@ -594,6 +594,37 @@ document.querySelectorAll = (selector) => {
     assert element["field_context"]["field_container_hint"] == "td"
 
 
+def test_browser_state_script_inherits_field_attrs_from_deep_ancestor():
+    script = build_browser_state_script(include_invisible=False, max_elements=10)
+
+    state = run_browser_state_script(
+        script,
+        """
+const control = makeElement({ tag: "input", type: "text", value: "" });
+let child = control;
+for (let depth = 0; depth < 8; depth += 1) {
+  const parent = makeElement({ tag: "div" });
+  child.parentElement = parent;
+  child = parent;
+}
+child.getAttribute = (name) => {
+  if (name === "id") return "field7001";
+  if (name === "name") return "field7001_0";
+  return null;
+};
+document.querySelectorAll = (selector) => {
+  if (selector === "iframe, frame" || selector.startsWith("label[")) return [];
+  return [control];
+};
+""",
+    )
+
+    assert state["status"] == "success"
+    element = state["elements"][0]
+    assert element["field_context"]["field_id"] == "field7001"
+    assert element["field_context"]["field_name"] == "field7001_0"
+
+
 def test_browser_state_script_emits_row_and_column_for_later_table_cell():
     script = build_browser_state_script(include_invisible=False, max_elements=10)
 
