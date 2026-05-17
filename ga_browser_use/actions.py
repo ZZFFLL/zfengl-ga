@@ -1074,7 +1074,6 @@ class BrowserActionLayer:
                 "state": state,
                 "url": state.get("url", ""),
             }
-            self._reset_failure_fuse()
         else:
             self._last_state = None
         return state

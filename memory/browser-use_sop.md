@@ -85,6 +85,7 @@
 - recipe 返回的 `steps` 是诊断依据，失败后先读最后一个失败 step。
 - `table_locate` 只定位，不做通用表格编辑。
 - `component_wait` 是有界组件条件等待：每轮刷新 state 后 find，直到条件满足或 timeout；它不等于业务成功保证。
+- recipe 的 `timeout` 会被工具限制在 0-60 秒范围内，不能作为长期监控或无限等待使用。
 - 跨域 iframe、文件上传、截图、CDP 坐标、私有组件 API 仍走 `tmwebdriver_sop`。
 
 ## 基本编排原则
@@ -450,7 +451,7 @@ SPA 页面没有稳定文本或 selector 时，再按页面形态选有界等待
 - `browser_find` 不会扩大 `browser_state` 的底层可见范围；隐藏父/祖先 iframe、跨域 iframe、未被索引的 Shadow DOM 内容仍找不到。
 - `browser_recipe` 依赖 `browser_find` 和 indexed action；如果目标元素没有被 state 索引，recipe 也不会 magically 操作它。
 - `custom_select` / `layer_select` 不处理搜索型下拉里的输入过滤、慢速选项渲染、虚拟滚动加载、分页选择或树节点展开；这类需要先稳定页面、刷新 state/find，必要时拆解为低层步骤。
-- `component_wait` 只轮询可定位的组件条件，timeout 会限制总等待时间；如果页面仍在加载，先用 `wait_not_busy` / `wait_dom_stable` / `wait_text` / `wait_selector`，再用 recipe 检查组件条件。
+- `component_wait` 只轮询可定位的组件条件，timeout 会限制总等待时间且最大 60 秒；如果页面仍在加载，先用 `wait_not_busy` / `wait_dom_stable` / `wait_text` / `wait_selector`，再用 recipe 检查组件条件。
 - 后台标签页、页面节流、复杂加载状态仍受 Chrome 行为影响；必要时按 `tmwebdriver_sop` 用 CDP `Page.bringToFront`。
 
 ### 何时切回 tmwebdriver_sop

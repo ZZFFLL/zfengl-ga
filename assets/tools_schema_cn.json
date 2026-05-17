@@ -85,7 +85,7 @@
       "confirm_text": {"type": "string", "description": "layer_select 中显式确认按钮文本"},
       "table": {"type": "object", "description": "table_locate 的表格定位条件，例如 row_text 和 column_text"},
       "condition": {"type": "string", "enum": ["layer_open", "layer_closed", "options_visible", "field_value", "element_enabled", "not_busy"], "description": "组件等待条件"},
-      "timeout": {"type": "integer", "description": "超时时间，单位秒", "default": 10},
+      "timeout": {"type": "integer", "description": "超时时间，单位秒", "default": 10, "minimum": 0, "maximum": 60},
       "max_results": {"type": "integer", "description": "每步 finder 最多返回候选数", "default": 5},
       "switch_tab_id": {"type": "string", "description": "[可选] 执行 recipe 前切换标签页"}}}
   }},

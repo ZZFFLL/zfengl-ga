@@ -78,6 +78,7 @@ def test_english_schema_exposes_browser_tools():
     ]
     assert "verify" not in recipe["parameters"]["properties"]
     assert recipe["parameters"]["properties"]["timeout"]["default"] == 10
+    assert recipe["parameters"]["properties"]["timeout"]["maximum"] == 60
     assert recipe["parameters"]["properties"]["max_results"]["default"] == 5
 
 
@@ -134,4 +135,5 @@ def test_chinese_schema_exposes_browser_tools():
     ]
     assert "verify" not in recipe["parameters"]["properties"]
     assert recipe["parameters"]["properties"]["timeout"]["default"] == 10
+    assert recipe["parameters"]["properties"]["timeout"]["maximum"] == 60
     assert recipe["parameters"]["properties"]["max_results"]["default"] == 5

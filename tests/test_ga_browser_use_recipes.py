@@ -166,6 +166,7 @@ def test_table_locate_requires_locator_constraints():
 
     assert result["status"] == "failed"
     assert result["stage"] == "invalid_args"
+    assert "header_text" in result["error"]
     assert layer.calls == []
 
 
@@ -196,6 +197,60 @@ def test_component_wait_polls_until_later_find_satisfies_condition():
     assert result["condition"] == "options_visible"
     assert result["match"]["index"] == 3
     assert [call[0] for call in layer.calls] == ["state", "find", "state", "find"]
+
+
+def test_component_wait_clamps_large_string_timeout():
+    layer = FakeLayer()
+    layer.find_results = [
+        {"status": "success", "matches": [{"index": 3, "element": {"index": 3}}], "ambiguous": False},
+    ]
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="component_wait", condition="options_visible", target={"query": "研发部"}, timeout="999999")
+
+    assert result["status"] == "success"
+    assert result["timeout"] == 60
+
+
+def test_component_wait_negative_timeout_clamps_to_minimum():
+    layer = FakeLayer()
+    layer.find_results = [
+        {"status": "success", "matches": [{"index": 3, "element": {"index": 3}}], "ambiguous": False},
+    ]
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="component_wait", condition="options_visible", target={"query": "研发部"}, timeout=-10)
+
+    assert result["status"] == "success"
+    assert result["timeout"] == 1
+
+
+def test_component_wait_index_target_uses_refreshed_state_metadata():
+    layer = FakeLayer()
+    layer.find_results = []
+    layer.get_state = lambda driver, **kwargs: {
+        "status": "success",
+        "elements": [{"index": 5, "disabled": True, "layer": "main"}],
+    }
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="component_wait", condition="element_enabled", target={"index": 5}, timeout=0)
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "component_not_ready"
+    assert result["last_find"]["matches"][0]["element"]["disabled"] is True
+
+
+def test_component_wait_index_target_missing_can_satisfy_layer_closed():
+    layer = FakeLayer()
+    layer.find_results = []
+    layer.get_state = lambda driver, **kwargs: {"status": "success", "elements": []}
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="component_wait", condition="layer_closed", target={"index": 5}, timeout=0)
+
+    assert result["status"] == "success"
+    assert result["match"] is None
 
 
 def test_component_wait_layer_closed_does_not_treat_state_missing_as_success():

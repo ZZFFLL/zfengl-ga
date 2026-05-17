@@ -10,6 +10,16 @@ SUPPORTED_RECIPES = {"custom_select", "layer_select", "table_locate", "component
 SUPPORTED_CONDITIONS = {"layer_open", "layer_closed", "options_visible", "field_value", "element_enabled", "not_busy"}
 
 
+def _safe_timeout(value: Any) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = 10
+    if parsed < 0:
+        return 1
+    return min(60, parsed)
+
+
 class BrowserRecipeRunner:
     def __init__(self, layer: Any) -> None:
         self.layer = layer
@@ -93,6 +103,32 @@ class BrowserRecipeRunner:
             element = (match or {}).get("element", {})
             return match is not None and bool(element.get("value") or element.get("text"))
         return False
+
+    @staticmethod
+    def _find_index_in_state(state: dict[str, Any], index: Any) -> tuple[dict[str, Any], dict[str, Any] | None]:
+        try:
+            expected_index = int(index)
+        except (TypeError, ValueError):
+            return failed_result(None, "invalid_args", "target.index must be an integer."), None
+        if not isinstance(state, dict) or state.get("status") != "success":
+            stage = str((state or {}).get("stage") or "state_missing")
+            error = str((state or {}).get("error") or "component_wait requires a successful browser_state.")
+            return failed_result(None, stage, error), None
+        for element in state.get("elements") or []:
+            if not isinstance(element, dict):
+                continue
+            try:
+                element_index = int(element.get("index"))
+            except (TypeError, ValueError):
+                continue
+            if element_index == expected_index:
+                match = {"index": expected_index, "element": element}
+                return {"status": "success", "matches": [match], "ambiguous": False}, match
+        result = failed_result(None, "target_not_found", "Indexed component target was not found in refreshed browser_state.")
+        result["recovery"]["code"] = "refresh_state_then_find"
+        result["recovery"]["next_tool"] = "browser_find"
+        result["recovery"]["next_args"] = {"refresh": True, "max_results": 5}
+        return result, None
 
     def _custom_select(
         self,
@@ -187,7 +223,7 @@ class BrowserRecipeRunner:
     def _table_locate(self, driver: Any, *, table: dict[str, Any] | None, max_results: int) -> dict[str, Any]:
         table = table or {}
         if not any(table.get(key) for key in ("row_text", "column_text", "header_text")):
-            return failed_result(None, "invalid_args", "table_locate requires row_text or column_text.")
+            return failed_result(None, "invalid_args", "table_locate requires row_text, column_text, or header_text.")
 
         result = self.layer.find(driver, table=table, max_results=max_results)
         step = {"tool": "browser_find", **result}
@@ -212,7 +248,8 @@ class BrowserRecipeRunner:
         if condition not in SUPPORTED_CONDITIONS:
             return failed_result(None, "invalid_args", f"Unsupported browser recipe condition: {condition}")
 
-        deadline = time.monotonic() + max(0, timeout)
+        safe_timeout = _safe_timeout(timeout)
+        deadline = time.monotonic() + safe_timeout
         poll_interval = max(0, float(self._component_wait_poll_interval))
         steps: list[dict[str, Any]] = []
         last_find: dict[str, Any] | None = None
@@ -221,7 +258,10 @@ class BrowserRecipeRunner:
             state = self.layer.get_state(driver, max_elements=120)
             steps.append({"tool": "browser_state", "status": state.get("status")})
 
-            find_result, match = self._find_one(driver, recipe="component_wait", target=target, max_results=max_results)
+            if isinstance(target, dict) and target.get("index") is not None:
+                find_result, match = self._find_index_in_state(state, target.get("index"))
+            else:
+                find_result, match = self._find_one(driver, recipe="component_wait", target=target, max_results=max_results)
             last_find = find_result
             steps.append({"tool": "browser_find", **find_result})
             if find_result.get("status") != "success":
@@ -229,11 +269,12 @@ class BrowserRecipeRunner:
                     return {
                         "status": "success",
                         "recipe": "component_wait",
-                        "condition": condition,
-                        "match": None,
-                        "steps": steps,
-                        "recovery": None,
-                    }
+                    "condition": condition,
+                    "match": None,
+                    "timeout": safe_timeout,
+                    "steps": steps,
+                    "recovery": None,
+                }
                 if find_result.get("stage") == "ambiguous_target":
                     find_result["recipe"] = "component_wait"
                     return self._with_steps(find_result, steps)
@@ -243,6 +284,7 @@ class BrowserRecipeRunner:
                     "recipe": "component_wait",
                     "condition": condition,
                     "match": match,
+                    "timeout": safe_timeout,
                     "steps": steps,
                     "recovery": None,
                 }
@@ -254,9 +296,10 @@ class BrowserRecipeRunner:
 
         result = failed_result(None, "component_not_ready", f"Timed out waiting for component condition: {condition}")
         result["recipe"] = "component_wait"
+        result["timeout"] = safe_timeout
         result["recovery"]["code"] = "wait_component"
         result["recovery"]["next_tool"] = "browser_recipe"
-        result["recovery"]["next_args"] = {"recipe": "component_wait", "condition": condition, "timeout": timeout}
+        result["recovery"]["next_args"] = {"recipe": "component_wait", "condition": condition, "timeout": safe_timeout}
         result["last_find"] = last_find
         result["steps"] = steps
         return result

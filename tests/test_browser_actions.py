@@ -2637,6 +2637,39 @@ def test_run_action_blocks_third_repeated_failure():
     assert third["recovery"]["code"] == "stop_repeating"
 
 
+def test_run_action_blocks_repeated_failure_even_after_state_refresh():
+    layer = BrowserActionLayer()
+    state_payload = {
+        "status": "success",
+        "state_token": "tok-1",
+        "url": "https://example.test/form",
+        "elements": [
+            {"index": 1, "text": "Save", "labels": [], "visible": True, "disabled": False, "stable_key": "button#save", "selector_hint": "button#save"}
+        ],
+    }
+    driver = FakeDriver(
+        [
+            state_payload,
+            {"data": {"status": "failed", "stage": "dom_event", "error": "boom"}},
+            state_payload,
+            {"data": {"status": "failed", "stage": "dom_event", "error": "boom"}},
+            state_payload,
+        ]
+    )
+
+    layer.get_state(driver)
+    first = layer.run_action(driver, action="click", index=1)
+    layer.get_state(driver)
+    second = layer.run_action(driver, action="click", index=1)
+    layer.get_state(driver)
+    third = layer.run_action(driver, action="click", index=1)
+
+    assert first["stage"] == "dom_event"
+    assert second["recovery"]["stop_retry"] is True
+    assert third["stage"] == "repeat_blocked"
+    assert len(driver.calls) == 5
+
+
 def test_run_action_preflight_blocks_third_repeated_js_failure_before_execute():
     layer = BrowserActionLayer()
     layer._last_state = {
