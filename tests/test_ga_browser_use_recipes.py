@@ -5,8 +5,8 @@ class FakeLayer:
     def __init__(self):
         self.calls = []
         self.find_results = [
-            {"status": "success", "matches": [{"index": 10, "score": 0.9, "element": {"index": 10}}], "ambiguous": False},
-            {"status": "success", "matches": [{"index": 22, "score": 0.95, "element": {"index": 22}}], "ambiguous": False},
+            {"status": "success", "matches": [{"index": 10, "score": 0.9, "element": {"index": 10, "layer": "main"}}], "ambiguous": False},
+            {"status": "success", "matches": [{"index": 22, "score": 0.95, "element": {"index": 22, "layer": "dropdown"}}], "ambiguous": False},
         ]
 
     def find(self, driver, **kwargs):
@@ -46,6 +46,22 @@ def test_custom_select_option_search_does_not_hard_filter_popover():
     assert "layer" not in layer.calls[3][1]
 
 
+def test_custom_select_refuses_main_layer_singleton_option_after_open():
+    layer = FakeLayer()
+    layer.find_results = [
+        {"status": "success", "matches": [{"index": 10, "element": {"index": 10, "layer": "main"}}], "ambiguous": False},
+        {"status": "success", "matches": [{"index": 22, "element": {"index": 22, "layer": "main"}}], "ambiguous": False},
+    ]
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="custom_select", target={"query": "所属部门"}, option_text="研发部")
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "target_not_found"
+    assert result["recipe"] == "custom_select"
+    assert [call[0] for call in layer.calls] == ["find", "action", "state", "find"]
+
+
 def test_layer_select_refuses_ambiguous_option():
     layer = FakeLayer()
     layer.find_results = [
@@ -65,12 +81,29 @@ def test_layer_select_refuses_ambiguous_option():
     assert result["recovery"]["code"] == "use_layer_select_recipe"
 
 
+def test_layer_select_refuses_main_layer_singleton_confirm_after_open():
+    layer = FakeLayer()
+    layer.find_results = [
+        {"status": "success", "matches": [{"index": 10, "element": {"index": 10, "layer": "main"}}], "ambiguous": False},
+        {"status": "success", "matches": [{"index": 22, "element": {"index": 22, "layer": "dropdown"}}], "ambiguous": False},
+        {"status": "success", "matches": [{"index": 30, "element": {"index": 30, "layer": "main"}}], "ambiguous": False},
+    ]
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="layer_select", target={"query": "人员"}, option_text="张三", confirm_text="确定")
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "target_not_found"
+    assert result["recipe"] == "layer_select"
+    assert [call[0] for call in layer.calls] == ["find", "action", "state", "find", "action", "find"]
+
+
 def test_layer_select_confirm_search_does_not_hard_filter_popover():
     layer = FakeLayer()
     layer.find_results = [
-        {"status": "success", "matches": [{"index": 10, "element": {"index": 10}}], "ambiguous": False},
-        {"status": "success", "matches": [{"index": 22, "element": {"index": 22}}], "ambiguous": False},
-        {"status": "success", "matches": [{"index": 30, "element": {"index": 30}}], "ambiguous": False},
+        {"status": "success", "matches": [{"index": 10, "element": {"index": 10, "layer": "main"}}], "ambiguous": False},
+        {"status": "success", "matches": [{"index": 22, "element": {"index": 22, "layer": "dropdown"}}], "ambiguous": False},
+        {"status": "success", "matches": [{"index": 30, "element": {"index": 30, "layer": "modal"}}], "ambiguous": False},
     ]
     runner = BrowserRecipeRunner(layer)
 

@@ -286,13 +286,44 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
     }}
     const rowChildren = row ? Array.from(row.children || []) : [];
     const tableRows = table ? Array.from(table.querySelectorAll("tr, [role='row']")) : [];
+    const rowIndex = row && tableRows.length ? tableRows.indexOf(row) + 1 : 0;
+    const columnIndex = cell && rowChildren.length ? rowChildren.indexOf(cell) + 1 : 0;
+    const textFrom = (node) => boundedText(node ? (node.innerText || node.textContent || "") : "");
+    const textFromChildren = (children) => boundedText(children.map(child => textFrom(child)).filter(Boolean).join(" "));
+    const rowText = row ? (textFrom(row) || textFromChildren(rowChildren)) : "";
+    const sameColumnCell = (candidateRow) => {{
+      const children = Array.from((candidateRow && candidateRow.children) || []);
+      return columnIndex > 0 ? children[columnIndex - 1] : null;
+    }};
+    const roleOf = (node) => String((node && node.getAttribute && node.getAttribute("role")) || "").toLowerCase();
+    const tagOf = (node) => String((node && node.tagName) || "").toLowerCase();
+    const isColumnHeader = (node) => {{
+      const role = roleOf(node);
+      const tag = tagOf(node);
+      return tag === "th" || role === "columnheader";
+    }};
+    const firstRow = tableRows.length ? tableRows[0] : null;
+    const firstRowColumn = sameColumnCell(firstRow);
+    const explicitHeader = tableRows
+      .map(candidateRow => sameColumnCell(candidateRow))
+      .find(candidateCell => candidateCell && isColumnHeader(candidateCell));
+    const rowHeaderCell = rowChildren.find(candidateCell => {{
+      const role = roleOf(candidateCell);
+      const tag = tagOf(candidateCell);
+      return candidateCell !== cell && (tag === "th" || role === "rowheader");
+    }}) || (columnIndex > 1 ? rowChildren[0] : null);
     return {{
       table_role: table ? (table.getAttribute("role") || table.tagName.toLowerCase()) : "",
       table_label: table ? (table.getAttribute("aria-label") || labelsOf(table)[0] || "") : "",
-      row_index: row && tableRows.length ? tableRows.indexOf(row) + 1 : 0,
-      column_index: cell && rowChildren.length ? rowChildren.indexOf(cell) + 1 : 0,
+      row_index: rowIndex,
+      column_index: columnIndex,
       cell_role: cell ? (cell.getAttribute("role") || cell.tagName.toLowerCase()) : "",
       cell_text: cell ? boundedText(cell.innerText || cell.textContent || "") : "",
+      row_text: rowText,
+      row_header: rowHeaderCell ? textFrom(rowHeaderCell) : "",
+      column_header: explicitHeader ? textFrom(explicitHeader) : (firstRowColumn && firstRow !== row ? textFrom(firstRowColumn) : ""),
+      column_text: explicitHeader ? textFrom(explicitHeader) : (firstRowColumn && firstRow !== row ? textFrom(firstRowColumn) : ""),
+      header_text: explicitHeader ? textFrom(explicitHeader) : (firstRowColumn && firstRow !== row ? textFrom(firstRowColumn) : ""),
     }};
   }};
 

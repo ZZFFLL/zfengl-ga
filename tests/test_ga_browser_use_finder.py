@@ -49,6 +49,33 @@ def test_find_table_row_and_column_match_ranks_first():
     assert "table row" in result["matches"][0]["reason"]
 
 
+def test_find_table_locator_matches_indexer_emitted_table_context():
+    state = make_state(
+        [
+            {
+                "index": 1,
+                "text": "",
+                "labels": [],
+                "visible": True,
+                "disabled": False,
+                "table_context": {
+                    "row_index": 2,
+                    "column_index": 2,
+                    "cell_text": "1.00",
+                    "row_text": "张三 1.00",
+                    "row_header": "张三",
+                    "column_header": "工时",
+                },
+            }
+        ]
+    )
+
+    result = find_in_state(state, table={"row_text": "张三", "column_text": "工时"}, max_results=5)
+
+    assert result["status"] == "success"
+    assert result["matches"][0]["index"] == 1
+
+
 def test_find_marks_near_tie_as_ambiguous():
     state = make_state(
         [

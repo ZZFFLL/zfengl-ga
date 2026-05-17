@@ -547,7 +547,50 @@ document.querySelectorAll = (selector) => {
         "column_index": 2,
         "cell_role": "td",
         "cell_text": "Hours",
+        "row_text": "Work content Hours",
+        "row_header": "Work content",
+        "column_header": "Header B",
+        "column_text": "Header B",
+        "header_text": "Header B",
     }
+
+
+def test_browser_state_script_emits_table_text_for_row_and_column_locator():
+    script = build_browser_state_script(include_invisible=False, max_elements=10)
+
+    state = run_browser_state_script(
+        script,
+        """
+const table = makeElement({ tag: "table", attrs: { "aria-label": "Daily Detail" } });
+const headerRow = makeElement({ tag: "tr", text: "姓名 工时" });
+const headerName = makeElement({ tag: "th", text: "姓名" });
+const headerHours = makeElement({ tag: "th", text: "工时" });
+headerRow.children = [headerName, headerHours];
+const dataRow = makeElement({ tag: "tr", text: "张三 1.00" });
+const nameCell = makeElement({ tag: "td", text: "张三" });
+const hoursCell = makeElement({ tag: "td", text: "1.00" });
+dataRow.children = [nameCell, hoursCell];
+table.querySelectorAll = (selector) => selector === "tr, [role='row']" ? [headerRow, dataRow] : [];
+const hoursInput = makeElement({ tag: "input", type: "text", value: "1.00" });
+hoursInput.closest = (selector) => {
+  if (selector.includes("td")) return hoursCell;
+  if (selector.includes("tr")) return dataRow;
+  if (selector.includes("table")) return table;
+  return null;
+};
+document.querySelectorAll = (selector) => {
+  if (selector === "iframe, frame" || selector.startsWith("label[")) return [];
+  if (selector.includes("input")) return [hoursInput];
+  return [];
+};
+""",
+    )
+
+    assert state["status"] == "success"
+    table_context = state["elements"][0]["table_context"]
+    assert table_context["row_text"] == "张三 1.00"
+    assert table_context["row_header"] == "张三"
+    assert table_context["column_header"] == "工时"
 
 
 def test_browser_state_script_omits_child_elements_when_parent_iframe_is_hidden():

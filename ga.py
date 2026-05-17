@@ -9,6 +9,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from agent_loop import BaseHandler, StepOutcome, json_default
 from browser_actions import BrowserActionLayer
 from ga_browser_use.recipes import BrowserRecipeRunner
+from ga_browser_use.results import failed_result
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 NORMAL_WORKING_MEMORY_WINDOW = 80
@@ -275,7 +276,7 @@ def browser_find(
             switch_tab_id=switch_tab_id,
         )
     except Exception as e:
-        return {"status": "failed", "stage": "browser_unavailable", "error": format_error(e)}
+        return failed_result(None, "browser_unavailable", format_error(e))
 
 def browser_recipe(
     recipe,
@@ -284,7 +285,6 @@ def browser_recipe(
     confirm_text=None,
     table=None,
     condition=None,
-    verify=True,
     timeout=10,
     max_results=5,
     switch_tab_id=None,
@@ -305,12 +305,13 @@ def browser_recipe(
             confirm_text=confirm_text,
             table=table,
             condition=condition,
-            verify=verify,
             timeout=timeout,
             max_results=max_results,
         )
     except Exception as e:
-        return {"status": "failed", "stage": "browser_unavailable", "error": format_error(e)}
+        result = failed_result(None, "browser_unavailable", format_error(e))
+        result["recipe"] = recipe
+        return result
 
 def expand_file_refs(text, base_dir=None):
     """展开文本中的 {{file:路径:起始行:结束行}} 引用为实际文件内容。
@@ -560,7 +561,6 @@ class GenericAgentHandler(BaseHandler):
             confirm_text=args.get("confirm_text"),
             table=args.get("table"),
             condition=args.get("condition"),
-            verify=args.get("verify", True),
             timeout=args.get("timeout", 10),
             max_results=args.get("max_results", 5),
             switch_tab_id=args.get("switch_tab_id") or args.get("tab_id"),

@@ -18,15 +18,24 @@ class BrowserRecipeRunner:
     @staticmethod
     def _prefer_overlay_match(find_result: dict[str, Any], fallback: dict[str, Any] | None) -> dict[str, Any] | None:
         matches = find_result.get("matches") or []
-        if len(matches) <= 1:
-            return fallback
-
         for candidate in matches:
             element = candidate.get("element", {})
             layer = candidate.get("layer") or element.get("layer")
             if layer and layer != "main":
                 return candidate
-        return fallback
+        element = (fallback or {}).get("element", {})
+        layer = (fallback or {}).get("layer") or element.get("layer")
+        return fallback if layer and layer != "main" else None
+
+    def _overlay_target_not_found(self, recipe: str, find_result: dict[str, Any], target_name: str) -> dict[str, Any]:
+        result = failed_result(None, "target_not_found", f"Recipe {target_name} was not found in an overlay layer.")
+        result["recipe"] = recipe
+        result["candidates"] = find_result.get("matches", [])
+        if recipe == "layer_select":
+            result["recovery"]["code"] = "use_layer_select_recipe"
+        elif recipe == "custom_select":
+            result["recovery"]["code"] = "use_custom_select_recipe"
+        return result
 
     def _ambiguous(self, recipe: str, find_result: dict[str, Any]) -> dict[str, Any]:
         result = failed_result(None, "ambiguous_target", "Recipe target is ambiguous.")
@@ -119,6 +128,8 @@ class BrowserRecipeRunner:
         option = self._prefer_overlay_match(option_find, option)
         steps.append({"tool": "browser_find", **option_find})
         if not option:
+            if option_find.get("status") == "success":
+                option_find = self._overlay_target_not_found("custom_select", option_find, "option")
             return self._with_steps(option_find, steps)
 
         option_index = option["index"]
@@ -161,7 +172,10 @@ class BrowserRecipeRunner:
             confirm = self._prefer_overlay_match(confirm_find, confirm)
             result["steps"].append({"tool": "browser_find", **confirm_find})
             if not confirm:
-                confirm_find["recipe"] = "layer_select"
+                if confirm_find.get("status") == "success":
+                    confirm_find = self._overlay_target_not_found("layer_select", confirm_find, "confirm target")
+                else:
+                    confirm_find["recipe"] = "layer_select"
                 return self._with_steps(confirm_find, result["steps"])
             confirm_click = self.layer.run_action(driver, action="click", index=confirm["index"], timeout=timeout)
             result["steps"].append({"tool": "browser_action", **confirm_click})

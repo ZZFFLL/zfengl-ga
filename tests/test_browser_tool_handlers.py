@@ -255,6 +255,22 @@ def test_browser_find_refreshes_when_cached_tab_differs():
     assert driver.execute_js_calls == 1
 
 
+def test_browser_find_exception_result_includes_recovery(monkeypatch):
+    class BrokenLayer:
+        def find(self, driver, **kwargs):
+            raise RuntimeError("Chrome unavailable")
+
+    fake_driver = SimpleNamespace(default_session_id="9", get_all_sessions=lambda: [{"id": "9"}])
+    monkeypatch.setattr(ga, "driver", fake_driver)
+    monkeypatch.setattr(ga, "browser_action_layer", BrokenLayer())
+
+    result = ga.browser_find(query="签字意见")
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "browser_unavailable"
+    assert result["recovery"]["code"] == "fallback_low_level"
+
+
 def test_browser_recipe_uses_recipe_runner(monkeypatch):
     class FakeLayer:
         pass
@@ -275,6 +291,30 @@ def test_browser_recipe_uses_recipe_runner(monkeypatch):
 
     assert result["status"] == "success"
     assert result["recipe"] == "custom_select"
+
+
+def test_browser_recipe_exception_result_includes_recovery(monkeypatch):
+    class FakeLayer:
+        pass
+
+    class BrokenRunner:
+        def __init__(self, layer):
+            self.layer = layer
+
+        def run(self, driver, **kwargs):
+            raise RuntimeError("Chrome unavailable")
+
+    fake_driver = SimpleNamespace(default_session_id="9", get_all_sessions=lambda: [{"id": "9"}])
+    monkeypatch.setattr(ga, "driver", fake_driver)
+    monkeypatch.setattr(ga, "browser_action_layer", FakeLayer())
+    monkeypatch.setattr(ga, "BrowserRecipeRunner", BrokenRunner)
+
+    result = ga.browser_recipe(recipe="custom_select", option_text="研发部")
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "browser_unavailable"
+    assert result["recipe"] == "custom_select"
+    assert result["recovery"]["code"] == "fallback_low_level"
 
 
 def test_do_browser_recipe_formats_execution_output(monkeypatch):
