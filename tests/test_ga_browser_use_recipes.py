@@ -33,7 +33,7 @@ def test_custom_select_recipe_runs_trigger_state_option_click():
     assert result["steps"][-1]["index"] == 22
 
 
-def test_custom_select_option_search_prefers_overlay_layer():
+def test_custom_select_option_search_does_not_hard_filter_popover():
     layer = FakeLayer()
     runner = BrowserRecipeRunner(layer)
 
@@ -41,7 +41,7 @@ def test_custom_select_option_search_prefers_overlay_layer():
 
     assert result["status"] == "success"
     assert layer.calls[3][0] == "find"
-    assert layer.calls[3][1]["layer"] == "popover"
+    assert "layer" not in layer.calls[3][1]
 
 
 def test_layer_select_refuses_ambiguous_option():
@@ -63,7 +63,7 @@ def test_layer_select_refuses_ambiguous_option():
     assert result["recovery"]["code"] == "use_layer_select_recipe"
 
 
-def test_layer_select_confirm_search_prefers_overlay_layer():
+def test_layer_select_confirm_search_does_not_hard_filter_popover():
     layer = FakeLayer()
     layer.find_results = [
         {"status": "success", "matches": [{"index": 10, "element": {"index": 10}}], "ambiguous": False},
@@ -76,7 +76,7 @@ def test_layer_select_confirm_search_prefers_overlay_layer():
 
     assert result["status"] == "success"
     assert layer.calls[-2][0] == "find"
-    assert layer.calls[-2][1]["layer"] == "popover"
+    assert "layer" not in layer.calls[-2][1]
 
 
 def test_table_locate_returns_first_match_without_action():
@@ -144,6 +144,29 @@ def test_component_wait_returns_component_not_ready_on_timeout():
     assert result["status"] == "failed"
     assert result["stage"] == "component_not_ready"
     assert result["recovery"]["code"] == "wait_component"
+
+
+def test_component_wait_layer_closed_does_not_treat_state_missing_as_success():
+    layer = FakeLayer()
+    layer.find_results = [{"status": "failed", "stage": "state_missing", "recovery": {"code": "refresh_state"}}]
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="component_wait", condition="layer_closed", target={"query": "弹层"}, timeout=1)
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "component_not_ready"
+    assert result["last_find"]["stage"] == "state_missing"
+
+
+def test_component_wait_layer_closed_succeeds_on_target_not_found():
+    layer = FakeLayer()
+    layer.find_results = [{"status": "failed", "stage": "target_not_found", "recovery": {"code": "refresh_state_then_find"}}]
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="component_wait", condition="layer_closed", target={"query": "弹层"}, timeout=1)
+
+    assert result["status"] == "success"
+    assert result["condition"] == "layer_closed"
 
 
 def test_component_wait_layer_closed_requires_no_match():

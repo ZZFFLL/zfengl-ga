@@ -13,6 +13,19 @@ class BrowserRecipeRunner:
     def __init__(self, layer: Any) -> None:
         self.layer = layer
 
+    @staticmethod
+    def _prefer_overlay_match(find_result: dict[str, Any], fallback: dict[str, Any] | None) -> dict[str, Any] | None:
+        matches = find_result.get("matches") or []
+        if len(matches) <= 1:
+            return fallback
+
+        for candidate in matches:
+            element = candidate.get("element", {})
+            layer = candidate.get("layer") or element.get("layer")
+            if layer and layer != "main":
+                return candidate
+        return fallback
+
     def _ambiguous(self, recipe: str, find_result: dict[str, Any]) -> dict[str, Any]:
         result = failed_result(None, "ambiguous_target", "Recipe target is ambiguous.")
         result["recipe"] = recipe
@@ -99,9 +112,9 @@ class BrowserRecipeRunner:
             driver,
             recipe="custom_select",
             target={"query": option_text},
-            layer="popover",
             max_results=max_results,
         )
+        option = self._prefer_overlay_match(option_find, option)
         steps.append({"tool": "browser_find", **option_find})
         if not option:
             return self._with_steps(option_find, steps)
@@ -141,9 +154,9 @@ class BrowserRecipeRunner:
                 driver,
                 recipe="layer_select",
                 target={"query": confirm_text},
-                layer="popover",
                 max_results=max_results,
             )
+            confirm = self._prefer_overlay_match(confirm_find, confirm)
             result["steps"].append({"tool": "browser_find", **confirm_find})
             if not confirm:
                 confirm_find["recipe"] = "layer_select"
@@ -185,6 +198,24 @@ class BrowserRecipeRunner:
 
         find_result, match = self._find_one(driver, recipe="component_wait", target=target, max_results=max_results)
         steps = [{"tool": "browser_find", **find_result}]
+        if find_result.get("status") != "success":
+            if condition in {"layer_closed", "not_busy"} and find_result.get("stage") == "target_not_found":
+                return {
+                    "status": "success",
+                    "recipe": "component_wait",
+                    "condition": condition,
+                    "match": None,
+                    "steps": steps,
+                    "recovery": None,
+                }
+            result = failed_result(None, "component_not_ready", f"Timed out waiting for component condition: {condition}")
+            result["recipe"] = "component_wait"
+            result["recovery"]["code"] = "wait_component"
+            result["recovery"]["next_tool"] = "browser_recipe"
+            result["recovery"]["next_args"] = {"recipe": "component_wait", "condition": condition, "timeout": timeout}
+            result["last_find"] = find_result
+            result["steps"] = steps
+            return result
         if self._component_condition_met(condition, match):
             return {
                 "status": "success",
