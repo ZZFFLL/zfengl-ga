@@ -11,4 +11,6 @@ def test_root_browser_indexer_reexports_package_functions():
 def test_root_browser_actions_reexports_package_layer():
     assert browser_actions.BrowserActionLayer is actions.BrowserActionLayer
     assert browser_actions.build_browser_action_script is actions.build_browser_action_script
+    assert browser_actions.build_browser_state_script is indexer.build_browser_state_script
+    assert browser_actions.normalize_state_result is indexer.normalize_state_result
     assert browser_actions.SUPPORTED_ACTIONS == actions.SUPPORTED_ACTIONS
