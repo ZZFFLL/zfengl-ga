@@ -145,6 +145,10 @@ class BrowserRecipeRunner:
         step = {"tool": "browser_find", **result}
         result["steps"] = [step]
         if result.get("status") == "success":
+            if result.get("ambiguous"):
+                ambiguous = self._ambiguous("table_locate", result)
+                ambiguous["steps"] = [step]
+                return ambiguous
             result["recipe"] = "table_locate"
         return result
 

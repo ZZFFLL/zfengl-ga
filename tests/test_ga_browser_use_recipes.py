@@ -78,6 +78,24 @@ def test_table_locate_failure_includes_steps_without_action():
     assert [call[0] for call in layer.calls] == ["find"]
 
 
+def test_table_locate_refuses_ambiguous_match():
+    layer = FakeLayer()
+    layer.find_results = [
+        {
+            "status": "success",
+            "matches": [{"index": 7, "element": {"index": 7}}, {"index": 8, "element": {"index": 8}}],
+            "ambiguous": True,
+        }
+    ]
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="table_locate", table={"row_text": "张三", "column_text": "审批意见"})
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "ambiguous_target"
+    assert [candidate["index"] for candidate in result["candidates"]] == [7, 8]
+
+
 def test_component_wait_returns_component_not_ready_on_timeout():
     layer = FakeLayer()
     layer.find_results = [{"status": "failed", "stage": "target_not_found", "recovery": {"code": "refresh_state_then_find"}}]
