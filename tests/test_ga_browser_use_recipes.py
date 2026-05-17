@@ -93,6 +93,19 @@ def test_custom_select_option_search_does_not_hard_filter_popover():
     assert "layer" not in layer.calls[3][1]
 
 
+def test_custom_select_query_target_keeps_trigger_lookup_bounded():
+    layer = FakeLayer()
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="custom_select", target={"query": "工作类型"}, option_text="研发部", max_results=3)
+
+    assert result["status"] == "success"
+    assert layer.calls[0][0] == "find"
+    assert layer.calls[0][1]["query"] == "工作类型"
+    assert layer.calls[0][1]["control_kind"] == "custom_select"
+    assert layer.calls[0][1]["max_results"] == 3
+
+
 def test_custom_select_refuses_main_layer_singleton_option_after_open():
     layer = FakeLayer()
     layer.find_results = [
@@ -564,6 +577,21 @@ def test_component_wait_returns_component_not_ready_on_timeout():
     assert result["recovery"]["code"] == "wait_component"
     assert result["recovery"]["next_args"]["target"] == {"query": "研发部"}
     assert result["recovery"]["next_args"]["max_results"] == 5
+
+
+def test_component_wait_returns_non_target_find_errors_immediately():
+    layer = FakeLayer()
+    layer.find_results = [
+        {"status": "failed", "stage": "browser_unavailable", "error": "bridge failed", "recovery": {"code": "fallback_low_level"}}
+    ]
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="component_wait", condition="element_enabled", target={"query": "保存"}, timeout=1)
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "browser_unavailable"
+    assert result["recovery"]["code"] == "fallback_low_level"
+    assert [call[0] for call in layer.calls] == ["state", "find"]
 
 
 def test_component_wait_recovery_preserves_switch_tab_id():

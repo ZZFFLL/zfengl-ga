@@ -414,6 +414,7 @@ class BrowserRecipeRunner:
             recipe="custom_select",
             target=target,
             max_results=max_results,
+            control_kind="custom_select",
             recovery_args=recovery_args,
             switch_tab_id=switch_tab_id,
         )
