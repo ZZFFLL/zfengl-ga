@@ -183,3 +183,32 @@ def test_browser_action_init_failure_reports_browser_unavailable(monkeypatch):
     assert result["action"] == "click"
     assert result["stage"] == "browser_unavailable"
     assert "Chrome unavailable" in result["error"]
+
+
+def test_browser_find_reuses_layer_state(monkeypatch):
+    class FakeLayer:
+        def find(self, driver, **kwargs):
+            return {"status": "success", "matches": [{"index": 2}], "ambiguous": False}
+
+    fake_driver = SimpleNamespace(default_session_id="9", get_all_sessions=lambda: [{"id": "9"}])
+    monkeypatch.setattr(ga, "driver", fake_driver)
+    monkeypatch.setattr(ga, "browser_action_layer", FakeLayer())
+
+    result = ga.browser_find(query="签字意见", max_results=3)
+
+    assert result["status"] == "success"
+    assert result["matches"][0]["index"] == 2
+
+
+def test_do_browser_find_formats_execution_output(monkeypatch):
+    monkeypatch.setattr(
+        ga,
+        "browser_find",
+        lambda **kwargs: {"status": "success", "matches": [{"index": 2, "reason": "label"}], "ambiguous": False},
+    )
+    handler = make_handler()
+
+    chunks, outcome = run_generator(handler.do_browser_find({"query": "签字意见"}, SimpleNamespace(content="")))
+
+    assert "Browser find result:" in "".join(chunks)
+    assert json.loads(outcome.data)["matches"][0]["index"] == 2

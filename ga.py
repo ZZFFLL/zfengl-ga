@@ -243,6 +243,39 @@ def browser_action(
     except Exception as e:
         return {"status": "failed", "action": action, "stage": stage, "error": format_error(e)}
 
+def browser_find(
+    query=None,
+    role=None,
+    control_kind=None,
+    layer=None,
+    frame_path=None,
+    table=None,
+    max_results=5,
+    refresh=False,
+    include_invisible=False,
+    switch_tab_id=None,
+):
+    """Find candidate indexed elements from the real Chrome browser state."""
+    global driver
+    try:
+        if driver is None:
+            first_init_driver()
+        return browser_action_layer.find(
+            driver,
+            query=query,
+            role=role,
+            control_kind=control_kind,
+            layer=layer,
+            frame_path=frame_path,
+            table=table,
+            max_results=max_results,
+            refresh=refresh,
+            include_invisible=include_invisible,
+            switch_tab_id=switch_tab_id,
+        )
+    except Exception as e:
+        return {"status": "failed", "stage": "browser_unavailable", "error": format_error(e)}
+
 def expand_file_refs(text, base_dir=None):
     """展开文本中的 {{file:路径:起始行:结束行}} 引用为实际文件内容。
     可与普通文本混排。展开失败抛 ValueError。
@@ -458,6 +491,27 @@ class GenericAgentHandler(BaseHandler):
         maxlen = 8000 // args.get('_tool_num', 1)
         formatted_result = smart_format(result_json, max_str_len=maxlen)
         yield f"Browser action result:\n{formatted_result}\n"
+        outcome = StepOutcome(formatted_result, next_prompt="\n")
+        outcome.result = formatted_result
+        return outcome
+
+    def do_browser_find(self, args, response):
+        result = browser_find(
+            query=args.get("query"),
+            role=args.get("role"),
+            control_kind=args.get("control_kind"),
+            layer=args.get("layer"),
+            frame_path=args.get("frame_path"),
+            table=args.get("table"),
+            max_results=args.get("max_results", 5),
+            refresh=args.get("refresh", False),
+            include_invisible=args.get("include_invisible", False),
+            switch_tab_id=args.get("switch_tab_id") or args.get("tab_id"),
+        )
+        result_json = json.dumps(result, ensure_ascii=False, default=json_default)
+        maxlen = 8000 // args.get('_tool_num', 1)
+        formatted_result = smart_format(result_json, max_str_len=maxlen)
+        yield f"Browser find result:\n{formatted_result}\n"
         outcome = StepOutcome(formatted_result, next_prompt="\n")
         outcome.result = formatted_result
         return outcome

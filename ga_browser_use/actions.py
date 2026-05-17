@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from ga_browser_use.finder import find_in_state
 from ga_browser_use.indexer import build_browser_state_script, normalize_state_result
 from ga_browser_use.results import FailureFuse, add_recovery, failed_result as structured_failed_result
 
@@ -1069,13 +1070,49 @@ class BrowserActionLayer:
             self._last_state = {
                 "tab_id": state["tab_id"],
                 "state_token": state.get("state_token"),
-                "url": state.get("url"),
                 "elements_by_index": elements_by_index,
+                "state": state,
+                "url": state.get("url", ""),
             }
             self._reset_failure_fuse()
         else:
             self._last_state = None
         return state
+
+    def find(
+        self,
+        driver: Any,
+        *,
+        query: str | None = None,
+        role: str | None = None,
+        control_kind: str | None = None,
+        layer: str | None = None,
+        frame_path: list[Any] | None = None,
+        table: dict[str, Any] | None = None,
+        max_results: int = 5,
+        refresh: bool = False,
+        include_invisible: bool = False,
+        switch_tab_id: str | None = None,
+    ) -> dict[str, Any]:
+        if refresh or not self._last_state:
+            state = self.get_state(
+                driver,
+                switch_tab_id=switch_tab_id,
+                include_invisible=include_invisible,
+                max_elements=max(120, max_results),
+            )
+        else:
+            state = self._last_state.get("state") or {}
+        return find_in_state(
+            state,
+            query=query,
+            role=role,
+            control_kind=control_kind,
+            layer=layer,
+            frame_path=frame_path,
+            table=table,
+            max_results=max_results,
+        )
 
     def run_action(
         self,

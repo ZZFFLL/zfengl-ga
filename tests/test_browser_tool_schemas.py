@@ -33,6 +33,7 @@ def test_english_schema_exposes_browser_tools():
     tools = load_tools("assets/tools_schema.json")
 
     state = tool_by_name(tools, "browser_state")
+    find = tool_by_name(tools, "browser_find")
     action = tool_by_name(tools, "browser_action")
 
     assert "indexed" in state["description"].lower()
@@ -40,6 +41,10 @@ def test_english_schema_exposes_browser_tools():
     assert "iframe" in state["description"].lower()
     assert "field/control/layer" in state["description"].lower()
     assert state["parameters"]["properties"]["max_elements"]["default"] == 120
+    assert "read-only" in find["description"].lower()
+    assert "query" in find["parameters"]["properties"]
+    assert "refresh" in find["parameters"]["properties"]
+    assert find["parameters"]["properties"]["max_results"]["default"] == 5
     assert "omit index" in action["description"]
     assert "Native select" in action["description"]
     assert "SPA wait actions" in action["description"]
@@ -62,6 +67,7 @@ def test_chinese_schema_exposes_browser_tools():
     tools = load_tools("assets/tools_schema_cn.json")
 
     state = tool_by_name(tools, "browser_state")
+    find = tool_by_name(tools, "browser_find")
     action = tool_by_name(tools, "browser_action")
 
     assert "索引" in state["description"]
@@ -70,6 +76,10 @@ def test_chinese_schema_exposes_browser_tools():
     assert "field/control/layer" in state["description"]
     assert state["parameters"]["properties"]["include_invisible"]["default"] is False
     assert state["parameters"]["properties"]["max_elements"]["default"] == 120
+    assert "只读定位" in find["description"]
+    assert "query" in find["parameters"]["properties"]
+    assert "refresh" in find["parameters"]["properties"]
+    assert find["parameters"]["properties"]["max_results"]["default"] == 5
     assert "index" in action["parameters"]["properties"]
     assert "selector" in action["parameters"]["properties"]
     assert "不要传 index" in action["description"]

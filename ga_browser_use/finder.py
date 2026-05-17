@@ -1,0 +1,151 @@
+from __future__ import annotations
+
+from typing import Any
+
+from ga_browser_use.results import failed_result
+
+
+def _norm(value: Any) -> str:
+    return str(value or "").strip().lower()
+
+
+def _contains(haystack: Any, needle: Any) -> bool:
+    needle_text = _norm(needle)
+    return bool(needle_text and needle_text in _norm(haystack))
+
+
+def _text_parts(element: dict[str, Any]) -> list[str]:
+    parts = [element.get("text"), element.get("value")]
+    parts.extend(element.get("labels") or [])
+    field_context = element.get("field_context") or {}
+    parts.extend(field_context.get("labels") or [])
+    parts.extend([field_context.get("nearby_text"), field_context.get("placeholder")])
+    attrs = element.get("attributes") or {}
+    parts.extend([attrs.get("aria-label"), attrs.get("title"), attrs.get("placeholder")])
+    return [str(part) for part in parts if part]
+
+
+def _table_value(table_context: dict[str, Any], *names: str) -> str:
+    for name in names:
+        value = table_context.get(name)
+        if value:
+            return str(value)
+    return ""
+
+
+def _score_element(
+    element: dict[str, Any],
+    *,
+    query: str,
+    role: str | None,
+    control_kind: str | None,
+    layer: str | None,
+    frame_path: list[Any] | None,
+    table: dict[str, Any] | None,
+) -> tuple[float, list[str]]:
+    reasons: list[str] = []
+    if role and _norm(element.get("role")) != _norm(role):
+        return 0.0, []
+    if control_kind and _norm(element.get("control_kind")) != _norm(control_kind):
+        return 0.0, []
+    if layer and _norm(element.get("layer")) != _norm(layer):
+        return 0.0, []
+    if frame_path is not None and element.get("frame_path") != frame_path:
+        return 0.0, []
+    if element.get("disabled") is True:
+        return 0.0, []
+
+    score = 0.0
+    parts = _text_parts(element)
+    labels = [str(label) for label in (element.get("labels") or [])]
+    if query:
+        if any(_norm(label) == _norm(query) for label in labels):
+            score += 70
+            reasons.append("exact label")
+        elif any(_contains(label, query) for label in labels):
+            score += 50
+            reasons.append("label")
+        elif any(_contains(part, query) for part in parts):
+            score += 25
+            reasons.append("text")
+        else:
+            return 0.0, []
+
+    table_context = element.get("table_context") or {}
+    if table:
+        row_text = table.get("row_text")
+        column_text = table.get("column_text") or table.get("header_text")
+        if row_text:
+            row_value = _table_value(table_context, "row_text", "row_header")
+            if not _contains(row_value, row_text):
+                return 0.0, []
+            score += 35
+            reasons.append("table row")
+        if column_text:
+            column_value = _table_value(table_context, "column_header", "column_text", "header_text")
+            if not _contains(column_value, column_text):
+                return 0.0, []
+            score += 35
+            reasons.append("table column")
+
+    if element.get("visible") is True:
+        score += 10
+        reasons.append("visible")
+    if _norm(element.get("layer")) != "main":
+        score += 5
+        reasons.append("layer")
+    if control_kind:
+        score += 10
+        reasons.append("control_kind")
+    return score, reasons
+
+
+def find_in_state(
+    state: dict[str, Any],
+    *,
+    query: str | None = None,
+    role: str | None = None,
+    control_kind: str | None = None,
+    layer: str | None = None,
+    frame_path: list[Any] | None = None,
+    table: dict[str, Any] | None = None,
+    max_results: int = 5,
+) -> dict[str, Any]:
+    if not isinstance(state, dict) or state.get("status") != "success":
+        return failed_result(None, "state_missing", "browser_find requires a successful browser_state.")
+    query_text = str(query or "").strip()
+    elements = state.get("elements") if isinstance(state.get("elements"), list) else []
+    matches = []
+    for element in elements:
+        if not isinstance(element, dict):
+            continue
+        score, reasons = _score_element(
+            element,
+            query=query_text,
+            role=role,
+            control_kind=control_kind,
+            layer=layer,
+            frame_path=frame_path,
+            table=table,
+        )
+        if score <= 0:
+            continue
+        matches.append(
+            {
+                "index": element.get("index"),
+                "score": round(score / 100, 3),
+                "reason": "; ".join(reasons),
+                "element": element,
+            }
+        )
+    matches.sort(key=lambda item: item["score"], reverse=True)
+    limit = max(1, min(int(max_results or 5), 20))
+    matches = matches[:limit]
+    if not matches:
+        result = failed_result(None, "target_not_found", "No browser element matched the requested criteria.")
+        result["recovery"]["code"] = "refresh_state_then_find"
+        result["recovery"]["next_tool"] = "browser_find"
+        result["recovery"]["next_args"] = {"refresh": True, "query": query_text, "max_results": limit}
+        return result
+    ambiguous = len(matches) > 1 and abs(matches[0]["score"] - matches[1]["score"]) <= 0.05
+    return {"status": "success", "matches": matches, "ambiguous": ambiguous, "recovery": None}

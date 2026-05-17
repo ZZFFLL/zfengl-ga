@@ -61,6 +61,21 @@
       "max_elements": {"type": "integer", "description": "Maximum indexed elements to return", "default": 120}}}
   }},
   {"type": "function", "function": {
+    "name": "browser_find",
+    "description": "Read-only locator for indexed browser elements from the real Chrome page. Use after browser_state or when recovery asks for browser_find. Returns candidate indexes with score, reason, and ambiguity instead of acting.",
+    "parameters": {"type": "object", "properties": {
+      "query": {"type": "string", "description": "Target label/text/value to find"},
+      "role": {"type": "string", "description": "Optional role hard filter"},
+      "control_kind": {"type": "string", "description": "Optional control kind hard filter such as contenteditable, native_input, custom_select_trigger"},
+      "layer": {"type": "string", "description": "Optional layer filter such as main, modal, drawer, popover"},
+      "frame_path": {"type": "array", "items": {"type": "integer"}, "description": "Optional same-origin frame path filter"},
+      "table": {"type": "object", "description": "Optional table locator with row_text and column_text"},
+      "max_results": {"type": "integer", "description": "Maximum candidates to return", "default": 5},
+      "refresh": {"type": "boolean", "description": "Refresh browser_state before finding", "default": false},
+      "include_invisible": {"type": "boolean", "description": "Include invisible elements while refreshing state", "default": false},
+      "switch_tab_id": {"type": "string", "description": "[Optional] Tab ID to switch to before finding"}}}
+  }},
+  {"type": "function", "function": {
     "name": "browser_action",
     "description": "Perform a browser action against latest browser_state indexed elements in the real Chrome page. Native select stays native select; custom dropdowns are not select. For submit/search after input, call keys with text Enter and omit index to use the focused element. SPA wait actions include wait_dom_stable, wait_not_busy, wait_route, and indexed wait_enabled. Verification fields verify/verify_text/verify_value/verify_selector are supported for click/input/select/keys only; wait actions reject verify. Failed verification returns stage verify_failed. selector is supported for wait_selector and as a custom busy selector for wait_not_busy.",
     "parameters": {"type": "object", "properties": {
