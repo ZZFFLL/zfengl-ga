@@ -8,6 +8,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from agent_loop import BaseHandler, StepOutcome, json_default
 from browser_actions import BrowserActionLayer
+from ga_browser_use.recipes import BrowserRecipeRunner
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 NORMAL_WORKING_MEMORY_WINDOW = 80
@@ -276,6 +277,41 @@ def browser_find(
     except Exception as e:
         return {"status": "failed", "stage": "browser_unavailable", "error": format_error(e)}
 
+def browser_recipe(
+    recipe,
+    target=None,
+    option_text=None,
+    confirm_text=None,
+    table=None,
+    condition=None,
+    verify=True,
+    timeout=10,
+    max_results=5,
+    switch_tab_id=None,
+):
+    """Run a bounded browser recipe against the real Chrome browser state."""
+    global driver
+    try:
+        if driver is None:
+            first_init_driver()
+        if switch_tab_id:
+            driver.default_session_id = switch_tab_id
+        runner = BrowserRecipeRunner(browser_action_layer)
+        return runner.run(
+            driver,
+            recipe=recipe,
+            target=target,
+            option_text=option_text,
+            confirm_text=confirm_text,
+            table=table,
+            condition=condition,
+            verify=verify,
+            timeout=timeout,
+            max_results=max_results,
+        )
+    except Exception as e:
+        return {"status": "failed", "stage": "browser_unavailable", "error": format_error(e)}
+
 def expand_file_refs(text, base_dir=None):
     """展开文本中的 {{file:路径:起始行:结束行}} 引用为实际文件内容。
     可与普通文本混排。展开失败抛 ValueError。
@@ -512,6 +548,27 @@ class GenericAgentHandler(BaseHandler):
         maxlen = 8000 // args.get('_tool_num', 1)
         formatted_result = smart_format(result_json, max_str_len=maxlen)
         yield f"Browser find result:\n{formatted_result}\n"
+        outcome = StepOutcome(formatted_result, next_prompt="\n")
+        outcome.result = formatted_result
+        return outcome
+
+    def do_browser_recipe(self, args, response):
+        result = browser_recipe(
+            recipe=args.get("recipe"),
+            target=args.get("target"),
+            option_text=args.get("option_text"),
+            confirm_text=args.get("confirm_text"),
+            table=args.get("table"),
+            condition=args.get("condition"),
+            verify=args.get("verify", True),
+            timeout=args.get("timeout", 10),
+            max_results=args.get("max_results", 5),
+            switch_tab_id=args.get("switch_tab_id") or args.get("tab_id"),
+        )
+        result_json = json.dumps(result, ensure_ascii=False, default=json_default)
+        maxlen = 8000 // args.get('_tool_num', 1)
+        formatted_result = smart_format(result_json, max_str_len=maxlen)
+        yield f"Browser recipe result:\n{formatted_result}\n"
         outcome = StepOutcome(formatted_result, next_prompt="\n")
         outcome.result = formatted_result
         return outcome

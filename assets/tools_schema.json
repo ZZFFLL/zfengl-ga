@@ -76,6 +76,21 @@
       "switch_tab_id": {"type": "string", "description": "[Optional] Tab ID to switch to before finding"}}}
   }},
   {"type": "function", "function": {
+    "name": "browser_recipe",
+    "description": "Run a bounded browser operation recipe in the real Chrome page. Recipes are deterministic and fail closed on ambiguity. Use for custom_select, layer_select, table_locate, and component_wait.",
+    "parameters": {"type": "object", "properties": {
+      "recipe": {"type": "string", "enum": ["custom_select", "layer_select", "table_locate", "component_wait"], "description": "Recipe to run"},
+      "target": {"type": "object", "description": "Target locator, usually index or query"},
+      "option_text": {"type": "string", "description": "Option text for custom_select or layer_select"},
+      "confirm_text": {"type": "string", "description": "Explicit confirm button text for layer_select"},
+      "table": {"type": "object", "description": "Table locator such as row_text and column_text for table_locate"},
+      "condition": {"type": "string", "enum": ["layer_open", "layer_closed", "options_visible", "field_value", "element_enabled", "not_busy"], "description": "Component wait condition"},
+      "verify": {"type": "boolean", "description": "Whether the recipe should verify the expected state when supported", "default": true},
+      "timeout": {"type": "integer", "description": "Timeout in seconds", "default": 10},
+      "max_results": {"type": "integer", "description": "Maximum finder candidates per step", "default": 5},
+      "switch_tab_id": {"type": "string", "description": "[Optional] Tab ID to switch to before running recipe"}}}
+  }},
+  {"type": "function", "function": {
     "name": "browser_action",
     "description": "Perform a browser action against latest browser_state indexed elements in the real Chrome page. Native select stays native select; custom dropdowns are not select. For submit/search after input, call keys with text Enter and omit index to use the focused element. SPA wait actions include wait_dom_stable, wait_not_busy, wait_route, and indexed wait_enabled. Verification fields verify/verify_text/verify_value/verify_selector are supported for click/input/select/keys only; wait actions reject verify. Failed verification returns stage verify_failed. selector is supported for wait_selector and as a custom busy selector for wait_not_busy.",
     "parameters": {"type": "object", "properties": {

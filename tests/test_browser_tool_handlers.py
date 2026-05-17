@@ -253,3 +253,39 @@ def test_browser_find_refreshes_when_cached_tab_differs():
 
     assert result["matches"][0]["index"] == 2
     assert driver.execute_js_calls == 1
+
+
+def test_browser_recipe_uses_recipe_runner(monkeypatch):
+    class FakeLayer:
+        pass
+
+    class FakeRunner:
+        def __init__(self, layer):
+            self.layer = layer
+
+        def run(self, driver, **kwargs):
+            return {"status": "success", "recipe": kwargs["recipe"], "steps": []}
+
+    fake_driver = SimpleNamespace(default_session_id="9", get_all_sessions=lambda: [{"id": "9"}])
+    monkeypatch.setattr(ga, "driver", fake_driver)
+    monkeypatch.setattr(ga, "browser_action_layer", FakeLayer())
+    monkeypatch.setattr(ga, "BrowserRecipeRunner", FakeRunner)
+
+    result = ga.browser_recipe(recipe="custom_select", option_text="研发部")
+
+    assert result["status"] == "success"
+    assert result["recipe"] == "custom_select"
+
+
+def test_do_browser_recipe_formats_execution_output(monkeypatch):
+    monkeypatch.setattr(
+        ga,
+        "browser_recipe",
+        lambda **kwargs: {"status": "success", "recipe": kwargs["recipe"], "steps": []},
+    )
+    handler = make_handler()
+
+    chunks, outcome = run_generator(handler.do_browser_recipe({"recipe": "table_locate"}, SimpleNamespace(content="")))
+
+    assert "Browser recipe result:" in "".join(chunks)
+    assert json.loads(outcome.data)["recipe"] == "table_locate"

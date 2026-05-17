@@ -34,6 +34,7 @@ def test_english_schema_exposes_browser_tools():
 
     state = tool_by_name(tools, "browser_state")
     find = tool_by_name(tools, "browser_find")
+    recipe = tool_by_name(tools, "browser_recipe")
     action = tool_by_name(tools, "browser_action")
 
     assert "indexed" in state["description"].lower()
@@ -61,6 +62,22 @@ def test_english_schema_exposes_browser_tools():
     assert "verify_text" in action["parameters"]["properties"]
     assert "verify_value" in action["parameters"]["properties"]
     assert "verify_selector" in action["parameters"]["properties"]
+    assert recipe["parameters"]["properties"]["recipe"]["enum"] == [
+        "custom_select",
+        "layer_select",
+        "table_locate",
+        "component_wait",
+    ]
+    assert recipe["parameters"]["properties"]["condition"]["enum"] == [
+        "layer_open",
+        "layer_closed",
+        "options_visible",
+        "field_value",
+        "element_enabled",
+        "not_busy",
+    ]
+    assert recipe["parameters"]["properties"]["timeout"]["default"] == 10
+    assert recipe["parameters"]["properties"]["max_results"]["default"] == 5
 
 
 def test_chinese_schema_exposes_browser_tools():
@@ -68,6 +85,7 @@ def test_chinese_schema_exposes_browser_tools():
 
     state = tool_by_name(tools, "browser_state")
     find = tool_by_name(tools, "browser_find")
+    recipe = tool_by_name(tools, "browser_recipe")
     action = tool_by_name(tools, "browser_action")
 
     assert "索引" in state["description"]
@@ -99,3 +117,19 @@ def test_chinese_schema_exposes_browser_tools():
     assert "verify_value" in action["parameters"]["properties"]
     assert "verify_selector" in action["parameters"]["properties"]
     assert action["parameters"]["properties"]["timeout"]["default"] == 10
+    assert recipe["parameters"]["properties"]["recipe"]["enum"] == [
+        "custom_select",
+        "layer_select",
+        "table_locate",
+        "component_wait",
+    ]
+    assert recipe["parameters"]["properties"]["condition"]["enum"] == [
+        "layer_open",
+        "layer_closed",
+        "options_visible",
+        "field_value",
+        "element_enabled",
+        "not_busy",
+    ]
+    assert recipe["parameters"]["properties"]["timeout"]["default"] == 10
+    assert recipe["parameters"]["properties"]["max_results"]["default"] == 5
