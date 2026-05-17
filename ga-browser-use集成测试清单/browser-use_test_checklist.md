@@ -1,5 +1,7 @@
 # GA 浏览器操作能力测试清单
 
+> 历史说明：本文件是此前 GA browser-use 测试过程/阶段 1 手工清单，不是 `docs/superpowers/plans/2026-05-16-ga-browser-v1-hardening.md` 的阶段 2 完成交付证据。未执行、待测或仅部分通过的用例只能作为后续待测/历史记录处理，除非补充真实工具返回和页面证据，否则不得改写为已通过。
+
 本文用于验证 GA 当前新增的浏览器操作工具：`browser_state` + `browser_action`。
 
 范围只按现有代码实现编写，不测试未实现能力，不把 `browser-use` 项目的理想能力当成 GA 已具备能力。

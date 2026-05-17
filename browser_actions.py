@@ -270,6 +270,19 @@ def build_browser_action_script(
     return {{ el, cachedDocument: el.ownerDocument || null }};
   }}
 
+  function replaceCachedElement(index, target, expectedToken) {{
+    const state = window.__GA_BROWSER_ACTION_STATE__;
+    if (!state || state.token !== expectedToken || !Array.isArray(state.elements) || !target) {{
+      return {{ error: fail("stale_index", "Element index is stale. Run browser_state again.") }};
+    }}
+    const safeIndex = Number(index) - 1;
+    if (!Number.isInteger(safeIndex) || safeIndex < 0 || safeIndex >= state.elements.length) {{
+      return {{ error: fail("stale_index", "Element index is stale. Run browser_state again.") }};
+    }}
+    state.elements[safeIndex] = target;
+    return {{ ok: true }};
+  }}
+
   async function waitFor(predicate, stage, message) {{
     while (Date.now() <= deadline) {{
       const value = predicate();
@@ -751,7 +764,13 @@ def build_browser_action_script(
           }}
           const target = queryDocument.querySelector(request.selector);
           if (!matchesSelectorIdentity(target)) return null;
-          return visible(target) ? target : null;
+          if (!visible(target)) return null;
+          if (el !== target) {{
+            const replaced = replaceCachedElement(request.index, target, request.state_token);
+            if (replaced && replaced.error) return replaced;
+            el = target;
+          }}
+          return target;
         }}
         return null;
       }}

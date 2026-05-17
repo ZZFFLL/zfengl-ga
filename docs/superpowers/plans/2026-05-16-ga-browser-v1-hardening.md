@@ -34,6 +34,10 @@
 
 ## File Map
 
+本计划的阶段 2 实现交付只覆盖下列实现文件、测试文件和 SOP 文档；`ga-browser-use集成测试清单/` 下的两个测试清单是此前测试过程/阶段 1 产物，不是本 superpowers 阶段 2 计划的交付物。若审查需要保留或清理这些历史清单，只能作为文档迁移/标注处理，不能把其中 `待测` 项改写成已通过。
+
+### Stage 2 Implementation Files
+
 - Modify: `browser_indexer.py`
   - Add same-origin frame traversal.
   - Add metadata helpers for labels, attributes, validation, stable keys, field context, table context, layer context, control kind, and action hints.
@@ -69,8 +73,15 @@
 - Modify: `tests/test_browser_tool_schemas.py`
   - Update action enum and assert verification properties exist in both schema files.
 
+### Stage 2 SOP / Plan Documentation
+
 - Modify: `memory/browser-use_sop.md`
   - Update SOP with current code-backed capability boundaries and tool sequencing.
+
+### Historical Checklist Files
+
+- Do not treat `ga-browser-use集成测试清单/browser-use_test_checklist.md` or `ga-browser-use集成测试清单/browser-use_advanced_test_checklist.md` as phase 2 completion evidence.
+- If touched during review, only add clarifying labels such as "historical manual checklist", "phase 1 artifact", or "follow-up pending"; do not promote unverified `待测` rows to passed.
 
 ---
 
@@ -1521,7 +1532,8 @@ git commit -m "docs: update browser tool sop and schemas"
 ### Task 8: Final Regression And Review
 
 **Files:**
-- Verify only unless tests reveal task-owned defects.
+- Verify implementation files and phase 2 SOP/plan documentation only unless tests reveal task-owned defects.
+- Historical manual checklists under `ga-browser-use集成测试清单/` are outside phase 2 implementation scope; review may only mark their provenance or pending status.
 
 - [ ] **Step 1: Run the focused browser tool regression suite**
 
@@ -1558,15 +1570,18 @@ Run:
 ```powershell
 git diff --stat
 git diff -- browser_indexer.py browser_actions.py ga.py assets/tools_schema.json assets/tools_schema_cn.json tests/test_browser_indexer.py tests/test_browser_actions.py tests/test_browser_tool_handlers.py tests/test_browser_tool_schemas.py memory/browser-use_sop.md
+git diff -- docs/superpowers/plans/2026-05-16-ga-browser-v1-hardening.md ga-browser-use集成测试清单/browser-use_test_checklist.md ga-browser-use集成测试清单/browser-use_advanced_test_checklist.md
 ```
 
 Expected:
 
 ```text
-Diff only touches the files listed in this plan.
+Implementation diff only touches the stage 2 implementation files listed above.
+Documentation diff may touch this plan, `memory/browser-use_sop.md`, and historical checklist provenance notes only.
 No browser-use repository files appear.
 No Chrome launch, browser profile, or BrowserSession code appears.
 No v2 tool names appear.
+Historical checklist rows with `待测` remain pending unless backed by real recorded evidence.
 ```
 
 - [ ] **Step 4: Commit any final test/doc corrections**

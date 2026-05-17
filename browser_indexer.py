@@ -340,7 +340,8 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
     if (controlKind === "custom_select") return ["click_to_open", "state_after_open", "select_option_by_click"];
     if (controlKind === "native_select") return ["select_by_value_or_text"];
     if (controlKind === "option") return ["click_to_select"];
-    if (["native_input", "textarea", "contenteditable", "date_input"].includes(controlKind)) return ["input", "verify_field_value", "keys_after_input"];
+    if (controlKind === "contenteditable") return ["input", "verify_field_value"];
+    if (["native_input", "textarea", "date_input"].includes(controlKind)) return ["input", "verify_field_value", "keys_after_input"];
     if (["button", "link"].includes(controlKind)) return ["click"];
     return [];
   }};

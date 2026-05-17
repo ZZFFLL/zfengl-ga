@@ -285,7 +285,28 @@ document.querySelectorAll = (selector) => selector === "iframe, frame" ? [editor
     assert element["frame_url"] == "https://example.test/editor"
     assert element["frame_title"] == "Editor Frame"
     assert element["control_kind"] == "contenteditable"
-    assert element["action_hints"] == ["input", "verify_field_value", "keys_after_input"]
+    assert element["action_hints"] == ["input", "verify_field_value"]
+
+
+def test_browser_state_script_keeps_keys_after_input_for_textarea_and_date_input():
+    script = build_browser_state_script(include_invisible=False, max_elements=10)
+
+    state = run_browser_state_script(
+        script,
+        """
+const notes = makeElement({ tag: "textarea", text: "", value: "" });
+const dueDate = makeElement({ tag: "input", type: "date", value: "2026-05-17" });
+document.querySelectorAll = (selector) => {
+  if (selector === "iframe, frame" || selector.startsWith("label[")) return [];
+  return [notes, dueDate];
+};
+""",
+    )
+
+    assert state["status"] == "success"
+    by_kind = {element["control_kind"]: element for element in state["elements"]}
+    assert by_kind["textarea"]["action_hints"] == ["input", "verify_field_value", "keys_after_input"]
+    assert by_kind["date_input"]["action_hints"] == ["input", "verify_field_value", "keys_after_input"]
 
 
 def test_browser_state_script_emits_rich_field_and_table_metadata():

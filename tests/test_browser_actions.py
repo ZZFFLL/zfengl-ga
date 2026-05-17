@@ -119,6 +119,41 @@ def run_browser_action_script(script, setup_js):
     return json.loads(completed.stdout)
 
 
+def run_browser_action_scripts(scripts, setup_js):
+    node_code = "\n".join(
+        [
+            f"const scripts = {json.dumps(scripts)};",
+            NODE_ACTION_RUNTIME,
+            setup_js,
+            """
+(async () => {
+  const results = [];
+  for (const script of scripts) {
+    results.push(await eval(script));
+  }
+  if (typeof __GA_TEST_PROBE__ === "function") {
+    console.log(JSON.stringify({ results, probe: __GA_TEST_PROBE__() }));
+  } else {
+    console.log(JSON.stringify({ results }));
+  }
+})().catch((error) => {
+  console.error(error && error.stack ? error.stack : String(error));
+  process.exit(1);
+});
+""",
+        ]
+    )
+    completed = subprocess.run(
+        ["node", "-"],
+        input=node_code,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    return json.loads(completed.stdout)
+
+
 class FakeDriver:
     def __init__(self, responses=None, sessions=None):
         self.responses = list(responses or [])
@@ -1066,7 +1101,8 @@ def test_build_browser_action_script_wait_index_uses_selector_hint_when_availabl
 
     assert 'if (request.selector) {' in script
     assert 'const target = queryDocument.querySelector(request.selector);' in script
-    assert 'return visible(target) ? target : null;' in script
+    assert 'if (!visible(target)) return null;' in script
+    assert 'replaceCachedElement(request.index, target, request.state_token);' in script
 
 
 def test_build_browser_action_script_contains_frame_document_helpers():
@@ -1192,6 +1228,137 @@ document.querySelector = (_selector) => replacement;
 
     assert result["status"] == "success"
     assert result["result"] == "element_visible"
+
+
+def test_browser_action_script_wait_index_fallback_refreshes_cached_node_for_next_action():
+    wait_script = build_browser_action_script(
+        action="wait_index",
+        index=1,
+        text=None,
+        value=None,
+        timeout=1,
+        state_token="tok-2",
+        selector='button[name="go"]',
+        selector_tag="button",
+        selector_role="button",
+        selector_text="Go",
+    )
+    click_script = build_browser_action_script(
+        action="click",
+        index=1,
+        text=None,
+        value=None,
+        timeout=1,
+        state_token="tok-2",
+        selector=None,
+    )
+
+    result = run_browser_action_scripts(
+        [wait_script, click_script],
+        """
+const cached = makeElement({ tag: "button", role: "button", text: "Go", attached: false });
+const replacement = makeElement({ tag: "button", role: "button", text: "Go", visible: true });
+window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [cached] };
+document.querySelector = (_selector) => replacement;
+global.__GA_TEST_PROBE__ = () => ({
+  cachedClicked: Boolean(cached.clicked),
+  replacementClicked: Boolean(replacement.clicked),
+  cachePointsToReplacement: window.__GA_BROWSER_ACTION_STATE__.elements[0] === replacement,
+});
+""",
+    )
+
+    wait_result, click_result = result["results"]
+    assert wait_result["status"] == "success"
+    assert wait_result["result"] == "element_visible"
+    assert click_result["status"] == "success"
+    assert click_result["result"] == "clicked"
+    assert result["probe"] == {
+        "cachedClicked": False,
+        "replacementClicked": True,
+        "cachePointsToReplacement": True,
+    }
+
+
+def test_browser_action_script_wait_index_fallback_rejects_cache_token_change():
+    script = build_browser_action_script(
+        action="wait_index",
+        index=1,
+        text=None,
+        value=None,
+        timeout=1,
+        state_token="tok-2",
+        selector='button[name="go"]',
+        selector_tag="button",
+        selector_role="button",
+        selector_text="Go",
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+const cached = makeElement({ tag: "button", role: "button", text: "Go", attached: false });
+const replacement = makeElement({ tag: "button", role: "button", text: "Go", visible: true });
+const other = makeElement({ tag: "button", role: "button", text: "Other" });
+window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [cached] };
+document.querySelector = (_selector) => {
+  window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-new", elements: [other] };
+  return replacement;
+};
+global.__GA_TEST_PROBE__ = () => ({
+  token: window.__GA_BROWSER_ACTION_STATE__.token,
+  cachePointsToReplacement: window.__GA_BROWSER_ACTION_STATE__.elements[0] === replacement,
+  cachePointsToOther: window.__GA_BROWSER_ACTION_STATE__.elements[0] === other,
+});
+""",
+    )
+
+    probe = result["probe"]
+    result = result["result"]
+    assert result["status"] == "failed"
+    assert result["stage"] == "stale_index"
+    assert probe == {
+        "token": "tok-new",
+        "cachePointsToReplacement": False,
+        "cachePointsToOther": True,
+    }
+
+
+def test_browser_action_script_wait_index_fallback_rejects_cache_index_shrink():
+    script = build_browser_action_script(
+        action="wait_index",
+        index=1,
+        text=None,
+        value=None,
+        timeout=1,
+        state_token="tok-2",
+        selector='button[name="go"]',
+        selector_tag="button",
+        selector_role="button",
+        selector_text="Go",
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+const cached = makeElement({ tag: "button", role: "button", text: "Go", attached: false });
+const replacement = makeElement({ tag: "button", role: "button", text: "Go", visible: true });
+window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [cached] };
+document.querySelector = (_selector) => {
+  window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [] };
+  return replacement;
+};
+global.__GA_TEST_PROBE__ = () => ({
+  cacheLength: window.__GA_BROWSER_ACTION_STATE__.elements.length,
+});
+""",
+    )
+
+    probe = result["probe"]
+    result = result["result"]
+    assert result["status"] == "failed"
+    assert result["stage"] == "stale_index"
+    assert probe == {"cacheLength": 0}
 
 
 def test_browser_action_script_wait_enabled_missing_cached_node_returns_stale_index():
