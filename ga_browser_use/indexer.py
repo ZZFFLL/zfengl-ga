@@ -51,8 +51,13 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
 
   const isDecorativeIconOnly = (element) => {{
     const className = String(element.getAttribute("class") || "");
-    const hasActionSignal = element.getAttribute("role") || element.getAttribute("tabindex") || element.getAttribute("onclick");
-    return !hasActionSignal && /\\b(ui-icon|anticon|iconfont)\\b/.test(className);
+    if (!/\\b(ui-icon|anticon|iconfont)\\b/.test(className)) return false;
+    const tag = element.tagName.toLowerCase();
+    const tabindex = element.getAttribute("tabindex");
+    const hasTabAction = tabindex !== null && Number(tabindex) >= 0;
+    const hasNativeAction = tag === "button" || tag === "input" || tag === "textarea" || tag === "select" || (tag === "a" && element.hasAttribute("href"));
+    const hasActionSignal = hasNativeAction || element.getAttribute("role") || hasTabAction || element.getAttribute("onclick");
+    return !hasActionSignal;
   }};
 
   const selectorHint = (element) => {{

@@ -170,6 +170,57 @@ document.querySelectorAll = (selector) => {
     assert "decorative" not in texts
 
 
+def test_browser_state_script_filters_decorative_icon_candidate_with_tabindex_minus_one():
+    script = build_browser_state_script(max_elements=20, include_invisible=True)
+
+    result = run_browser_state_script(
+        script,
+        """
+const decorativeIcon = makeElement({
+  tag: "span",
+  text: "decorative",
+  attrs: { class: "ui-icon", tabindex: "-1" },
+});
+document.querySelectorAll = (selector) => {
+  if (selector === "iframe, frame" || selector.startsWith("label[")) return [];
+  if (selector.includes("[tabindex]")) return [decorativeIcon];
+  return [];
+};
+""",
+    )
+
+    assert [element["text"] for element in result["elements"]] == []
+
+
+def test_browser_state_script_keeps_native_icon_button_and_link_controls():
+    script = build_browser_state_script(max_elements=20)
+
+    result = run_browser_state_script(
+        script,
+        """
+const refreshButton = makeElement({
+  tag: "button",
+  attrs: { class: "anticon", "aria-label": "刷新" },
+});
+const openLink = makeElement({
+  tag: "a",
+  attrs: { class: "ui-icon", href: "/open", "aria-label": "打开" },
+});
+document.querySelectorAll = (selector) => {
+  if (selector === "iframe, frame" || selector.startsWith("label[")) return [];
+  const matches = [];
+  if (selector.includes("button")) matches.push(refreshButton);
+  if (selector.includes("a[href]")) matches.push(openLink);
+  return matches;
+};
+""",
+    )
+
+    texts = [element["text"] for element in result["elements"]]
+    assert "刷新" in texts
+    assert "打开" in texts
+
+
 def test_build_browser_state_script_defaults_to_visible_elements_only():
     script = build_browser_state_script()
 
