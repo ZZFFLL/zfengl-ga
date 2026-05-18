@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -14,6 +14,8 @@ DEFAULT_LOG_ROOT = PACKAGE_DIR / "log"
 FALSE_VALUES = {"0", "false", "no", "off"}
 TRUE_VALUES = {"1", "true", "yes", "on"}
 PLAIN_TOKEN_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
+LOG_FILE_RE = re.compile(r"^audit-(\d{14})\.log$")
+MAX_LOG_FILE_BYTES = 1_048_576
 SENSITIVE_KEYS = {
     "confirm_text",
     "column_text",
@@ -56,9 +58,51 @@ def _log_root() -> Path:
     return DEFAULT_LOG_ROOT
 
 
-def _log_path(now: datetime | None = None) -> Path:
+def _log_file_timestamp(path: Path) -> str | None:
+    match = LOG_FILE_RE.match(path.name)
+    if not match:
+        return None
+    return match.group(1)
+
+
+def _timestamped_log_path(directory: Path, now: datetime) -> Path:
+    return directory / f"audit-{now.strftime('%Y%m%d%H%M%S')}.log"
+
+
+def _next_log_path(directory: Path, now: datetime, *, after_timestamp: str | None = None) -> Path:
+    next_time = now
+    if after_timestamp and now.strftime("%Y%m%d%H%M%S") <= after_timestamp:
+        next_time = datetime.strptime(after_timestamp, "%Y%m%d%H%M%S") + timedelta(seconds=1)
+
+    path = _timestamped_log_path(directory, next_time)
+    while path.exists():
+        next_time += timedelta(seconds=1)
+        path = _timestamped_log_path(directory, next_time)
+    return path
+
+
+def _active_log_path(directory: Path, *, now: datetime, entry_bytes: int) -> Path:
+    existing: list[tuple[str, Path]] = []
+    for path in directory.glob("audit*.log"):
+        timestamp = _log_file_timestamp(path)
+        if timestamp is not None:
+            existing.append((timestamp, path))
+    if not existing:
+        return _next_log_path(directory, now)
+
+    timestamp, path = max(existing, key=lambda item: item[0])
+    try:
+        current_size = path.stat().st_size
+    except OSError:
+        current_size = 0
+    if current_size + entry_bytes <= MAX_LOG_FILE_BYTES:
+        return path
+    return _next_log_path(directory, now, after_timestamp=timestamp)
+
+
+def _log_path(now: datetime | None = None, *, entry_bytes: int = 0) -> Path:
     current = now or datetime.now()
-    return _log_root() / current.strftime("%Y-%m-%d") / "audit.log"
+    return _active_log_path(_log_root() / current.strftime("%Y-%m-%d"), now=current, entry_bytes=entry_bytes)
 
 
 def _redacted(value: Any) -> str:
@@ -286,13 +330,13 @@ def _header(tool: str, phase: str, payload: dict[str, Any], timestamp: str) -> s
     return " ".join(parts)
 
 
-def _format_event(tool: str, phase: str, payload: dict[str, Any]) -> str:
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+def _format_event(tool: str, phase: str, payload: dict[str, Any], *, now: datetime | None = None) -> str:
+    timestamp = (now or datetime.now()).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
     section = "request" if phase == "start" else "result"
     lines = [_header(tool, phase, payload, timestamp), f"{section}:"]
     lines.extend(_format_mapping(payload))
     lines.append("")
-    return "\n".join(lines)
+    return "\n".join(lines) + "\n"
 
 
 def log_event(
@@ -318,9 +362,11 @@ def log_event(
         payload.update(_sanitize(sensitive, allow_sensitive=include_sensitive))
 
     try:
-        path = _log_path()
+        now = datetime.now()
+        event_text = _format_event(tool, phase, payload, now=now)
+        path = _log_path(now, entry_bytes=len(event_text.encode("utf-8")))
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as handle:
-            handle.write(_format_event(tool, phase, payload))
+            handle.write(event_text)
     except Exception:
         return

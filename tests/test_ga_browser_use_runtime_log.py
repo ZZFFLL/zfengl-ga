@@ -1,6 +1,7 @@
 import re
 from pathlib import Path
 
+import ga_browser_use.runtime_log as runtime_log
 from ga_browser_use.actions import BrowserActionLayer
 from ga_browser_use.recipes import BrowserRecipeRunner
 from ga_browser_use.runtime_log import log_event
@@ -44,7 +45,7 @@ class FakeRecipeLayer:
 
 
 def read_audit_log(root: Path) -> str:
-    files = list(root.glob("*/audit.log"))
+    files = list(root.glob("*/audit-*.log"))
     assert len(files) == 1
     return files[0].read_text(encoding="utf-8")
 
@@ -100,7 +101,40 @@ def test_runtime_log_can_be_disabled(monkeypatch, tmp_path):
 
     log_event("browser_state", "start", fields={"max_elements": 120})
 
-    assert list(tmp_path.glob("*/audit.log")) == []
+    assert list(tmp_path.glob("*/audit-*.log")) == []
+
+
+def test_runtime_log_separates_events_with_blank_line(monkeypatch, tmp_path):
+    monkeypatch.setenv("GA_BROWSER_USE_LOG_ROOT", str(tmp_path))
+    monkeypatch.delenv("GA_BROWSER_USE_LOG_SENSITIVE", raising=False)
+
+    log_event("browser_state", "start", fields={"max_elements": 120})
+    log_event("browser_state", "end", fields={"status": "success"})
+
+    text = read_audit_log(tmp_path)
+
+    assert "\n\n[" in text
+    assert text.endswith("\n\n")
+
+
+def test_runtime_log_rotates_when_file_reaches_size_limit(monkeypatch, tmp_path):
+    monkeypatch.setenv("GA_BROWSER_USE_LOG_ROOT", str(tmp_path))
+    monkeypatch.delenv("GA_BROWSER_USE_LOG_SENSITIVE", raising=False)
+    monkeypatch.setattr(runtime_log, "MAX_LOG_FILE_BYTES", 400)
+
+    payload = {"status": "success", "message": "x" * 180}
+
+    log_event("browser_state", "start", fields=payload)
+    log_event("browser_state", "end", fields=payload)
+
+    day_dirs = list(tmp_path.iterdir())
+    assert len(day_dirs) == 1
+    day_dir = day_dirs[0]
+
+    files = sorted(day_dir.glob("audit-*.log"))
+    assert len(files) == 2
+    assert all(re.fullmatch(r"audit-\d{14}\.log", path.name) for path in files)
+    assert all(path.stat().st_size <= 400 for path in files)
 
 
 def test_browser_action_layer_get_state_logs_readable_request_and_result(monkeypatch, tmp_path):
