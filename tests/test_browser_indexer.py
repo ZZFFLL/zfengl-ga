@@ -80,7 +80,8 @@ document.body = makeElement({ tag: "body" });
             setup_js,
             """
 const result = eval(script);
-console.log(JSON.stringify(result));
+const finalResult = typeof global.__afterBrowserState === "function" ? global.__afterBrowserState(result) : result;
+console.log(JSON.stringify(finalResult));
 """,
         ]
     )
@@ -114,8 +115,8 @@ def test_build_browser_state_script_indexes_same_origin_editor_frame_body():
     script = build_browser_state_script()
 
     assert "editorBodyCandidate" in script
-    assert "frameDocument.designMode" in script
-    assert "isContentEditableTarget(frameDocument.body)" in script
+    assert "designMode" in script
+    assert "isContentEditableTarget(editorBodyCandidate)" in script
 
 
 def test_build_browser_state_script_includes_custom_select_roles():
@@ -424,6 +425,7 @@ const option = makeElement({
   text: "Yes",
   role: "option",
 });
+dropdownRoot.querySelectorAll = (selector) => selector.includes("[role=\\"option\\"]") ? [option] : [];
 option.closest = (selector) => {
   if (selector.includes(".ant-select-dropdown") || selector.includes("[role='listbox']")) return dropdownRoot;
   return null;
@@ -1127,6 +1129,377 @@ document.querySelectorAll = (selector) => {
     assert state["elements"][0]["frame_path"] == []
 
 
+def test_build_browser_state_script_preserves_same_origin_iframe_elements_under_global_limit():
+    script = build_browser_state_script(include_invisible=False, max_elements=3)
+
+    state = run_browser_state_script(
+        script,
+        """
+const mainButtonA = makeElement({ tag: "button", text: "Main A" });
+const mainButtonB = makeElement({ tag: "button", text: "Main B" });
+const frameDocButtonA = makeElement({ tag: "button", text: "Frame A" });
+const frameDocButtonB = makeElement({ tag: "button", text: "Frame B" });
+const frameDocument = {
+  title: "Frame",
+  querySelectorAll: (selector) => selector === selectorValue ? [frameDocButtonA, frameDocButtonB] : [],
+  defaultView: {
+    frameElement: null,
+    location: { href: "https://example.test/frame" },
+    getComputedStyle: () => ({ display: "block", visibility: "visible", contentVisibility: "visible", opacity: "1" })
+  },
+  body: null,
+  getElementById: (_id) => null,
+};
+frameDocument.body = makeElement({ tag: "body", text: "Frame Body", ownerDocument: frameDocument });
+const frameElement = makeElement({ tag: "iframe" });
+frameDocument.defaultView.frameElement = frameElement;
+frameElement.contentWindow = frameDocument.defaultView;
+frameElement.contentDocument = frameDocument;
+frameElement.getBoundingClientRect = () => ({ width: 100, height: 40 });
+frameElement.ownerDocument = document;
+frameDocButtonA.ownerDocument = frameDocument;
+frameDocButtonB.ownerDocument = frameDocument;
+document.contains = (element) => element === frameElement || element === document.body;
+const selectorValue = `a[href], button, input, textarea, select, [role="button"], [role="link"], [role="textbox"], [role="checkbox"], [role="radio"], [role="combobox"], [role="listbox"], [role="option"], [aria-haspopup="listbox"], [role="menuitem"], [onclick], [tabindex], [contenteditable="true"], .ant-select-selector, .ant-picker, .ui-browser-item, .ui-browser [role="treeitem"], .ui-browser [role="menuitem"]`;
+document.querySelectorAll = (selector) => {
+  if (selector === "iframe, frame") return [frameElement];
+  if (selector === selectorValue) return [mainButtonA, mainButtonB];
+  if (selector.startsWith("label[")) return [];
+  return [];
+};
+""",
+    )
+
+    assert state["status"] == "success"
+    texts = [item["text"] for item in state["elements"]]
+    assert "Main A" in texts
+    assert "Frame A" in texts
+    assert len(state["elements"]) == 3
+    assert state["truncated"] is True
+    assert state["truncation"]["omitted_count"] == 1
+    assert state["truncation"]["iframe_omitted_count"] == 0
+    assert state["truncation"]["total_limit"] == 3
+    assert state["truncation"]["main_reserved"] == 1
+    assert state["truncation"]["frame_reserved"] == 2
+
+
+def test_build_browser_state_script_reports_overlay_elements_and_frame_origin():
+    script = build_browser_state_script(include_invisible=False, max_elements=10)
+
+    state = run_browser_state_script(
+        script,
+        """
+const trigger = makeElement({
+  tag: "div",
+  role: "combobox",
+  text: "请选择",
+  attrs: { "aria-haspopup": "listbox", class: "ant-select ant-select-open" }
+});
+const option = makeElement({
+  tag: "div",
+  role: "option",
+  text: "否",
+  attrs: { class: "ant-select-dropdown-menu-item", "aria-selected": "false" }
+});
+const dropdown = makeElement({ tag: "div", attrs: { class: "ant-select-dropdown ant-select-dropdown-placement-bottomLeft" } });
+dropdown.matches = (selector) => selector.includes(".ant-select-dropdown");
+dropdown.querySelectorAll = (selector) => selector.includes("[role=\\"option\\"]") ? [option] : [];
+option.closest = (selector) => selector.includes(".ant-select-dropdown") ? dropdown : null;
+document.querySelectorAll = (selector) => {
+  if (selector === "iframe, frame" || selector.startsWith("label[")) return [];
+  if (selector.includes(".ant-select-dropdown")) return [dropdown];
+  return [trigger, option];
+};
+""",
+    )
+
+    assert state["status"] == "success"
+    by_text = {item["text"]: item for item in state["elements"] if item.get("text")}
+    assert by_text["请选择"]["layer"] == "main"
+    assert by_text["否"]["layer"] == "dropdown"
+    assert by_text["否"]["frame_path"] == []
+
+
+def test_browser_state_script_preserves_dropdown_option_under_dense_truncated_main_document():
+    script = build_browser_state_script(include_invisible=False, max_elements=3)
+
+    state = run_browser_state_script(
+        script,
+        """
+let layoutReads = 0;
+const denseButtons = Array.from({ length: 100 }, (_value, index) => {
+  const button = makeElement({ tag: "button", text: `Main ${index}` });
+  button.getBoundingClientRect = () => {
+    layoutReads += 1;
+    return { x: 0, y: 0, width: 10, height: 10 };
+  };
+  return button;
+});
+const dropdownA = makeElement({ tag: "div", attrs: { class: "ant-select-dropdown" } });
+dropdownA.matches = (selector) => selector.includes(".ant-select-dropdown");
+dropdownA.getBoundingClientRect = () => {
+  layoutReads += 1;
+  return { x: 0, y: 0, width: 100, height: 40 };
+};
+const dropdownB = makeElement({ tag: "div", attrs: { class: "ant-select-dropdown" } });
+dropdownB.matches = (selector) => selector.includes(".ant-select-dropdown");
+const overlayOptionsA = Array.from({ length: 3 }, (_value, index) => {
+  const option = makeElement({
+    tag: "div",
+    role: "option",
+    text: `否 ${index}`,
+    attrs: { class: "ant-select-dropdown-menu-item" },
+  });
+  option.closest = (selector) => selector.includes(".ant-select-dropdown") ? dropdownA : null;
+  option.getBoundingClientRect = () => {
+    layoutReads += 1;
+    return { x: 0, y: 0, width: 100, height: 20 };
+  };
+  return option;
+});
+const overlayOptionsB = Array.from({ length: 2 }, (_value, index) => {
+  const option = makeElement({
+    tag: "div",
+    role: "option",
+    text: `否 ${index + 3}`,
+    attrs: { class: "ant-select-dropdown-menu-item" },
+  });
+  option.closest = (selector) => selector.includes(".ant-select-dropdown") ? dropdownB : null;
+  option.getBoundingClientRect = () => {
+    layoutReads += 1;
+    return { x: 0, y: 0, width: 100, height: 20 };
+  };
+  return option;
+});
+dropdownB.getBoundingClientRect = () => {
+  layoutReads += 1;
+  return { x: 0, y: 0, width: 100, height: 40 };
+};
+document.querySelectorAll = (selector) => {
+  if (selector === "iframe, frame" || selector.startsWith("label[")) return [];
+  if (selector.includes(".ant-select-dropdown")) return [dropdownA, dropdownB];
+  return denseButtons.concat(overlayOptionsA, overlayOptionsB);
+};
+dropdownA.querySelectorAll = (selector) => selector.includes("[role=\\"option\\"]") ? overlayOptionsA : [];
+dropdownB.querySelectorAll = (selector) => selector.includes("[role=\\"option\\"]") ? overlayOptionsB : [];
+global.__afterBrowserState = (result) => {
+  result.layout_reads = layoutReads;
+  return result;
+};
+""",
+    )
+
+    assert state["status"] == "success"
+    assert [item["text"] for item in state["elements"]] == ["Main 0", "否 0", "Main 1"]
+    by_text = {item["text"]: item for item in state["elements"]}
+    assert by_text["否 0"]["layer"] == "dropdown"
+    assert by_text["否 0"]["frame_path"] == []
+    assert state["truncated"] is True
+    assert state["truncation"]["omitted_count"] >= 100
+    assert state["truncation"]["iframe_omitted_count"] == 0
+    assert state["truncation"]["main_reserved"] == 1
+    assert state["truncation"]["frame_reserved"] == 2
+    assert state["layout_reads"] < 50
+
+
+def test_browser_state_script_bounds_dense_page_collection_work_under_small_limit():
+    script = build_browser_state_script(include_invisible=False, max_elements=3)
+
+    state = run_browser_state_script(
+        script,
+        """
+let layoutReads = 0;
+const denseButtons = Array.from({ length: 200 }, (_value, index) => {
+  const button = makeElement({ tag: "button", text: `Main ${index}` });
+  button.getBoundingClientRect = () => {
+    layoutReads += 1;
+    return { x: 0, y: 0, width: 10, height: 10 };
+  };
+  return button;
+});
+const frame1Buttons = ["Frame 1 A", "Frame 1 B", "Frame 1 C"].map((text) => {
+  const button = makeElement({ tag: "button", text });
+  button.getBoundingClientRect = () => {
+    layoutReads += 1;
+    return { x: 0, y: 0, width: 10, height: 10 };
+  };
+  return button;
+});
+const frame2Buttons = Array.from({ length: 100 }, (_value, index) => `Frame 2 ${index}`).map((text) => {
+  const button = makeElement({ tag: "button", text });
+  button.getBoundingClientRect = () => {
+    layoutReads += 1;
+    return { x: 0, y: 0, width: 10, height: 10 };
+  };
+  return button;
+});
+const frame1Document = {
+  title: "Frame 1",
+  defaultView: null,
+  body: null,
+  getElementById: (_id) => null,
+  querySelectorAll: (selector) => {
+    if (selector === "iframe, frame" || selector.startsWith("label[")) return [];
+    return frame1Buttons;
+  },
+};
+const frame2Document = {
+  title: "Frame 2",
+  defaultView: null,
+  body: null,
+  getElementById: (_id) => null,
+  querySelectorAll: (selector) => {
+    if (selector === "iframe, frame" || selector.startsWith("label[")) return [];
+    return frame2Buttons;
+  },
+};
+const iframe1 = makeElement({ tag: "iframe", ownerDocument: document });
+iframe1.getBoundingClientRect = () => {
+  layoutReads += 1;
+  return { x: 0, y: 0, width: 100, height: 40 };
+};
+const iframe2 = makeElement({ tag: "iframe", ownerDocument: document });
+iframe2.getBoundingClientRect = () => {
+  layoutReads += 1;
+  return { x: 0, y: 0, width: 100, height: 40 };
+};
+const frame1Window = {
+  ...window,
+  frameElement: iframe1,
+  parent: window,
+  location: { href: "https://example.test/frame-1" },
+};
+const frame2Window = {
+  ...window,
+  frameElement: iframe2,
+  parent: window,
+  location: { href: "https://example.test/frame-2" },
+};
+frame1Document.defaultView = frame1Window;
+frame2Document.defaultView = frame2Window;
+frame1Document.body = makeElement({ tag: "body", ownerDocument: frame1Document });
+frame2Document.body = makeElement({ tag: "body", ownerDocument: frame2Document });
+frame1Buttons.forEach((button) => { button.ownerDocument = frame1Document; });
+frame2Buttons.forEach((button) => { button.ownerDocument = frame2Document; });
+iframe1.contentDocument = frame1Document;
+iframe1.contentWindow = frame1Window;
+iframe2.contentDocument = frame2Document;
+iframe2.contentWindow = frame2Window;
+document.contains = (element) => element === iframe1 || element === iframe2 || element === document.body;
+document.querySelectorAll = (selector) => {
+  if (selector === "iframe, frame") return [iframe1, iframe2];
+  if (selector.startsWith("label[")) return [];
+  return denseButtons;
+};
+global.__afterBrowserState = (result) => {
+  result.layout_reads = layoutReads;
+  return result;
+};
+""",
+    )
+
+    assert state["status"] == "success"
+    assert [item["text"] for item in state["elements"]] == ["Main 0", "Frame 1 A", "Frame 1 B"]
+    assert state["truncated"] is True
+    assert state["truncation"]["omitted_count"] >= 200
+    assert state["truncation"]["iframe_omitted_count"] >= 100
+    assert state["truncation"]["main_reserved"] == 1
+    assert state["truncation"]["frame_reserved"] == 2
+    assert state["elements"][0]["text"] == "Main 0"
+    assert state["elements"][0]["frame_path"] == []
+    assert state["layout_reads"] < 250
+
+
+def test_browser_state_script_preserves_frame_overlay_after_frame_bucket_exhausted():
+    script = build_browser_state_script(include_invisible=False, max_elements=4)
+
+    state = run_browser_state_script(
+        script,
+        """
+const mainButton = makeElement({ tag: "button", text: "Main" });
+const frameButtons = Array.from({ length: 20 }, (_value, index) => makeElement({ tag: "button", text: `Frame ${index}` }));
+const dropdown = makeElement({ tag: "div", attrs: { class: "ant-select-dropdown" } });
+dropdown.matches = (selector) => selector.includes(".ant-select-dropdown");
+const option = makeElement({
+  tag: "div",
+  role: "option",
+  text: "Frame Option",
+  attrs: { class: "ant-select-dropdown-menu-item" },
+});
+option.closest = (selector) => selector.includes(".ant-select-dropdown") ? dropdown : null;
+dropdown.querySelectorAll = (selector) => selector.includes("[role=\\"option\\"]") ? [option] : [];
+const frameDocument = {
+  title: "Frame",
+  defaultView: null,
+  body: null,
+  getElementById: (_id) => null,
+  querySelectorAll: (selector) => {
+    if (selector === "iframe, frame" || selector.startsWith("label[")) return [];
+    if (selector.includes(".ant-select-dropdown")) return [dropdown];
+    return frameButtons.concat([option]);
+  },
+};
+const iframe = makeElement({ tag: "iframe", ownerDocument: document });
+const frameWindow = {
+  ...window,
+  frameElement: iframe,
+  parent: window,
+  location: { href: "https://example.test/frame" },
+};
+frameDocument.defaultView = frameWindow;
+frameDocument.body = makeElement({ tag: "body", ownerDocument: frameDocument });
+frameButtons.forEach((button) => { button.ownerDocument = frameDocument; });
+option.ownerDocument = frameDocument;
+dropdown.ownerDocument = frameDocument;
+iframe.contentDocument = frameDocument;
+iframe.contentWindow = frameWindow;
+document.contains = (element) => element === iframe || element === document.body;
+document.querySelectorAll = (selector) => {
+  if (selector === "iframe, frame") return [iframe];
+  if (selector.startsWith("label[")) return [];
+  return [mainButton];
+};
+""",
+    )
+
+    assert state["status"] == "success"
+    by_text = {item["text"]: item for item in state["elements"]}
+    assert by_text["Frame Option"]["layer"] == "dropdown"
+    assert by_text["Frame Option"]["frame_path"] == [0]
+    assert state["truncated"] is True
+    assert state["truncation"]["iframe_omitted_count"] >= 1
+
+
+def test_browser_state_script_indexes_interactive_overlay_root():
+    script = build_browser_state_script(include_invisible=False, max_elements=5)
+
+    state = run_browser_state_script(
+        script,
+        """
+const trigger = makeElement({ tag: "button", text: "Open" });
+const listbox = makeElement({
+  tag: "div",
+  role: "listbox",
+  text: "Root listbox",
+  attrs: { class: "dropdown" },
+});
+listbox.matches = (selector) => selector.includes("[role='listbox']") || selector.includes('[role="listbox"]') || selector.includes(".dropdown");
+listbox.closest = (selector) => selector.includes("[role='listbox']") || selector.includes(".dropdown") ? listbox : null;
+listbox.querySelectorAll = (_selector) => [];
+document.querySelectorAll = (selector) => {
+  if (selector === "iframe, frame" || selector.startsWith("label[")) return [];
+  if (selector.includes("[role='listbox']") || selector.includes(".dropdown")) return [listbox];
+  return [trigger, listbox];
+};
+""",
+    )
+
+    assert state["status"] == "success"
+    by_text = {item["text"]: item for item in state["elements"]}
+    assert by_text["Root listbox"]["layer"] == "dropdown"
+    assert by_text["Root listbox"]["role"] == "listbox"
+
+
 def test_browser_state_script_documents_unsemantic_framework_icon_boundary():
     script = build_browser_state_script(include_invisible=False, max_elements=10)
 
@@ -1195,7 +1568,106 @@ def test_normalize_state_result_adds_top_level_defaults():
     assert state["title"] == ""
     assert state["state_token"] == ""
     assert state["viewport"] == {}
+    assert state["truncated"] is False
+    assert state["truncation"] == {
+        "omitted_count": 0,
+        "iframe_omitted_count": 0,
+        "total_limit": 0,
+        "main_reserved": 0,
+        "frame_reserved": 0,
+    }
     assert state["elements"] == []
+
+
+def test_normalize_state_result_preserves_truncation_metadata():
+    state = normalize_state_result({
+        "status": "success",
+        "truncated": True,
+        "truncation": {
+            "omitted_count": 4,
+            "iframe_omitted_count": 2,
+            "total_limit": 10,
+            "main_reserved": 7,
+            "frame_reserved": 3,
+        },
+    })
+
+    assert state["truncated"] is True
+    assert state["truncation"] == {
+        "omitted_count": 4,
+        "iframe_omitted_count": 2,
+        "total_limit": 10,
+        "main_reserved": 7,
+        "frame_reserved": 3,
+    }
+
+
+def test_normalize_state_result_coerces_truncation_numbers_and_clamps_invalid_values():
+    state = normalize_state_result({
+        "status": "success",
+        "truncated": "0",
+        "truncation": {
+            "omitted_count": "2",
+            "iframe_omitted_count": "-3",
+            "total_limit": "7",
+            "main_reserved": "-1",
+            "frame_reserved": "bad",
+        },
+        "elements": [{"tag": "button"}, {"tag": "input"}],
+    })
+
+    assert state["truncated"] is True
+    assert state["truncation"] == {
+        "omitted_count": 2,
+        "iframe_omitted_count": 0,
+        "total_limit": 7,
+        "main_reserved": 0,
+        "frame_reserved": 0,
+    }
+
+
+def test_normalize_state_result_string_zero_does_not_force_truncated_true():
+    state = normalize_state_result({
+        "status": "success",
+        "truncated": "0",
+        "truncation": {
+            "omitted_count": "0",
+            "iframe_omitted_count": "0",
+            "total_limit": "1",
+            "main_reserved": "1",
+            "frame_reserved": "0",
+        },
+        "elements": [{"tag": "button"}],
+    })
+
+    assert state["truncated"] is False
+
+
+def test_normalize_state_result_uses_legacy_element_count_for_total_limit_default():
+    state = normalize_state_result({
+        "status": "success",
+        "elements": [{"tag": "button"}, {"tag": "input"}],
+    })
+
+    assert state["truncation"]["total_limit"] == 2
+
+
+def test_normalize_state_result_clamps_non_dict_truncation_to_safe_defaults():
+    state = normalize_state_result({
+        "status": "success",
+        "truncated": "yes",
+        "truncation": "bad",
+        "elements": [{"tag": "button"}],
+    })
+
+    assert state["truncated"] is False
+    assert state["truncation"] == {
+        "omitted_count": 0,
+        "iframe_omitted_count": 0,
+        "total_limit": 1,
+        "main_reserved": 0,
+        "frame_reserved": 0,
+    }
 
 
 def test_normalize_state_result_fills_element_defaults():

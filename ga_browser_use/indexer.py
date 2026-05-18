@@ -20,6 +20,15 @@ def _clamp_int(value, default, minimum, maximum):
     return max(minimum, min(maximum, parsed))
 
 
+def _non_negative_int(value, default=0):
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+
+    return max(0, parsed)
+
+
 def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX_ELEMENTS):
     max_elements = _clamp_int(max_elements, DEFAULT_MAX_ELEMENTS, MIN_MAX_ELEMENTS, MAX_MAX_ELEMENTS)
     include_invisible_value = "true" if include_invisible else "false"
@@ -384,22 +393,66 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
     }};
   }};
 
+  const overlaySelector = [
+    ".ant-modal",
+    ".ant-drawer",
+    ".ant-select-dropdown",
+    ".ant-dropdown",
+    "[role='dialog']",
+    "[aria-modal='true']",
+    "[role='menu']",
+    "[role='listbox']",
+    "[data-popover]",
+    ".modal",
+    ".drawer",
+    ".dropdown",
+    ".popover",
+  ].join(", ");
+
+  const isOverlayCandidate = (element) => {{
+    const root = element && element.closest && element.closest(overlaySelector);
+    return Boolean(root && root.matches && root.matches(overlaySelector));
+  }};
+
+  const countNonOverlayTail = (elements, startIndex) => {{
+    let count = 0;
+    for (let index = startIndex; index < elements.length; index += 1) {{
+      if (!isOverlayCandidate(elements[index])) {{
+        count += 1;
+      }}
+    }}
+    return count;
+  }};
+
+  const countOverlayCandidates = (doc) => {{
+    const candidates = new Set();
+    const roots = doc.querySelectorAll(overlaySelector);
+    for (let rootIndex = 0; rootIndex < roots.length; rootIndex += 1) {{
+      const root = roots[rootIndex];
+      if (root.matches && root.matches(selector)) {{
+        candidates.add(root);
+      }}
+      for (const element of root.querySelectorAll(selector)) {{
+        candidates.add(element);
+      }}
+    }}
+    return candidates.size;
+  }};
+
+  const countDocumentCandidates = (doc) => {{
+    const interactiveElements = doc.querySelectorAll(selector);
+    return countNonOverlayTail(interactiveElements, 0) + countOverlayCandidates(doc);
+  }};
+
+  const countEditorBodyCandidate = (doc) => {{
+    const editorBodyCandidate = doc.body;
+    return (
+      editorBodyCandidate &&
+      (isContentEditableTarget(editorBodyCandidate) || String(doc.designMode || "").toLowerCase() === "on")
+    ) ? 1 : 0;
+  }};
+
   const layerContextOf = (element) => {{
-    const overlaySelector = [
-      ".ant-modal",
-      ".ant-drawer",
-      ".ant-select-dropdown",
-      ".ant-dropdown",
-      "[role='dialog']",
-      "[aria-modal='true']",
-      "[role='menu']",
-      "[role='listbox']",
-      "[data-popover]",
-      ".modal",
-      ".drawer",
-      ".dropdown",
-      ".popover",
-    ].join(", ");
     const root = element.closest && element.closest(overlaySelector);
     if (!root) {{
       return {{ layer: "main", layer_root_hint: "", modal_rank: 0 }};
@@ -462,10 +515,49 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
     }};
   }};
 
-  const elements = [];
+  const mainReserved = Math.max(1, Math.floor(maxElements * 0.6));
+  const frameReserved = Math.max(1, maxElements - mainReserved);
+  const overlayReserved = Math.max(1, Math.floor(maxElements * 0.2));
+  const mainCapacity = Math.max(mainReserved, maxElements);
+  const frameCapacity = Math.max(frameReserved, maxElements);
+  const overlayCapacity = Math.max(overlayReserved, maxElements);
+  const selectedMain = [];
+  const selectedFrame = [];
+  const selectedOverlay = [];
+  const extraMain = [];
+  const extraFrame = [];
+  const extraOverlay = [];
+  let sequence = 0;
+  let omittedCount = 0;
+  let iframeOmittedCount = 0;
   const seenElements = new WeakSet();
-  const addElement = (element, framePath, frameWindow) => {{
-    if (!element || seenElements.has(element) || elements.length >= maxElements) {{
+  const bucketStoredCount = (isFrame) => {{
+    return isFrame ? selectedFrame.length + extraFrame.length : selectedMain.length + extraMain.length;
+  }};
+  const bucketCapacity = (isFrame) => isFrame ? frameCapacity : mainCapacity;
+  const hasBucketCapacity = (isFrame) => bucketStoredCount(isFrame) < bucketCapacity(isFrame);
+  const overlayStoredCount = () => selectedOverlay.length + extraOverlay.length;
+  const hasOverlayCapacity = () => overlayStoredCount() < overlayCapacity;
+  const recordOmitted = (count, isFrame) => {{
+    const safeCount = Math.max(0, Number(count) || 0);
+    omittedCount += safeCount;
+    if (isFrame) {{
+      iframeOmittedCount += safeCount;
+    }}
+  }};
+  const addElement = (element, framePath, frameWindow, priority = "normal") => {{
+    if (!element || seenElements.has(element)) {{
+      return;
+    }}
+    const isFrameElement = Boolean(framePath.length);
+    if (priority === "overlay") {{
+      if (!hasOverlayCapacity()) {{
+        recordOmitted(1, isFrameElement);
+        return;
+      }}
+    }} else
+    if (!hasBucketCapacity(isFrameElement)) {{
+      recordOmitted(1, isFrameElement);
       return;
     }}
     if (!frameChainVisible(frameWindow)) {{
@@ -482,28 +574,70 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
     }}
 
     seenElements.add(element);
-    elements.push({{ element, framePath, frameWindow }});
+    const entry = {{ element, framePath, frameWindow, sequence: sequence++ }};
+    if (priority === "overlay") {{
+      if (selectedOverlay.length < overlayReserved) selectedOverlay.push(entry);
+      else extraOverlay.push(entry);
+    }} else if (isFrameElement) {{
+      if (selectedFrame.length < frameReserved) selectedFrame.push(entry);
+      else extraFrame.push(entry);
+    }} else {{
+      if (selectedMain.length < mainReserved) selectedMain.push(entry);
+      else extraMain.push(entry);
+    }}
+  }};
+
+  const collectOverlayCandidates = (doc, framePath, frameWindow) => {{
+    const roots = doc.querySelectorAll(overlaySelector);
+    for (let rootIndex = 0; rootIndex < roots.length; rootIndex += 1) {{
+      if (!hasOverlayCapacity()) {{
+        recordOmitted(roots.length - rootIndex, Boolean(framePath.length));
+        break;
+      }}
+      const root = roots[rootIndex];
+      if (!includeInvisible && !isVisible(root, root.getBoundingClientRect(), frameWindow)) {{
+        continue;
+      }}
+      if (root.matches && root.matches(selector)) {{
+        addElement(root, framePath, frameWindow, "overlay");
+      }}
+      const overlayElements = root.querySelectorAll(selector);
+      for (let index = 0; index < overlayElements.length; index += 1) {{
+        if (!hasOverlayCapacity()) {{
+          recordOmitted(overlayElements.length - index, Boolean(framePath.length));
+          break;
+        }}
+        addElement(overlayElements[index], framePath, frameWindow, "overlay");
+      }}
+    }}
   }};
 
   const collectDocument = (doc, framePath, frameWindow) => {{
-    for (const element of doc.querySelectorAll(selector)) {{
-      if (elements.length >= maxElements) {{
+    const isFrameDocument = Boolean(framePath.length);
+    const interactiveElements = doc.querySelectorAll(selector);
+    let frameBucketExhausted = false;
+    for (let index = 0; index < interactiveElements.length; index += 1) {{
+      const element = interactiveElements[index];
+      if (isOverlayCandidate(element)) {{
+        continue;
+      }}
+      if (!hasBucketCapacity(isFrameDocument)) {{
+        recordOmitted(countNonOverlayTail(interactiveElements, index), isFrameDocument);
+        frameBucketExhausted = isFrameDocument;
         break;
       }}
-
       addElement(element, framePath, frameWindow);
     }}
 
-    if (elements.length >= maxElements) {{
+    if (frameBucketExhausted) {{
+      collectOverlayCandidates(doc, framePath, frameWindow);
       return;
     }}
 
+    collectOverlayCandidates(doc, framePath, frameWindow);
+
     const frames = doc.querySelectorAll("iframe, frame");
     for (let frameIndex = 0; frameIndex < frames.length; frameIndex += 1) {{
-      if (elements.length >= maxElements) {{
-        break;
-      }}
-
       const frame = frames[frameIndex];
       try {{
         const frameDocument = frame.contentDocument;
@@ -512,13 +646,14 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
           continue;
         }}
         const editorBodyCandidate = frameDocument.body;
-        if (
-          editorBodyCandidate &&
-          (isContentEditableTarget(frameDocument.body) || String(frameDocument.designMode || "").toLowerCase() === "on")
-        ) {{
+        if (countEditorBodyCandidate(frameDocument)) {{
           addElement(editorBodyCandidate, framePath.concat(frameIndex), childWindow);
         }}
-        collectDocument(frameDocument, framePath.concat(frameIndex), childWindow);
+        if (hasBucketCapacity(true)) {{
+          collectDocument(frameDocument, framePath.concat(frameIndex), childWindow);
+        }} else {{
+          recordOmitted(countDocumentCandidates(frameDocument), true);
+        }}
       }} catch (error) {{
         continue;
       }}
@@ -526,6 +661,55 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
   }};
 
   collectDocument(document, [], window);
+
+  const chooseLimitedElements = () => {{
+    const selected = [];
+    const addSelected = (entry) => {{
+      if (entry && selected.length < maxElements && !selected.includes(entry)) {{
+        selected.push(entry);
+      }}
+    }};
+
+    const primaryEntries = selectedMain.concat(selectedFrame, selectedOverlay).sort((left, right) => left.sequence - right.sequence);
+    if (maxElements === 1) {{
+      addSelected(primaryEntries[0]);
+    }} else {{
+      addSelected(selectedMain[0]);
+      addSelected(selectedFrame[0]);
+      addSelected(selectedOverlay[0]);
+    }}
+
+    if (selected.length < maxElements) {{
+      for (const entry of primaryEntries) {{
+        addSelected(entry);
+        if (selected.length >= maxElements) break;
+      }}
+    }}
+
+    const extraEntries = extraOverlay.concat(extraMain, extraFrame).sort((left, right) => left.sequence - right.sequence);
+    for (const entry of extraEntries) {{
+      addSelected(entry);
+      if (selected.length >= maxElements) break;
+    }}
+
+    const storedEntries = primaryEntries.concat(extraEntries);
+    const droppedEntries = storedEntries.filter(entry => !selected.includes(entry));
+    const droppedIframeCount = droppedEntries.filter(entry => entry.framePath.length).length;
+    return {{
+      elements: selected,
+      truncation: {{
+        omitted_count: omittedCount + droppedEntries.length,
+        iframe_omitted_count: iframeOmittedCount + droppedIframeCount,
+        total_limit: maxElements,
+        main_reserved: mainReserved,
+        frame_reserved: frameReserved,
+      }},
+    }};
+  }};
+
+  const limited = chooseLimitedElements();
+  const elements = limited.elements;
+  const truncation = limited.truncation;
 
   const snapshots = elements.map((entry, index) => {{
     const element = entry.element;
@@ -594,6 +778,8 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
       scroll_y: window.scrollY,
     }},
     state_token: stateToken,
+    truncated: truncation.omitted_count > 0,
+    truncation,
     elements: snapshots,
   }};
 }})();
@@ -625,6 +811,19 @@ def normalize_state_result(result):
     elements = result.get("elements")
     if not isinstance(elements, list):
         elements = []
+
+    truncation = state.get("truncation")
+    if not isinstance(truncation, dict):
+        truncation = {}
+    truncation = dict(truncation)
+    truncation["omitted_count"] = _non_negative_int(truncation.get("omitted_count"), 0)
+    truncation["iframe_omitted_count"] = _non_negative_int(truncation.get("iframe_omitted_count"), 0)
+    truncation["total_limit"] = _non_negative_int(truncation.get("total_limit"), len(elements))
+    truncation["main_reserved"] = _non_negative_int(truncation.get("main_reserved"), 0)
+    truncation["frame_reserved"] = _non_negative_int(truncation.get("frame_reserved"), 0)
+    state["truncation"] = truncation
+    if not isinstance(state.get("truncated"), bool):
+        state["truncated"] = bool(truncation.get("omitted_count", 0))
 
     normalized_elements = []
     for position, element in enumerate(elements, start=1):
