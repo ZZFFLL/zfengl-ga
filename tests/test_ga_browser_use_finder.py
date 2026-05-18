@@ -247,7 +247,7 @@ def test_find_target_not_found_recovery_expands_truncated_state_budget():
     assert result["status"] == "failed"
     assert result["stage"] == "target_not_found"
     assert result["recovery"]["code"] == "refresh_state_then_find"
-    assert result["recovery"]["next_tool"] == "browser_state"
+    assert result["recovery"]["next_tool"] == "browser_use_index"
     assert result["recovery"]["next_args"]["max_elements"] == 150
     assert result["recovery"]["follow_up"]["next_tool"] == "browser_find"
     assert result["recovery"]["follow_up"]["next_args"]["refresh"] is True
@@ -269,7 +269,7 @@ def test_find_target_not_found_recovery_mentions_iframe_when_only_iframe_count_p
 
     assert result["status"] == "failed"
     assert "iframe" in result["recovery"]["message"].lower()
-    assert result["recovery"]["next_tool"] == "browser_state"
+    assert result["recovery"]["next_tool"] == "browser_use_index"
     assert result["recovery"]["next_args"]["max_elements"] == 150
     assert result["recovery"]["follow_up"]["next_args"]["query"] == "iframe field"
 

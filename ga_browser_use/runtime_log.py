@@ -188,12 +188,11 @@ def _element_label(element: dict[str, Any]) -> str:
         value = field_context.get(key)
         if value:
             parts.append(f"{key}={_format_scalar(value)}")
-    action_hints = element.get("action_hints")
-    if action_hints:
-        parts.append(f"action_hints={_format_scalar(','.join(str(item) for item in action_hints))}")
-    recipe_hint = element.get("recipe_hint")
-    if isinstance(recipe_hint, dict) and recipe_hint.get("recipe"):
-        parts.append(f"recipe={_format_scalar(recipe_hint.get('recipe'))}")
+    scan_anchor = element.get("scan_anchor") if isinstance(element.get("scan_anchor"), dict) else {}
+    for key in ("field_label", "near_text", "row_text", "column_text"):
+        value = scan_anchor.get(key)
+        if value:
+            parts.append(f"{key}={_format_scalar(value)}")
     frame_path = element.get("frame_path")
     if frame_path:
         parts.append(f"frame_path={_format_scalar(frame_path)}")

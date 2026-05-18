@@ -7,12 +7,12 @@ from ga_browser_use.results import (
 
 
 def test_failed_result_includes_recovery_for_state_missing():
-    result = failed_result("click", "state_missing", "Run browser_state before browser_action click.", 4)
+    result = failed_result("click", "state_missing", "Run browser_use_index before browser_action click.", 4)
 
     assert result["status"] == "failed"
     assert result["stage"] == "state_missing"
     assert result["recovery"]["code"] == "refresh_state"
-    assert result["recovery"]["next_tool"] == "browser_state"
+    assert result["recovery"]["next_tool"] == "browser_use_index"
     assert result["recovery"]["stop_retry"] is False
 
 
@@ -28,8 +28,8 @@ def test_stale_index_recovery_refreshes_state_before_retrying():
     recovery = recovery_for_stage("stale_index", action="click")
 
     assert recovery["code"] == "refresh_state"
-    assert recovery["next_tool"] == "browser_state"
-    assert "browser_state" in recovery["message"]
+    assert recovery["next_tool"] == "browser_use_index"
+    assert "browser_use_index" in recovery["message"]
     assert recovery["next_args"] == {"max_elements": 120}
 
 
@@ -37,8 +37,8 @@ def test_verify_failed_recovery_refreshes_state_before_retrying():
     recovery = recovery_for_stage("verify_failed", action="input")
 
     assert recovery["code"] == "refresh_state"
-    assert recovery["next_tool"] == "browser_state"
-    assert "browser_state" in recovery["message"]
+    assert recovery["next_tool"] == "browser_use_index"
+    assert "browser_use_index" in recovery["message"]
     assert recovery["next_args"] == {"max_elements": 120}
 
 

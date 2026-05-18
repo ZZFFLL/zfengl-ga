@@ -108,7 +108,7 @@ def test_build_browser_state_script_contains_index_state_and_limit():
     assert "const isContentEditableTarget = (element) =>" in script
     assert "contenteditable" in script
     assert '"input"' in script
-    assert '"verify_field_value"' in script
+    assert "scan_anchor" in script
 
 
 def test_build_browser_state_script_indexes_same_origin_editor_frame_body():
@@ -267,8 +267,9 @@ def test_build_browser_state_script_includes_metadata_helpers():
         "tableContextOf",
         "layerContextOf",
         "controlKindOf",
-        "actionHintsOf",
-        "recipeHintOf",
+        "pageSignalsOf",
+        "frameInfoOf",
+        "scanAnchorOf",
     ]:
         assert f"const {helper} = " in script
 
@@ -278,18 +279,17 @@ def test_build_browser_state_script_includes_metadata_helpers():
         "validation: validationOf(element),",
         "stable_key: stableKeyOf(element, tag, role),",
         "field_context: fieldContext,",
-        "table_context: tableContextOf(element),",
-        "recipe_hint: recipeHint,",
+        "table_context: tableContext,",
+        "scan_anchor: scanAnchorOf(fieldContext, tableContext, layerContext, framePath),",
         "layer: layerContext.layer,",
         "layer_root_hint: layerContext.layer_root_hint,",
         "modal_rank: layerContext.modal_rank,",
         "control_kind: controlKind,",
-        "action_hints: actionHintsOf(element, tag, role, controlKind),",
     ]:
         assert field in script
 
 
-def test_build_browser_state_script_includes_overlay_patterns_and_action_hints():
+def test_build_browser_state_script_includes_overlay_patterns_and_control_kinds():
     script = build_browser_state_script()
 
     assert ".ant-modal" in script
@@ -298,8 +298,6 @@ def test_build_browser_state_script_includes_overlay_patterns_and_action_hints()
     assert ".ant-dropdown" in script
     assert "custom_select" in script
     assert "native_select" in script
-    assert "click_to_open" in script
-    assert "state_after_open" in script
 
 
 def test_build_browser_state_script_separates_cached_nodes_from_snapshots():
@@ -378,7 +376,7 @@ document.querySelectorAll = (selector) => selector === "iframe, frame" ? [editor
     assert element["frame_url"] == "https://example.test/editor"
     assert element["frame_title"] == "Editor Frame"
     assert element["control_kind"] == "contenteditable"
-    assert element["action_hints"] == ["input", "verify_field_value"]
+    assert element["scan_anchor"]["frame_path"] == [0]
 
 
 def test_browser_state_script_keeps_keys_after_input_for_textarea_and_date_input():
@@ -398,8 +396,8 @@ document.querySelectorAll = (selector) => {
 
     assert state["status"] == "success"
     by_kind = {element["control_kind"]: element for element in state["elements"]}
-    assert by_kind["textarea"]["action_hints"] == ["input", "verify_field_value", "keys_after_input"]
-    assert by_kind["date_input"]["action_hints"] == ["input", "verify_field_value", "keys_after_input"]
+    assert "action_hints" not in by_kind["textarea"]
+    assert "action_hints" not in by_kind["date_input"]
 
 
 def test_browser_state_script_marks_ant_select_trigger_and_overlay_option():
@@ -441,13 +439,9 @@ document.querySelectorAll = (selector) => {
     assert state["status"] == "success"
     by_text = {element["text"]: element for element in state["elements"]}
     assert by_text["Select leave"]["control_kind"] == "custom_select"
-    assert by_text["Select leave"]["action_hints"] == [
-        "click_to_open",
-        "state_after_open",
-        "select_option_by_click",
-    ]
+    assert "action_hints" not in by_text["Select leave"]
     assert by_text["Yes"]["control_kind"] == "option"
-    assert by_text["Yes"]["action_hints"] == ["click_to_select"]
+    assert "action_hints" not in by_text["Yes"]
     assert by_text["Yes"]["layer"] == "dropdown"
     assert by_text["Yes"]["modal_rank"] == 1
 
@@ -511,7 +505,8 @@ document.querySelectorAll = (selector) => {
     assert element["table_context"]["row_index"] == 1
     assert element["table_context"]["column_index"] == 1
     assert element["control_kind"] == "native_input"
-    assert element["action_hints"] == ["input", "verify_field_value", "keys_after_input"]
+    assert element["scan_anchor"]["row_text"] == "Project Name"
+    assert "action_hints" not in element
 
 
 def test_browser_state_script_emits_adjacent_table_field_context_for_custom_select():
@@ -556,9 +551,17 @@ document.querySelectorAll = (selector) => {
     assert element["field_context"]["field_id"] == "field5956"
     assert element["field_context"]["field_name"] == "sfxj"
     assert element["field_context"]["field_container_hint"] == "td"
+    assert element["scan_anchor"] == {
+        "near_text": "是否休假",
+        "field_label": "是否休假",
+        "row_text": "是否休假",
+        "column_text": "",
+        "layer": "main",
+        "frame_path": [],
+    }
 
 
-def test_browser_state_script_emits_custom_select_recipe_hint_with_query_target():
+def test_browser_state_script_omits_recipe_hint_and_keeps_scan_anchor():
     script = build_browser_state_script(include_invisible=False, max_elements=10)
 
     state = run_browser_state_script(
@@ -592,11 +595,9 @@ document.querySelectorAll = (selector) => {
     assert state["status"] == "success"
     element = state["elements"][0]
     assert element["control_kind"] == "custom_select"
-    assert element["recipe_hint"] == {
-        "recipe": "custom_select",
-        "target": {"query": "工作类型"},
-        "requires": ["option_text"],
-    }
+    assert "recipe_hint" not in element
+    assert element["scan_anchor"]["field_label"] == "工作类型"
+    assert element["scan_anchor"]["near_text"] == "工作类型"
 
 
 def test_browser_state_script_inherits_field_context_for_browser_search_button():
@@ -634,7 +635,8 @@ document.querySelectorAll = (selector) => {
     assert element["control_kind"] == "button"
     assert element["field_context"]["nearby_text"] == "项目名称"
     assert element["field_context"]["field_container_hint"] == "td"
-    assert element["recipe_hint"] == {}
+    assert "recipe_hint" not in element
+    assert element["scan_anchor"]["field_label"] == "项目名称"
 
 
 def test_browser_state_script_emits_generic_component_container_hint():
@@ -1078,6 +1080,60 @@ document.querySelectorAll = (selector) => selector === "iframe, frame" ? [outerI
     assert element["frame_depth"] == 2
     assert element["frame_url"] == "https://example.test/inner"
     assert element["frame_title"] == "Inner"
+    assert state["frames"] == [
+        {
+            "frame_path": [0],
+            "frame_depth": 1,
+            "selector_hint": "iframe",
+            "visible": True,
+            "same_origin_accessible": True,
+            "url": "https://example.test/outer",
+            "title": "Outer",
+            "error": "",
+        },
+        {
+            "frame_path": [0, 0],
+            "frame_depth": 2,
+            "selector_hint": "iframe",
+            "visible": True,
+            "same_origin_accessible": True,
+            "url": "https://example.test/inner",
+            "title": "Inner",
+            "error": "",
+        },
+    ]
+
+
+def test_browser_state_script_emits_page_signals_for_dynamic_page():
+    script = build_browser_state_script(include_invisible=False, max_elements=10)
+
+    state = run_browser_state_script(
+        script,
+        """
+const field = makeElement({ tag: "input", id: "search", value: "" });
+const spinner = makeElement({ tag: "div", attrs: { class: "ant-spin-spinning" } });
+spinner.matches = (selector) => selector.includes(".ant-spin-spinning");
+const modal = makeElement({ tag: "div", attrs: { class: "ant-modal" } });
+modal.matches = (selector) => selector.includes(".ant-modal");
+document.readyState = "interactive";
+document.activeElement = field;
+document.querySelectorAll = (selector) => {
+  if (selector === "iframe, frame" || selector.startsWith("label[")) return [];
+  if (selector.includes(".ant-spin-spinning")) return [spinner];
+  if (selector.includes(".ant-modal")) return [modal];
+  return [field];
+};
+""",
+    )
+
+    assert state["status"] == "success"
+    assert state["page_signals"] == {
+        "ready_state": "interactive",
+        "busy": True,
+        "loading_count": 1,
+        "overlay_count": 1,
+        "focused_selector_hint": "input#search",
+    }
 
 
 def test_build_browser_state_script_uses_collision_resistant_token():
@@ -1568,6 +1624,14 @@ def test_normalize_state_result_adds_top_level_defaults():
     assert state["title"] == ""
     assert state["state_token"] == ""
     assert state["viewport"] == {}
+    assert state["page_signals"] == {
+        "ready_state": "",
+        "busy": False,
+        "loading_count": 0,
+        "overlay_count": 0,
+        "focused_selector_hint": "",
+    }
+    assert state["frames"] == []
     assert state["truncated"] is False
     assert state["truncation"] == {
         "omitted_count": 0,
@@ -1577,6 +1641,34 @@ def test_normalize_state_result_adds_top_level_defaults():
         "frame_reserved": 0,
     }
     assert state["elements"] == []
+
+
+def test_normalize_state_result_normalizes_page_signals_and_frames():
+    state = normalize_state_result({
+        "status": "success",
+        "page_signals": {"busy": 1, "loading_count": "2", "overlay_count": "-1"},
+        "frames": [{"frame_path": [0], "same_origin_accessible": 1, "url": "https://frame.test"}],
+    })
+
+    assert state["page_signals"] == {
+        "busy": True,
+        "loading_count": 2,
+        "overlay_count": 0,
+        "ready_state": "",
+        "focused_selector_hint": "",
+    }
+    assert state["frames"] == [
+        {
+            "frame_path": [0],
+            "same_origin_accessible": True,
+            "url": "https://frame.test",
+            "frame_depth": 1,
+            "selector_hint": "",
+            "visible": False,
+            "title": "",
+            "error": "",
+        }
+    ]
 
 
 def test_normalize_state_result_preserves_truncation_metadata():
@@ -1694,12 +1786,11 @@ def test_normalize_state_result_fills_element_defaults():
         "stable_key": "",
         "field_context": {},
         "table_context": {},
-        "recipe_hint": {},
+        "scan_anchor": {},
         "layer": "main",
         "layer_root_hint": "",
         "modal_rank": 0,
         "control_kind": "",
-        "action_hints": [],
     }
 
 
@@ -1716,12 +1807,11 @@ def test_normalize_state_result_fills_new_element_metadata_defaults():
     assert element["stable_key"] == ""
     assert element["field_context"] == {}
     assert element["table_context"] == {}
-    assert element["recipe_hint"] == {}
+    assert element["scan_anchor"] == {}
     assert element["layer"] == "main"
     assert element["layer_root_hint"] == ""
     assert element["modal_rank"] == 0
     assert element["control_kind"] == ""
-    assert element["action_hints"] == []
 
 
 def test_normalize_state_result_does_not_mutate_nested_field_context():
@@ -1741,7 +1831,7 @@ def test_normalize_state_result_rejects_non_dict():
     assert state == {
         "status": "failed",
         "stage": "dom_event",
-        "error": "browser_state returned a non-object result",
+        "error": "browser_use_index returned a non-object result",
     }
 
 
@@ -1765,5 +1855,5 @@ def test_normalize_state_result_fills_failed_result_defaults():
     assert state == {
         "status": "failed",
         "stage": "dom_event",
-        "error": "browser_state failed",
+        "error": "browser_use_index failed",
     }

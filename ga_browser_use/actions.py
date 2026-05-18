@@ -44,7 +44,7 @@ def failed_result(action: str | None, stage: str, error: str, index: int | None 
 
 
 def keys_without_index_retry_result(action: str, index: int, text: str | None, value: str | None) -> dict[str, Any]:
-    result = failed_result(action, "state_missing", f"Run browser_state before browser_action {action}.", index)
+    result = failed_result(action, "state_missing", f"Run browser_use_index before browser_action {action}.", index)
     result["hint"] = KEYS_AFTER_INPUT_HINT
     key = text if text is not None else value
     if key:
@@ -281,19 +281,19 @@ def build_browser_action_script(
 
   function cachedElement(allowDetached) {{
     const state = window.__GA_BROWSER_ACTION_STATE__;
-    if (!state || !state.token) return {{ error: fail("state_missing", "Run browser_state before indexed browser_action.") }};
-    if (state.token !== request.state_token) return {{ error: fail("stale_index", "Element index is stale. Run browser_state again.") }};
+    if (!state || !state.token) return {{ error: fail("state_missing", "Run browser_use_index before indexed browser_action.") }};
+    if (state.token !== request.state_token) return {{ error: fail("stale_index", "Element index is stale. Run browser_use_index again.") }};
     const el = state.elements && state.elements[Number(request.index) - 1];
     if (!el) {{
-      return {{ error: fail("stale_index", "Element index is stale. Run browser_state again.") }};
+      return {{ error: fail("stale_index", "Element index is stale. Run browser_use_index again.") }};
     }}
     if (!ownerFrameChainAttached(el)) {{
-      return {{ error: fail("stale_index", "Element index is stale. Run browser_state again.") }};
+      return {{ error: fail("stale_index", "Element index is stale. Run browser_use_index again.") }};
     }}
     if (!elementDocumentContains(el)) {{
       if (allowDetached === "keep") return {{ el }};
       if (allowDetached) return {{ el: null, cachedDocument: el.ownerDocument || null }};
-      return {{ error: fail("stale_index", "Element index is stale. Run browser_state again.") }};
+      return {{ error: fail("stale_index", "Element index is stale. Run browser_use_index again.") }};
     }}
     return {{ el, cachedDocument: el.ownerDocument || null }};
   }}
@@ -301,11 +301,11 @@ def build_browser_action_script(
   function replaceCachedElement(index, target, expectedToken) {{
     const state = window.__GA_BROWSER_ACTION_STATE__;
     if (!state || state.token !== expectedToken || !Array.isArray(state.elements) || !target) {{
-      return {{ error: fail("stale_index", "Element index is stale. Run browser_state again.") }};
+      return {{ error: fail("stale_index", "Element index is stale. Run browser_use_index again.") }};
     }}
     const safeIndex = Number(index) - 1;
     if (!Number.isInteger(safeIndex) || safeIndex < 0 || safeIndex >= state.elements.length) {{
-      return {{ error: fail("stale_index", "Element index is stale. Run browser_state again.") }};
+      return {{ error: fail("stale_index", "Element index is stale. Run browser_use_index again.") }};
     }}
     state.elements[safeIndex] = target;
     return {{ ok: true }};
@@ -808,7 +808,7 @@ def build_browser_action_script(
           if (resolvedDocument.error) return resolvedDocument;
           const queryDocument = resolvedDocument.document;
           if (cachedDocument && queryDocument !== cachedDocument) {{
-            return {{ error: fail("stale_index", "Element index is stale. Run browser_state again.") }};
+            return {{ error: fail("stale_index", "Element index is stale. Run browser_use_index again.") }};
           }}
           const target = queryDocument.querySelector(request.selector);
           if (!matchesSelectorIdentity(target)) return null;
@@ -919,8 +919,8 @@ def build_browser_action_script(
             index: request.index,
             stage: "control_unsupported",
             error: "select action only supports native select elements.",
-            hint: "This is an open custom listbox. Use browser_state to choose a visible child option, then click that option.",
-            suggested_next_step: "Run browser_state and click the visible child option matching the desired value.",
+            hint: "This is an open custom listbox. Use browser_use_index to choose a visible child option, then click that option.",
+            suggested_next_step: "Run browser_use_index and click the visible child option matching the desired value.",
             retryable: true
           }};
         }}
@@ -931,7 +931,7 @@ def build_browser_action_script(
             index: request.index,
             stage: "control_unsupported",
             error: "select action only supports native select elements.",
-            hint: "This appears to be a custom select/combobox. Click it, run browser_state again, then click the desired option.",
+            hint: "This appears to be a custom select/combobox. Click it, run browser_use_index again, then click the desired option.",
             suggested_next_action: {{ action: "click", index: request.index }},
             retryable: true
           }};
@@ -1160,7 +1160,7 @@ class BrowserActionLayer:
         updated_recovery["next_args"] = next_args
         base_message = str(updated_recovery.get("message") or "").strip()
         truncation_message = (
-            "The previous browser_state snapshot was truncated; use a larger max_elements value before choosing a fresh index."
+            "The previous browser_use_index snapshot was truncated; use a larger max_elements value before choosing a fresh index."
         )
         updated_recovery["message"] = f"{base_message} {truncation_message}".strip()
         updated["recovery"] = updated_recovery
@@ -1217,7 +1217,7 @@ class BrowserActionLayer:
     ) -> dict[str, Any]:
         started_at = time.perf_counter()
         log_event(
-            "browser_state",
+            "browser_use_index",
             "start",
             fields={
                 "include_invisible": include_invisible,
@@ -1228,7 +1228,7 @@ class BrowserActionLayer:
         unavailable = self._ensure_driver(driver)
         if unavailable:
             self._last_state = None
-            return _log_result("browser_state", started_at, unavailable)
+            return _log_result("browser_use_index", started_at, unavailable)
         if switch_tab_id:
             if str(getattr(driver, "default_session_id", "") or "") != str(switch_tab_id):
                 self._reset_failure_fuse()
@@ -1239,7 +1239,7 @@ class BrowserActionLayer:
             raw = _response_payload(driver.execute_js(script, timeout=10))
         except Exception as exc:
             self._last_state = None
-            return _log_result("browser_state", started_at, failed_result(None, "dom_event", str(exc)))
+            return _log_result("browser_use_index", started_at, failed_result(None, "dom_event", str(exc)))
 
         state = normalize_state_result(raw)
         if state.get("status") == "success":
@@ -1266,7 +1266,7 @@ class BrowserActionLayer:
         else:
             self._last_state = None
         return _log_result(
-            "browser_state",
+            "browser_use_index",
             started_at,
             state,
             fields={
@@ -1497,13 +1497,13 @@ class BrowserActionLayer:
                 if action == "keys" and safe_index is not None:
                     result = keys_without_index_retry_result(action, safe_index, text, value)
                     return finish(self._record_failure(result, driver=driver))
-                result = failed_result(action, "state_missing", f"Run browser_state before browser_action {action}.", safe_index)
+                result = failed_result(action, "state_missing", f"Run browser_use_index before browser_action {action}.", safe_index)
                 return finish(self._record_failure(result, driver=driver))
             if str(self._last_state.get("tab_id") or "") != str(driver.default_session_id):
                 result = failed_result(
                     action,
                     "stale_index",
-                    "Run browser_state before browser_action for the current tab.",
+                    "Run browser_use_index before browser_action for the current tab.",
                     safe_index,
                 )
                 result["tab_id"] = driver.default_session_id
@@ -1601,8 +1601,8 @@ class BrowserActionLayer:
                 if recipe_target:
                     result = dict(result)
                     result["next_action_hint"] = {
-                        "message": "Custom select may have opened an overlay. Refresh browser_state or run browser_recipe custom_select with option_text.",
-                        "next_tools": ["browser_state", "browser_recipe"],
+                        "message": "Custom select may have opened an overlay. Refresh browser_use_index or run browser_recipe custom_select with option_text.",
+                        "next_tools": ["browser_use_index", "browser_recipe"],
                         "recipe": {"recipe": "custom_select", "target": recipe_target},
                     }
             if action in STATE_MUTATING_ACTIONS:

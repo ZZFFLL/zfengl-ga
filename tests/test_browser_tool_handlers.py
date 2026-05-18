@@ -19,7 +19,7 @@ def make_handler():
     return GenericAgentHandler(SimpleNamespace(verbose=False, task_dir=None), [], "./temp")
 
 
-def test_browser_state_wrapper_initializes_driver(monkeypatch):
+def test_browser_use_index_wrapper_initializes_driver(monkeypatch):
     calls = []
     fake_driver = SimpleNamespace(default_session_id="9", get_all_sessions=lambda: [{"id": "9"}])
 
@@ -35,16 +35,16 @@ def test_browser_state_wrapper_initializes_driver(monkeypatch):
     monkeypatch.setattr(ga, "first_init_driver", fake_init)
     monkeypatch.setattr(ga, "browser_action_layer", FakeLayer())
 
-    result = ga.browser_state(max_elements=2)
+    result = ga.browser_use_index(max_elements=2)
 
     assert calls == ["init"]
     assert result == {"status": "success", "tab_id": "9", "elements": []}
 
 
-def test_do_browser_state_formats_execution_output(monkeypatch):
+def test_do_browser_use_index_formats_execution_output(monkeypatch):
     monkeypatch.setattr(
         ga,
-        "browser_state",
+        "browser_use_index",
         lambda **kwargs: {
             "status": "success",
             "tab_id": "7",
@@ -53,47 +53,47 @@ def test_do_browser_state_formats_execution_output(monkeypatch):
     )
     handler = make_handler()
 
-    chunks, outcome = run_generator(handler.do_browser_state({"max_elements": 10}, SimpleNamespace(content="")))
+    chunks, outcome = run_generator(handler.do_browser_use_index({"max_elements": 10}, SimpleNamespace(content="")))
 
-    assert "Browser state:" in "".join(chunks)
+    assert "Browser index result:" in "".join(chunks)
     assert '"text": "Login"' in "".join(chunks)
     data = json.loads(outcome.data)
     assert data["status"] == "success"
     assert data["elements"][0]["text"] == "Login"
 
 
-def test_do_browser_state_forwards_tab_id_alias(monkeypatch):
+def test_do_browser_use_index_forwards_tab_id_alias(monkeypatch):
     calls = []
 
-    def fake_browser_state(**kwargs):
+    def fake_browser_use_index(**kwargs):
         calls.append(kwargs)
         return {"status": "success", "tab_id": kwargs["switch_tab_id"], "elements": []}
 
-    monkeypatch.setattr(ga, "browser_state", fake_browser_state)
+    monkeypatch.setattr(ga, "browser_use_index", fake_browser_use_index)
     handler = make_handler()
 
-    chunks, outcome = run_generator(handler.do_browser_state({"tab_id": "tab-3"}, SimpleNamespace(content="")))
+    chunks, outcome = run_generator(handler.do_browser_use_index({"tab_id": "tab-3"}, SimpleNamespace(content="")))
 
-    assert "Browser state:" in "".join(chunks)
+    assert "Browser index result:" in "".join(chunks)
     assert calls[0]["switch_tab_id"] == "tab-3"
     assert json.loads(outcome.data)["tab_id"] == "tab-3"
 
 
-def test_do_browser_state_truncates_large_output(monkeypatch):
+def test_do_browser_use_index_truncates_large_output(monkeypatch):
     large_result = {
         "status": "success",
         "tab_id": "7",
         "elements": [{"index": i, "tag": "button", "text": "Login " + ("x" * 80)} for i in range(200)],
     }
     raw_json = json.dumps(large_result, ensure_ascii=False, default=ga.json_default)
-    monkeypatch.setattr(ga, "browser_state", lambda **kwargs: large_result)
+    monkeypatch.setattr(ga, "browser_use_index", lambda **kwargs: large_result)
     handler = make_handler()
 
     chunks, outcome = run_generator(
-        handler.do_browser_state({"max_elements": 200, "_tool_num": 2}, SimpleNamespace(content=""))
+        handler.do_browser_use_index({"max_elements": 200, "_tool_num": 2}, SimpleNamespace(content=""))
     )
 
-    assert "Browser state:" in "".join(chunks)
+    assert "Browser index result:" in "".join(chunks)
     assert " ... " in outcome.data
     assert len(outcome.data) < len(raw_json)
 

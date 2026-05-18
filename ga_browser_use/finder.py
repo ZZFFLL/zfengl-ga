@@ -187,13 +187,13 @@ def find_in_state(
     max_results: int = 5,
 ) -> dict[str, Any]:
     if not isinstance(state, dict):
-        return failed_result(None, "state_missing", "browser_find requires a successful browser_state.")
+        return failed_result(None, "state_missing", "browser_find requires a successful browser_use_index.")
     query_text = str(query or "").strip()
     if state.get("status") != "success":
         result = dict(state)
         result.setdefault("status", "failed")
         result.setdefault("stage", "state_missing")
-        result.setdefault("error", "browser_find requires a successful browser_state.")
+        result.setdefault("error", "browser_find requires a successful browser_use_index.")
         return result
     if not _has_locator_constraint(
         query=query_text,
@@ -242,18 +242,18 @@ def find_in_state(
         truncation = state.get("truncation") if isinstance(state.get("truncation"), dict) else {}
         omitted = _safe_truncation_int(truncation, "omitted_count")
         iframe_omitted = _safe_truncation_int(truncation, "iframe_omitted_count")
-        message = "Refresh browser_state and retry browser_find with the same semantic locator."
+        message = "Refresh browser_use_index and retry browser_find with the same semantic locator."
         if state.get("truncated"):
             if omitted:
-                message = f"Refresh browser_state with a larger max_elements value before retrying browser_find; the last snapshot omitted {omitted} elements"
+                message = f"Refresh browser_use_index with a larger max_elements value before retrying browser_find; the last snapshot omitted {omitted} elements"
                 if iframe_omitted:
                     message += f", including {iframe_omitted} iframe/frame elements"
                 message += "."
             else:
-                message = "Refresh browser_state with a larger max_elements value before retrying browser_find; the last snapshot was truncated and may have omitted matching elements."
+                message = "Refresh browser_use_index with a larger max_elements value before retrying browser_find; the last snapshot was truncated and may have omitted matching elements."
                 if iframe_omitted:
                     message = (
-                        "Refresh browser_state with a larger max_elements value before retrying browser_find; "
+                        "Refresh browser_use_index with a larger max_elements value before retrying browser_find; "
                         f"the last snapshot may have omitted matching elements, including {iframe_omitted} iframe/frame elements."
                     )
         next_args = {"refresh": True, "query": query_text, "max_results": limit}
@@ -269,7 +269,7 @@ def find_in_state(
             next_args["table"] = table
         result["recovery"]["message"] = message
         if state.get("truncated"):
-            result["recovery"]["next_tool"] = "browser_state"
+            result["recovery"]["next_tool"] = "browser_use_index"
             result["recovery"]["next_args"] = {
                 "max_elements": max(150, _safe_truncation_int(truncation, "total_limit", 120) + 30)
             }

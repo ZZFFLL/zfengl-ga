@@ -29,10 +29,17 @@ def tool_by_name(tools, name):
     raise AssertionError(f"tool not found: {name}")
 
 
+def test_public_tool_is_browser_use_index():
+    tools = load_tools("assets/tools_schema.json")
+    names = [item["function"]["name"] for item in tools]
+    assert "browser_use_index" in names
+    assert "browser_state" not in names
+
+
 def test_english_schema_exposes_browser_tools():
     tools = load_tools("assets/tools_schema.json")
 
-    state = tool_by_name(tools, "browser_state")
+    state = tool_by_name(tools, "browser_use_index")
     find = tool_by_name(tools, "browser_find")
     recipe = tool_by_name(tools, "browser_recipe")
     action = tool_by_name(tools, "browser_action")
@@ -44,12 +51,12 @@ def test_english_schema_exposes_browser_tools():
     assert state["parameters"]["properties"]["max_elements"]["default"] == 120
     assert "read-only" in find["description"].lower()
     assert "real semantic locator" in find["description"].lower()
-    assert "after browser_state" in find["description"].lower()
+    assert "after browser_use_index" in find["description"].lower()
     assert "latest structured snapshot" in find["description"].lower()
     assert "same-origin iframe forms" in find["description"].lower()
     assert "table cells" in find["description"].lower()
     assert "visible overlay content" in find["description"].lower()
-    assert "refresh browser_state" in find["description"].lower()
+    assert "refresh browser_use_index" in find["description"].lower()
     assert "role/layer/control_kind/frame_path" in find["description"]
     assert "not sufficient by themselves" in find["description"].lower()
     assert "refresh" not in state["parameters"]["properties"]
@@ -102,7 +109,7 @@ def test_english_schema_exposes_browser_tools():
 def test_chinese_schema_exposes_browser_tools():
     tools = load_tools("assets/tools_schema_cn.json")
 
-    state = tool_by_name(tools, "browser_state")
+    state = tool_by_name(tools, "browser_use_index")
     find = tool_by_name(tools, "browser_find")
     recipe = tool_by_name(tools, "browser_recipe")
     action = tool_by_name(tools, "browser_action")
@@ -115,12 +122,12 @@ def test_chinese_schema_exposes_browser_tools():
     assert state["parameters"]["properties"]["max_elements"]["default"] == 120
     assert "只读定位" in find["description"]
     assert "真实语义定位" in find["description"]
-    assert "在 browser_state 之后使用" in find["description"]
+    assert "在 browser_use_index 之后使用" in find["description"]
     assert "最新结构化快照" in find["description"]
     assert "同源 iframe 表单" in find["description"]
     assert "表格单元格" in find["description"]
-    assert "已经出现在 browser_state" in find["description"]
-    assert "先刷新 browser_state" in find["description"]
+    assert "已经出现在 browser_use_index" in find["description"]
+    assert "先刷新 browser_use_index" in find["description"]
     assert "role/layer/control_kind/frame_path" in find["description"]
     assert "单独使用不足以定位" in find["description"]
     assert "refresh" not in state["parameters"]["properties"]
@@ -178,13 +185,13 @@ def test_browser_tool_descriptions_use_parallel_boundary_terms():
     chinese = load_tools("assets/tools_schema_cn.json")
 
     en_web_js = tool_by_name(english, "web_execute_js")
-    en_state = tool_by_name(english, "browser_state")
+    en_state = tool_by_name(english, "browser_use_index")
     en_find = tool_by_name(english, "browser_find")
     en_recipe = tool_by_name(english, "browser_recipe")
     en_action = tool_by_name(english, "browser_action")
 
     cn_web_js = tool_by_name(chinese, "web_execute_js")
-    cn_state = tool_by_name(chinese, "browser_state")
+    cn_state = tool_by_name(chinese, "browser_use_index")
     cn_find = tool_by_name(chinese, "browser_find")
     cn_recipe = tool_by_name(chinese, "browser_recipe")
     cn_action = tool_by_name(chinese, "browser_action")
@@ -194,13 +201,14 @@ def test_browser_tool_descriptions_use_parallel_boundary_terms():
     assert "structured indexed snapshot" in en_state["description"]
     assert "not full-page extraction" in en_state["description"]
     assert "field context" in en_state["description"]
-    assert "recipe_hint" in en_state["description"]
+    assert "dynamic page signals" in en_state["description"]
+    assert "scan_anchor" in en_state["description"]
     assert "semantic locator" in en_find["description"]
     assert "query or table" in en_find["description"]
     assert "field labels" in en_find["description"]
     assert "not a global search engine" in en_find["description"]
     assert "fixed deterministic" in en_recipe["description"]
-    assert "advisory" in en_recipe["description"]
+    assert "bounded arguments" in en_recipe["description"]
     assert "not a general planner" in en_recipe["description"]
     assert "bounded indexed browser actions" in en_action["description"]
     assert "recovery" in en_action["description"]
@@ -212,13 +220,14 @@ def test_browser_tool_descriptions_use_parallel_boundary_terms():
     assert "结构化索引快照" in cn_state["description"]
     assert "不是网页全文抽取" in cn_state["description"]
     assert "字段上下文" in cn_state["description"]
-    assert "recipe_hint" in cn_state["description"]
+    assert "动态页面信号" in cn_state["description"]
+    assert "scan_anchor" in cn_state["description"]
     assert "语义定位" in cn_find["description"]
     assert "query 或 table" in cn_find["description"]
     assert "字段标签" in cn_find["description"]
     assert "不是全局搜索引擎" in cn_find["description"]
     assert "固定且确定性" in cn_recipe["description"]
-    assert "提示" in cn_recipe["description"]
+    assert "有边界参数" in cn_recipe["description"]
     assert "不是通用规划器" in cn_recipe["description"]
     assert "有边界的索引动作" in cn_action["description"]
     assert "恢复建议" in cn_action["description"]
@@ -236,11 +245,11 @@ def test_browser_tool_descriptions_use_parallel_boundary_terms():
     ]
     english_descriptions = "\n".join(
         tool_by_name(english, name)["description"]
-        for name in ["web_execute_js", "browser_state", "browser_find", "browser_recipe", "browser_action"]
+        for name in ["web_execute_js", "browser_use_index", "browser_find", "browser_recipe", "browser_action"]
     )
     chinese_descriptions = "\n".join(
         tool_by_name(chinese, name)["description"]
-        for name in ["web_execute_js", "browser_state", "browser_find", "browser_recipe", "browser_action"]
+        for name in ["web_execute_js", "browser_use_index", "browser_find", "browser_recipe", "browser_action"]
     )
     for phrase in forbidden_english:
         assert phrase not in english_descriptions

@@ -454,7 +454,7 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
 
   const layerContextOf = (element) => {{
     const root = element.closest && element.closest(overlaySelector);
-    if (!root) {{
+    if (!root || !(root.matches && root.matches(overlaySelector))) {{
       return {{ layer: "main", layer_root_hint: "", modal_rank: 0 }};
     }}
     const className = String(root.getAttribute("class") || "");
@@ -489,29 +489,80 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
     return normalizedRole || tag;
   }};
 
-  const actionHintsOf = (element, tag, role, controlKind) => {{
-    if (controlKind === "custom_select") return ["click_to_open", "state_after_open", "select_option_by_click"];
-    if (controlKind === "native_select") return ["select_by_value_or_text"];
-    if (controlKind === "option") return ["click_to_select"];
-    if (controlKind === "contenteditable") return ["input", "verify_field_value"];
-    if (["native_input", "textarea", "date_input"].includes(controlKind)) return ["input", "verify_field_value", "keys_after_input"];
-    if (["button", "link"].includes(controlKind)) return ["click"];
-    return [];
+  const loadingSelector = [
+    "[aria-busy='true']",
+    "[role='progressbar']",
+    "[data-loading='true']",
+    ".loading",
+    ".spinner",
+    ".ant-spin-spinning",
+    ".ant-skeleton",
+  ].join(", ");
+
+  const visibleNodes = (doc, candidateSelector) => {{
+    return Array.from(doc.querySelectorAll(candidateSelector)).filter(node => {{
+      if (node.matches) {{
+        try {{
+          if (!node.matches(candidateSelector)) return false;
+        }} catch (error) {{
+          return false;
+        }}
+      }}
+      const nodeWindow = (node.ownerDocument && node.ownerDocument.defaultView) || window;
+      return isVisible(node, node.getBoundingClientRect(), nodeWindow);
+    }});
   }};
 
-  const recipeHintOf = (element, controlKind, fieldContext) => {{
-    if (controlKind !== "custom_select") return {{}};
-    const query = [
-      fieldContext.row_label,
-      fieldContext.nearby_text,
-      fieldContext.previous_cell_text,
-      fieldContext.placeholder,
-    ].map(value => String(value || "").trim()).find(Boolean);
-    if (!query) return {{}};
+  const pageSignalsOf = () => {{
+    const visibleLoading = visibleNodes(document, loadingSelector);
+    const visibleOverlays = visibleNodes(document, overlaySelector);
+    const focused = document.activeElement || null;
     return {{
-      recipe: "custom_select",
-      target: {{ query: boundedText(query) }},
-      requires: ["option_text"],
+      ready_state: document.readyState || "",
+      busy: Boolean(visibleLoading.length > 0 || (document.body && document.body.getAttribute("aria-busy") === "true")),
+      loading_count: visibleLoading.length,
+      overlay_count: visibleOverlays.length,
+      focused_selector_hint: focused && focused.tagName ? selectorHint(focused) : "",
+    }};
+  }};
+
+  const frameInfoOf = (frame, framePath, sameOriginAccessible, childWindow, frameDocument, error) => {{
+    let frameUrl = "";
+    let frameTitle = "";
+    try {{
+      frameUrl = childWindow && childWindow.location ? String(childWindow.location.href || "") : "";
+    }} catch (ignored) {{
+      frameUrl = "";
+    }}
+    if (!frameUrl) {{
+      frameUrl = frame.getAttribute("src") || "";
+    }}
+    if (frameDocument) {{
+      frameTitle = frameDocument.title || "";
+    }}
+    if (!frameTitle) {{
+      frameTitle = frame.getAttribute("title") || frame.getAttribute("name") || "";
+    }}
+    return {{
+      frame_path: framePath,
+      frame_depth: framePath.length,
+      selector_hint: selectorHint(frame),
+      visible: isVisibleInFrameChain(frame, frame.getBoundingClientRect(), frame.ownerDocument.defaultView || window),
+      same_origin_accessible: Boolean(sameOriginAccessible),
+      url: boundedText(frameUrl),
+      title: boundedText(frameTitle),
+      error: sameOriginAccessible ? "" : boundedText(error || "inaccessible"),
+    }};
+  }};
+
+  const scanAnchorOf = (fieldContext, tableContext, layerContext, framePath) => {{
+    return {{
+      near_text: fieldContext.nearby_text || fieldContext.previous_cell_text || "",
+      field_label: fieldContext.row_label || (fieldContext.labels && fieldContext.labels[0]) || "",
+      row_text: tableContext.row_text || tableContext.row_header || "",
+      column_text: tableContext.column_text || tableContext.column_header || tableContext.header_text || "",
+      layer: layerContext.layer || "main",
+      frame_path: framePath,
     }};
   }};
 
@@ -527,6 +578,7 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
   const extraMain = [];
   const extraFrame = [];
   const extraOverlay = [];
+  const frameSummaries = [];
   let sequence = 0;
   let omittedCount = 0;
   let iframeOmittedCount = 0;
@@ -639,22 +691,27 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
     const frames = doc.querySelectorAll("iframe, frame");
     for (let frameIndex = 0; frameIndex < frames.length; frameIndex += 1) {{
       const frame = frames[frameIndex];
+      const childFramePath = framePath.concat(frameIndex);
       try {{
         const frameDocument = frame.contentDocument;
         const childWindow = frame.contentWindow;
         if (!frameDocument || !childWindow) {{
+          frameSummaries.push(frameInfoOf(frame, childFramePath, false, childWindow, frameDocument, "missing frame document"));
           continue;
         }}
+        frameSummaries.push(frameInfoOf(frame, childFramePath, true, childWindow, frameDocument, ""));
         const editorBodyCandidate = frameDocument.body;
         if (countEditorBodyCandidate(frameDocument)) {{
-          addElement(editorBodyCandidate, framePath.concat(frameIndex), childWindow);
+          addElement(editorBodyCandidate, childFramePath, childWindow);
         }}
         if (hasBucketCapacity(true)) {{
-          collectDocument(frameDocument, framePath.concat(frameIndex), childWindow);
+          collectDocument(frameDocument, childFramePath, childWindow);
         }} else {{
           recordOmitted(countDocumentCandidates(frameDocument), true);
         }}
       }} catch (error) {{
+        const message = error && error.message ? error.message : "inaccessible frame";
+        frameSummaries.push(frameInfoOf(frame, childFramePath, false, null, null, message));
         continue;
       }}
     }}
@@ -722,7 +779,7 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
     const controlKind = controlKindOf(element, tag, role, type);
     const layerContext = layerContextOf(element);
     const fieldContext = fieldContextOf(element);
-    const recipeHint = recipeHintOf(element, controlKind, fieldContext);
+    const tableContext = tableContextOf(element);
     const rawValue = "value" in element ? element.value : "";
     const value = type.toLowerCase() === "password" && rawValue ? "[REDACTED]" : rawValue;
 
@@ -751,13 +808,12 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
       validation: validationOf(element),
       stable_key: stableKeyOf(element, tag, role),
       field_context: fieldContext,
-      table_context: tableContextOf(element),
-      recipe_hint: recipeHint,
+      table_context: tableContext,
+      scan_anchor: scanAnchorOf(fieldContext, tableContext, layerContext, framePath),
       layer: layerContext.layer,
       layer_root_hint: layerContext.layer_root_hint,
       modal_rank: layerContext.modal_rank,
       control_kind: controlKind,
-      action_hints: actionHintsOf(element, tag, role, controlKind),
     }};
   }});
 
@@ -778,6 +834,8 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
       scroll_y: window.scrollY,
     }},
     state_token: stateToken,
+    page_signals: pageSignalsOf(),
+    frames: frameSummaries,
     truncated: truncation.omitted_count > 0,
     truncation,
     elements: snapshots,
@@ -791,13 +849,13 @@ def normalize_state_result(result):
         return {
             "status": "failed",
             "stage": "dom_event",
-            "error": "browser_state returned a non-object result",
+            "error": "browser_use_index returned a non-object result",
         }
 
     if result.get("status") == "failed":
         failed = dict(result)
         failed.setdefault("stage", "dom_event")
-        failed.setdefault("error", "browser_state failed")
+        failed.setdefault("error", "browser_use_index failed")
         return failed
 
     state = dict(result)
@@ -808,6 +866,36 @@ def normalize_state_result(result):
     state.setdefault("title", "")
     state.setdefault("state_token", "")
     state.setdefault("viewport", {})
+    page_signals = state.get("page_signals")
+    if not isinstance(page_signals, dict):
+        page_signals = {}
+    page_signals = dict(page_signals)
+    page_signals.setdefault("ready_state", "")
+    page_signals["busy"] = bool(page_signals.get("busy", False))
+    page_signals["loading_count"] = _non_negative_int(page_signals.get("loading_count"), 0)
+    page_signals["overlay_count"] = _non_negative_int(page_signals.get("overlay_count"), 0)
+    page_signals.setdefault("focused_selector_hint", "")
+    state["page_signals"] = page_signals
+
+    frames = state.get("frames")
+    if not isinstance(frames, list):
+        frames = []
+    normalized_frames = []
+    for frame in frames:
+        if not isinstance(frame, dict):
+            continue
+        normalized_frame = dict(frame)
+        normalized_frame.setdefault("frame_path", [])
+        normalized_frame.setdefault("frame_depth", len(normalized_frame.get("frame_path") or []))
+        normalized_frame.setdefault("selector_hint", "")
+        normalized_frame["visible"] = bool(normalized_frame.get("visible", False))
+        normalized_frame["same_origin_accessible"] = bool(normalized_frame.get("same_origin_accessible", False))
+        normalized_frame.setdefault("url", "")
+        normalized_frame.setdefault("title", "")
+        normalized_frame.setdefault("error", "")
+        normalized_frames.append(normalized_frame)
+    state["frames"] = normalized_frames
+
     elements = result.get("elements")
     if not isinstance(elements, list):
         elements = []
@@ -851,12 +939,13 @@ def normalize_state_result(result):
         normalized.setdefault("stable_key", "")
         normalized.setdefault("field_context", {})
         normalized.setdefault("table_context", {})
-        normalized.setdefault("recipe_hint", {})
+        normalized.setdefault("scan_anchor", {})
         normalized.setdefault("layer", "main")
         normalized.setdefault("layer_root_hint", "")
         normalized.setdefault("modal_rank", 0)
         normalized.setdefault("control_kind", "")
-        normalized.setdefault("action_hints", [])
+        normalized.pop("recipe_hint", None)
+        normalized.pop("action_hints", None)
 
         if str(normalized.get("type", "")).lower() == "password" and normalized.get("value"):
             normalized["value"] = "[REDACTED]"
@@ -872,6 +961,17 @@ def normalize_state_result(result):
             field_context.setdefault("field_id", "")
             field_context.setdefault("field_name", "")
             field_context.setdefault("field_container_hint", "")
+
+        scan_anchor = normalized.get("scan_anchor")
+        if isinstance(scan_anchor, dict) and scan_anchor:
+            scan_anchor = dict(scan_anchor)
+            normalized["scan_anchor"] = scan_anchor
+            scan_anchor.setdefault("near_text", "")
+            scan_anchor.setdefault("field_label", "")
+            scan_anchor.setdefault("row_text", "")
+            scan_anchor.setdefault("column_text", "")
+            scan_anchor.setdefault("layer", normalized.get("layer", "main"))
+            scan_anchor.setdefault("frame_path", normalized.get("frame_path", []))
 
         normalized_elements.append(normalized)
 

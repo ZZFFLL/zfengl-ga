@@ -193,7 +193,7 @@ def web_execute_js(script, switch_tab_id=None, no_monitor=False):
         return result
     except Exception as e: return {"status": "error", "msg": format_error(e)}
 
-def browser_state(switch_tab_id=None, include_invisible=False, max_elements=120):
+def browser_use_index(switch_tab_id=None, include_invisible=False, max_elements=120):
     """Return indexed interactive elements from the current real Chrome tab."""
     global driver
     try:
@@ -221,7 +221,7 @@ def browser_action(
     timeout=10,
     switch_tab_id=None,
 ):
-    """Run a bounded browser action against the latest browser_state snapshot."""
+    """Run a bounded browser action against the latest browser_use_index snapshot."""
     global driver
     stage = "browser_unavailable"
     try:
@@ -497,8 +497,8 @@ class GenericAgentHandler(BaseHandler):
         maxlen = 8000 // args.get('_tool_num', 1)
         return StepOutcome(smart_format(result, max_str_len=maxlen), next_prompt=next_prompt)
 
-    def do_browser_state(self, args, response):
-        result = browser_state(
+    def do_browser_use_index(self, args, response):
+        result = browser_use_index(
             switch_tab_id=args.get("switch_tab_id") or args.get("tab_id"),
             include_invisible=args.get("include_invisible", False),
             max_elements=args.get("max_elements", 120),
@@ -506,7 +506,7 @@ class GenericAgentHandler(BaseHandler):
         result_json = json.dumps(result, ensure_ascii=False, default=json_default)
         maxlen = 12000 // args.get('_tool_num', 1)
         formatted_result = smart_format(result_json, max_str_len=maxlen)
-        yield f"Browser state:\n{formatted_result}\n"
+        yield f"Browser index result:\n{formatted_result}\n"
         outcome = StepOutcome(formatted_result, next_prompt="\n")
         outcome.result = formatted_result
         return outcome

@@ -259,7 +259,7 @@ def test_run_action_requires_state_for_index_action():
     assert result["action"] == "click"
     assert result["index"] == 1
     assert result["stage"] == "state_missing"
-    assert result["error"] == "Run browser_state before browser_action click."
+    assert result["error"] == "Run browser_use_index before browser_action click."
     assert result["recovery"]["code"] == "refresh_state"
 
 
@@ -461,7 +461,7 @@ def test_run_action_rejects_indexed_action_when_cached_tab_mismatches_switch():
 
     assert result["status"] == "failed"
     assert result["stage"] in {"state_missing", "stale_index"}
-    assert "Run browser_state" in result["error"]
+    assert "Run browser_use_index" in result["error"]
     assert result["tab_id"] == "8"
     assert driver.calls == []
     assert len(driver.responses) == 1
@@ -784,7 +784,7 @@ def test_run_action_wait_enabled_requires_state_when_indexed():
 
     assert result["status"] == "failed"
     assert result["stage"] == "state_missing"
-    assert result["error"] == "Run browser_state before browser_action wait_enabled."
+    assert result["error"] == "Run browser_use_index before browser_action wait_enabled."
     assert driver.calls == []
 
 
@@ -2688,7 +2688,7 @@ def test_run_action_state_missing_includes_structured_recovery():
 
     assert result["stage"] == "state_missing"
     assert result["recovery"]["code"] == "refresh_state"
-    assert result["recovery"]["next_tool"] == "browser_state"
+    assert result["recovery"]["next_tool"] == "browser_use_index"
 
 
 def test_run_action_stale_tab_includes_state_recovery():
@@ -2701,8 +2701,8 @@ def test_run_action_stale_tab_includes_state_recovery():
 
     assert result["stage"] == "stale_index"
     assert result["recovery"]["code"] == "refresh_state"
-    assert result["recovery"]["next_tool"] == "browser_state"
-    assert "browser_state" in result["recovery"]["message"]
+    assert result["recovery"]["next_tool"] == "browser_use_index"
+    assert "browser_use_index" in result["recovery"]["message"]
     assert result["recovery"]["next_args"] == {"max_elements": 120}
 
 
@@ -2763,7 +2763,7 @@ def test_run_action_refresh_state_failures_expand_truncated_state_budget():
         assert result["recovery"]["code"] == "refresh_state"
         assert "refresh" not in result["recovery"]["next_args"]
         assert result["recovery"]["next_args"]["max_elements"] == 190
-        assert "browser_state" in result["recovery"]["message"]
+        assert "browser_use_index" in result["recovery"]["message"]
         assert "truncated" in result["recovery"]["message"]
 
 
@@ -2937,8 +2937,8 @@ def test_run_action_custom_select_click_success_returns_next_action_hint():
 
     assert result["status"] == "success"
     assert result["next_action_hint"] == {
-        "message": "Custom select may have opened an overlay. Refresh browser_state or run browser_recipe custom_select with option_text.",
-        "next_tools": ["browser_state", "browser_recipe"],
+        "message": "Custom select may have opened an overlay. Refresh browser_use_index or run browser_recipe custom_select with option_text.",
+        "next_tools": ["browser_use_index", "browser_recipe"],
         "recipe": {"recipe": "custom_select", "target": {"query": "工作类型"}},
     }
 

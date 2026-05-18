@@ -57,7 +57,7 @@ class BrowserRecipeRunner:
     def _bounded_target_recovery(recipe: str) -> dict[str, Any]:
         return {
             "code": "provide_bounded_target",
-            "message": f"Retry {recipe} with target.index from a known browser_state or target.query with specific visible text.",
+            "message": f"Retry {recipe} with target.index from a known browser_use_index or target.query with specific visible text.",
             "stop_retry": True,
         }
 
@@ -338,7 +338,7 @@ class BrowserRecipeRunner:
         trigger_frame_path: Any = None,
     ) -> dict[str, Any] | None:
         state = self.layer.get_state(driver, max_elements=120, **self._tab_kwargs(switch_tab_id))
-        steps.append({"tool": "browser_state", "status": state.get("status")})
+        steps.append({"tool": "browser_use_index", "status": state.get("status")})
         if state.get("status") != "success":
             state["recipe"] = recipe
             return self._with_steps(state, steps)
@@ -459,7 +459,7 @@ class BrowserRecipeRunner:
             return self._with_steps(click_trigger, steps)
 
         state = self.layer.get_state(driver, max_elements=120, **self._tab_kwargs(switch_tab_id))
-        steps.append({"tool": "browser_state", "status": state.get("status")})
+        steps.append({"tool": "browser_use_index", "status": state.get("status")})
 
         option_find_kwargs: dict[str, Any] = {"layer": "dropdown"}
         if trigger_frame_path is not None:
@@ -709,7 +709,7 @@ class BrowserRecipeRunner:
             else:
                 result["recovery"]["code"] = "use_query_component_wait"
                 result["recovery"]["message"] = "Refresh state and retry component_wait with a query target; indexed waits cannot express this condition."
-                result["recovery"]["next_tool"] = "browser_state"
+                result["recovery"]["next_tool"] = "browser_use_index"
                 next_args = {}
             if switch_tab_id:
                 next_args["switch_tab_id"] = switch_tab_id
@@ -726,7 +726,7 @@ class BrowserRecipeRunner:
 
         while True:
             state = self.layer.get_state(driver, max_elements=120, **self._tab_kwargs(switch_tab_id))
-            steps.append({"tool": "browser_state", "status": state.get("status")})
+            steps.append({"tool": "browser_use_index", "status": state.get("status")})
             if state.get("status") != "success":
                 state["recipe"] = "component_wait"
                 return self._with_steps(state, steps)

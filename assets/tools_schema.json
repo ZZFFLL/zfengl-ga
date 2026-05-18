@@ -53,8 +53,8 @@
       "switch_tab_id": {"type": "string", "description": "[Optional] Tab ID to switch to before executing"}}}
   }},
   {"type": "function", "function": {
-    "name": "browser_state",
-    "description": "Get a structured indexed snapshot from the real Chrome page for recoverable element targeting, including same-origin iframe metadata, field context, field/control/layer context, and advisory recipe_hint for bounded recipes. This is not full-page extraction and not complex DOM reasoning. Use before browser_action when indexes may have changed.",
+    "name": "browser_use_index",
+    "description": "Get a structured indexed snapshot from the real Chrome page for recoverable element targeting, including dynamic page signals, same-origin iframe/frame summaries, scan_anchor navigation fields, field context, and field/control/layer context. This is not full-page extraction and not complex DOM reasoning. Use before browser_action when indexes may have changed.",
     "parameters": {"type": "object", "properties": {
       "switch_tab_id": {"type": "string", "description": "[Optional] Tab ID to switch to before reading state"},
       "include_invisible": {"type": "boolean", "description": "Include invisible elements in visible frame chains; hidden parent iframe subtrees are never exposed", "default": false},
@@ -62,7 +62,7 @@
   }},
   {"type": "function", "function": {
     "name": "browser_find",
-      "description": "Read-only semantic locator used after browser_state to find indexed browser elements from the latest structured snapshot of the real Chrome page. Provide query or table as the real semantic locator; role/layer/control_kind/frame_path are optional filters and are not sufficient by themselves. Best for same-origin iframe forms, field labels, table cells, and visible overlay content already present in browser_state. If the page changed or the snapshot was truncated, refresh browser_state before repeating the same query. It scores visible text, labels, field labels, table context, and field ids/names. This is not a global search engine and not a browser_state replacement. Returns candidate indexes with score, reason, and ambiguity instead of acting.",
+      "description": "Read-only semantic locator used after browser_use_index to find indexed browser elements from the latest structured snapshot of the real Chrome page. Provide query or table as the real semantic locator; role/layer/control_kind/frame_path are optional filters and are not sufficient by themselves. Best for same-origin iframe forms, field labels, table cells, and visible overlay content already present in browser_use_index. If the page changed or the snapshot was truncated, refresh browser_use_index before repeating the same query. It scores visible text, labels, field labels, table context, and field ids/names. This is not a global search engine and not a browser_use_index replacement. Returns candidate indexes with score, reason, and ambiguity instead of acting.",
     "parameters": {"type": "object", "properties": {
       "query": {"type": "string", "description": "Target label/text/value to find"},
       "role": {"type": "string", "description": "Optional role hard filter"},
@@ -71,13 +71,13 @@
       "frame_path": {"type": "array", "items": {"type": "integer"}, "description": "Optional same-origin frame path filter"},
       "table": {"type": "object", "description": "Optional table locator with row_text and column_text"},
       "max_results": {"type": "integer", "description": "Maximum candidates to return", "default": 5},
-      "refresh": {"type": "boolean", "description": "Refresh browser_state before finding", "default": false},
+      "refresh": {"type": "boolean", "description": "Refresh browser_use_index before finding", "default": false},
       "include_invisible": {"type": "boolean", "description": "Include invisible elements while refreshing state", "default": false},
       "switch_tab_id": {"type": "string", "description": "[Optional] Tab ID to switch to before finding"}}}
   }},
   {"type": "function", "function": {
     "name": "browser_recipe",
-    "description": "Run fixed deterministic high-level browser recipes for structured component flows in the real Chrome page: custom_select, layer_select, table_locate, and component_wait. recipe_hint is advisory; recipes still require bounded arguments and fail closed on ambiguity. Recipes are not a general planner. Use them for dropdown, modal picker, or bounded overlay flows that need more than one browser_action step rather than blind repeated browser_action.",
+    "description": "Run fixed deterministic high-level browser recipes for structured component flows in the real Chrome page: custom_select, layer_select, table_locate, and component_wait. Recipes require bounded arguments and fail closed on ambiguity. Recipes are not a general planner. Use them for dropdown, modal picker, or bounded overlay flows that need more than one browser_action step rather than blind repeated browser_action.",
     "parameters": {"type": "object", "properties": {
       "recipe": {"type": "string", "enum": ["custom_select", "layer_select", "table_locate", "component_wait"], "description": "Recipe to run"},
       "target": {"type": "object", "description": "Target locator. custom_select/layer_select require index or query; component_wait accepts query targets only."},
@@ -91,10 +91,10 @@
   }},
   {"type": "function", "function": {
     "name": "browser_action",
-    "description": "Perform bounded indexed browser actions against latest browser_state elements in the real Chrome page; this is not arbitrary selector automation or a form planner. Native select stays native select; custom dropdowns are not select. For submit/search after input, call keys with text Enter and omit index to use the focused element. SPA wait actions include wait_dom_stable, wait_not_busy, wait_route, and indexed wait_enabled. Verification fields verify/verify_text/verify_value/verify_selector are supported for click/input/select/keys only; wait actions reject verify. Failed verification returns stage verify_failed. Failures include structured recovery suggestions when a safer next browser_* step is available. selector is supported for wait_selector and as a custom busy selector for wait_not_busy.",
+    "description": "Perform bounded indexed browser actions against latest browser_use_index elements in the real Chrome page; this is not arbitrary selector automation or a form planner. Native select stays native select; custom dropdowns are not select. For submit/search after input, call keys with text Enter and omit index to use the focused element. SPA wait actions include wait_dom_stable, wait_not_busy, wait_route, and indexed wait_enabled. Verification fields verify/verify_text/verify_value/verify_selector are supported for click/input/select/keys only; wait actions reject verify. Failed verification returns stage verify_failed. Failures include structured recovery suggestions when a safer next browser_* step is available. selector is supported for wait_selector and as a custom busy selector for wait_not_busy.",
     "parameters": {"type": "object", "properties": {
       "action": {"type": "string", "enum": ["click", "input", "select", "keys", "wait_index", "wait_text", "wait_selector", "wait_dom_stable", "wait_not_busy", "wait_enabled", "wait_route"], "description": "Browser action to perform, including bounded SPA stability waits"},
-      "index": {"type": "integer", "description": "Indexed element id from browser_state. For keys after input, omit index so the key is sent to the focused element."},
+      "index": {"type": "integer", "description": "Indexed element id from browser_use_index. For keys after input, omit index so the key is sent to the focused element."},
       "text": {"type": "string", "description": "Text for input, keys, wait_text, or matching"},
       "value": {"type": "string", "description": "Value for select or input actions"},
       "selector": {"type": "string", "description": "CSS selector for wait_selector, or custom busy selector for wait_not_busy"},

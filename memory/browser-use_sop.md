@@ -1,6 +1,6 @@
 # Browser-* 使用 SOP
 
-- 直接使用 `browser_state` / `browser_find` / `browser_action` / `browser_recipe`。
+- 直接使用 `browser_use_index` / `browser_find` / `browser_action` / `browser_recipe`。
 - 本文件只记录编排、坑、恢复策略和边界；工具参数、枚举、字段定义以 `assets/tools_schema*.json` 为准。
 - 这里的 `browser-*` 指 GA 内置的高层结构化浏览器操作层，不是外部 `browser-use` Python 项目运行时。
 - 底层仍走 TMWebDriver / `assets/tmwd_cdp_bridge` 接管用户真实 Chrome，因此继承用户登录态、Cookie、当前页面上下文。
@@ -14,15 +14,15 @@
 
 ## 快速决策
 
-- 目标是页面上可交互元素，且能被索引：走 `browser_state` -> `browser_find`/人工判断 -> `browser_action`。
+- 目标是页面上可交互元素，且能被索引：走 `browser_use_index` -> `browser_find`/人工判断 -> `browser_action`。
 - 目标是常见自定义下拉、弹层选择、表格目标定位、短时组件等待：优先试固定 `browser_recipe`。
 - 目标需要读复杂 DOM、调用页面框架实例、上传文件、截图、CDP、跨域 iframe、Shadow DOM：切回 `tmwebdriver_sop`。
 - 同一动作失败两次、返回 `recovery.stop_retry=true` 或 `repeat_blocked`：停止原地重试，换定位、recipe 或低层路径。
 
 ## 结构化浏览器工具编排（iframe/弹层版）
 
-1. 同源 iframe 表单优先流程：调用 `browser_state`，将 `max_elements` 设置为至少 `150` -> `browser_find` -> `browser_recipe` / `browser_action`。
-2. 如果 `browser_find` 返回 `target_not_found` 且 recovery 提示快照被截断，不要重复同一查询；先刷新 `browser_state` 并提高 `max_elements`。
+1. 同源 iframe 表单优先流程：调用 `browser_use_index`，将 `max_elements` 设置为至少 `150` -> `browser_find` -> `browser_recipe` / `browser_action`。
+2. 如果 `browser_find` 返回 `target_not_found` 且 recovery 提示快照被截断，不要重复同一查询；先刷新 `browser_use_index` 并提高 `max_elements`。
 3. 对 `combobox` / `custom_select`：先定位触发器，再用 `browser_recipe(custom_select)`；不要先猜测 option index。
 4. 对打开后的弹层/下拉：如果 recovery 提示 `component_wait`，先等待 `options_visible` 或 `layer_closed`，再重试，不要盲目重复 click。
 5. 同一路径连续两次失败后，必须换轨到 `web_execute_js` 或重新探测结构，禁止第三次用相同参数重试。
@@ -33,14 +33,14 @@
 
 标准顺序：
 ```json
-{"tool": "browser_state", "args": {"max_elements": 120}}
+{"tool": "browser_use_index", "args": {"max_elements": 120}}
 {"tool": "browser_action", "args": {"action": "click", "index": 12}}
 ```
 
 要点：
-- `click` / `input` / `select` / `wait_index` / `wait_enabled` 依赖最近一次 `browser_state`。
+- `click` / `input` / `select` / `wait_index` / `wait_enabled` 依赖最近一次 `browser_use_index`。
 - 页面变化后旧 index 可能失效；不要猜旧 index。
-- `browser_state` 输出里的 `recipe_hint` 只是提示，不会自动执行 recipe。
+- `browser_use_index` 输出里的 `scan_anchor` 是给 `web_scan` 文本到可操作 index 的引路字段，不会自动执行 recipe。
 
 ### 2. state 太长或目标不明确，用 browser_find 缩小
 
@@ -68,7 +68,7 @@
 - `select`
 - `keys`
 
-后续还要 indexed action 时，重新 `browser_state` 或用 `browser_find(refresh=true)` 重新定位。
+后续还要 indexed action 时，重新 `browser_use_index` 或用 `browser_find(refresh=true)` 重新定位。
 
 ### 4. input 后提交，优先 keys without index
 
@@ -120,7 +120,7 @@
 
 失败后：
 - `ambiguous_target`：补 `target.query`、`layer`、`table` 或更具体文本。
-- 找不到 option：先 `browser_state` 看 overlay 是否打开，再决定拆解或低层探测。
+- 找不到 option：先 `browser_use_index` 看 overlay 是否打开，再决定拆解或低层探测。
 - 搜索型下拉、虚拟列表、深层滚动不保证覆盖。
 
 ### layer_select
@@ -169,7 +169,7 @@
 ### 搜索
 
 ```json
-{"tool": "browser_state", "args": {"max_elements": 120}}
+{"tool": "browser_use_index", "args": {"max_elements": 120}}
 {"tool": "browser_action", "args": {"action": "input", "index": 52, "text": "openai"}}
 {"tool": "browser_action", "args": {"action": "keys", "text": "Enter"}}
 {"tool": "browser_action", "args": {"action": "wait_text", "text": "openai", "timeout": 10}}
@@ -193,7 +193,7 @@
 ```json
 {"tool": "browser_find", "args": {"query": "工作类型", "control_kind": "custom_select", "refresh": true}}
 {"tool": "browser_action", "args": {"action": "click", "index": 4}}
-{"tool": "browser_state", "args": {"max_elements": 120}}
+{"tool": "browser_use_index", "args": {"max_elements": 120}}
 {"tool": "browser_find", "args": {"query": "代码开发", "layer": "dropdown"}}
 {"tool": "browser_action", "args": {"action": "click", "index": 22}}
 ```
@@ -216,7 +216,7 @@
 
 - indexed action 前缺 state。
 - `keys` 如果是 input 后提交，按 recovery 改成不传 index。
-- 其他 indexed action 先 `browser_state`，再重新选 index。
+- 其他 indexed action 先 `browser_use_index`，再重新选 index。
 
 ### stale_index
 
@@ -270,12 +270,12 @@
 
 ### 关键实现事实
 
-- `browser_state` 默认只返回可见元素；`include_invisible=true` 也不会暴露隐藏父 iframe 子树。
+- `browser_use_index` 默认只返回可见元素；`include_invisible=true` 也不会暴露隐藏父 iframe 子树。
 - `browser_find` 不会扩大 state 的可见范围；state 找不到的，find 也不会凭空找到。
 - `browser_find(refresh=true)` 后仍 `target_not_found` 且 `stop_retry=true` 时，停止重复同一查询。
 - `browser_recipe` 依赖 `browser_find` 和 indexed action；目标没被索引时 recipe 也不能操作。
 - `browser_action` 成功修改页面后会清空缓存 state，防止复用旧 index。
-- `recipe_hint` 是提示，不是承诺；真正执行仍要显式调用 `browser_recipe`。
+- `browser_use_index` 不再输出 `recipe_hint` / `action_hints`；组件级流程由显式 `browser_recipe` 参数驱动。
 
 ## 何时切回 tmwebdriver_sop
 
