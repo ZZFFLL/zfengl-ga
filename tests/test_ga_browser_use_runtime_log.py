@@ -1,7 +1,8 @@
-import json
+import re
 from pathlib import Path
 
 from ga_browser_use.actions import BrowserActionLayer
+from ga_browser_use.recipes import BrowserRecipeRunner
 from ga_browser_use.runtime_log import log_event
 
 
@@ -17,17 +18,38 @@ class FakeDriver:
             "state_token": "token-1",
             "tab_id": "tab-1",
             "url": "https://example.test/page?secret=1",
-            "elements": [{"index": 1, "text": "审批正文", "value": "hidden-value"}],
+            "elements": [{"index": 1, "role": "textbox", "control_kind": "textarea", "text": "审批正文", "value": "hidden-value"}],
         }
 
 
-def read_log_lines(root: Path):
-    files = list(root.glob("*/runtime.log"))
+class FakeRecipeLayer:
+    def __init__(self):
+        self.find_results = [
+            {"status": "success", "matches": [{"index": 4, "score": 0.9, "reason": "field row label", "element": {"index": 4, "layer": "main", "text": "工作类型"}}], "ambiguous": False},
+            {"status": "success", "matches": [{"index": 22, "score": 0.95, "reason": "overlay option", "element": {"index": 22, "layer": "dropdown", "text": "代码开发"}}], "ambiguous": False},
+            {"status": "success", "matches": [{"index": 4, "score": 0.9, "element": {"index": 4, "layer": "main", "value": "代码开发"}}], "ambiguous": False},
+            {"status": "failed", "stage": "target_not_found", "recovery": {"code": "refresh_state_then_find"}},
+        ]
+
+    def find(self, driver, **kwargs):
+        if len(self.find_results) > 1:
+            return self.find_results.pop(0)
+        return self.find_results[0]
+
+    def run_action(self, driver, **kwargs):
+        return {"status": "success", "action": kwargs["action"], "index": kwargs.get("index"), "page_changed": True}
+
+    def get_state(self, driver, **kwargs):
+        return {"status": "success", "elements": []}
+
+
+def read_audit_log(root: Path) -> str:
+    files = list(root.glob("*/audit.log"))
     assert len(files) == 1
-    return [json.loads(line) for line in files[0].read_text(encoding="utf-8").splitlines()]
+    return files[0].read_text(encoding="utf-8")
 
 
-def test_runtime_log_writes_sensitive_jsonl_under_dated_directory_by_default(monkeypatch, tmp_path):
+def test_runtime_log_writes_readable_entry_with_sensitive_values_by_default(monkeypatch, tmp_path):
     monkeypatch.setenv("GA_BROWSER_USE_LOG_ROOT", str(tmp_path))
     monkeypatch.delenv("GA_BROWSER_USE_LOG_SENSITIVE", raising=False)
 
@@ -38,14 +60,15 @@ def test_runtime_log_writes_sensitive_jsonl_under_dated_directory_by_default(mon
         sensitive={"query": "项目名称", "value": "研发项目", "password": "secret"},
     )
 
-    lines = read_log_lines(tmp_path)
+    text = read_audit_log(tmp_path)
 
-    assert lines[0]["tool"] == "browser_find"
-    assert lines[0]["phase"] == "end"
-    assert lines[0]["status"] == "failed"
-    assert lines[0]["query"] == "项目名称"
-    assert lines[0]["value"] == "研发项目"
-    assert lines[0]["password"] == "secret"
+    assert re.search(r"\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\]", text)
+    assert not re.search(r"\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}\]", text)
+    assert "browser_find END" in text
+    assert "result:" in text
+    assert 'query: "项目名称"' in text
+    assert 'value: "研发项目"' in text
+    assert "password: secret" in text
 
 
 def test_runtime_log_sensitive_switch_can_redact_values(monkeypatch, tmp_path):
@@ -59,32 +82,16 @@ def test_runtime_log_sensitive_switch_can_redact_values(monkeypatch, tmp_path):
         sensitive={"query": "项目名称", "value": "研发项目", "password": "secret"},
     )
 
-    lines = read_log_lines(tmp_path)
+    text = read_audit_log(tmp_path)
 
-    assert lines[0]["query"].startswith("[REDACTED")
-    assert lines[0]["url"] == "https://example.test/page"
-    raw = json.dumps(lines[0], ensure_ascii=False)
-    assert "项目名称" not in raw
-    assert "研发项目" not in raw
-    assert "secret" not in raw
-
-
-def test_runtime_log_sensitive_switch_on_allows_full_values(monkeypatch, tmp_path):
-    monkeypatch.setenv("GA_BROWSER_USE_LOG_ROOT", str(tmp_path))
-    monkeypatch.setenv("GA_BROWSER_USE_LOG_SENSITIVE", "1")
-
-    log_event(
-        "browser_action",
-        "start",
-        fields={"action": "input", "index": 3},
-        sensitive={"text": "日报正文", "value": "完整值", "password": "secret"},
-    )
-
-    lines = read_log_lines(tmp_path)
-
-    assert lines[0]["text"] == "日报正文"
-    assert lines[0]["value"] == "完整值"
-    assert lines[0]["password"] == "secret"
+    assert "browser_find END" in text
+    assert "query: [REDACTED len=4]" in text
+    assert "value: [REDACTED len=4]" in text
+    assert "password: [REDACTED len=6]" in text
+    assert 'url: "https://example.test/page"' in text
+    assert "项目名称" not in text
+    assert "研发项目" not in text
+    assert "secret=1" not in text
 
 
 def test_runtime_log_can_be_disabled(monkeypatch, tmp_path):
@@ -93,10 +100,10 @@ def test_runtime_log_can_be_disabled(monkeypatch, tmp_path):
 
     log_event("browser_state", "start", fields={"max_elements": 120})
 
-    assert list(tmp_path.glob("*/runtime.log")) == []
+    assert list(tmp_path.glob("*/audit.log")) == []
 
 
-def test_browser_action_layer_get_state_writes_runtime_log(monkeypatch, tmp_path):
+def test_browser_action_layer_get_state_logs_readable_request_and_result(monkeypatch, tmp_path):
     monkeypatch.setenv("GA_BROWSER_USE_LOG_ROOT", str(tmp_path))
     monkeypatch.delenv("GA_BROWSER_USE_LOG_SENSITIVE", raising=False)
 
@@ -104,15 +111,36 @@ def test_browser_action_layer_get_state_writes_runtime_log(monkeypatch, tmp_path
 
     result = layer.get_state(FakeDriver(), max_elements=5)
 
-    lines = read_log_lines(tmp_path)
+    text = read_audit_log(tmp_path)
     assert result["status"] == "success"
-    assert [line["phase"] for line in lines] == ["start", "end"]
-    assert lines[0]["tool"] == "browser_state"
-    assert lines[1]["element_count"] == 1
-    assert lines[1]["url"] == "https://example.test/page?secret=1"
-    assert lines[1]["elements"][0]["text"] == "审批正文"
-    assert lines[1]["elements"][0]["value"] == "hidden-value"
-    raw = json.dumps(lines, ensure_ascii=False)
-    assert "审批正文" in raw
-    assert "hidden-value" in raw
-    assert "secret=1" in raw
+    assert "browser_state START" in text
+    assert "request:" in text
+    assert "max_elements: 5" in text
+    assert "browser_state END" in text
+    assert "result:" in text
+    assert "status: success" in text
+    assert "element_count: 1" in text
+    assert "elements_preview:" in text
+    assert "index=1" in text
+    assert 'text="审批正文"' in text
+    assert "value=hidden-value" in text
+    assert 'url: "https://example.test/page?secret=1"' in text
+
+
+def test_browser_recipe_logs_readable_steps(monkeypatch, tmp_path):
+    monkeypatch.setenv("GA_BROWSER_USE_LOG_ROOT", str(tmp_path))
+    monkeypatch.delenv("GA_BROWSER_USE_LOG_SENSITIVE", raising=False)
+
+    runner = BrowserRecipeRunner(FakeRecipeLayer())
+
+    result = runner.run(FakeDriver(), recipe="custom_select", target={"query": "工作类型"}, option_text="代码开发")
+
+    text = read_audit_log(tmp_path)
+    assert result["status"] == "success"
+    assert "browser_recipe START" in text
+    assert "recipe: custom_select" in text
+    assert 'option_text: "代码开发"' in text
+    assert "browser_recipe END" in text
+    assert "steps:" in text
+    assert "browser_find status=success" in text
+    assert "browser_action status=success action=click index=4" in text

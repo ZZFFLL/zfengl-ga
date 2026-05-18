@@ -90,14 +90,11 @@ def _recovery_code(result: dict[str, Any]) -> str | None:
 
 
 def _log_result(tool: str, started_at: float, result: dict[str, Any], fields: dict[str, Any] | None = None) -> dict[str, Any]:
-    summary = dict(fields or {})
-    summary.update(
-        {
-            "status": result.get("status"),
-            "stage": result.get("stage"),
-            "duration_ms": _elapsed_ms(started_at),
-        }
-    )
+    summary = dict(result)
+    summary.update(fields or {})
+    summary["status"] = result.get("status")
+    summary["stage"] = result.get("stage")
+    summary["duration_ms"] = _elapsed_ms(started_at)
     recovery_code = _recovery_code(result)
     if recovery_code:
         summary["recovery_code"] = recovery_code

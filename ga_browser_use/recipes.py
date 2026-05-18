@@ -771,13 +771,12 @@ class BrowserRecipeRunner:
 
         def finish(result: dict[str, Any]) -> dict[str, Any]:
             recovery = result.get("recovery")
-            fields: dict[str, Any] = {
-                "recipe": result.get("recipe") or recipe,
-                "status": result.get("status"),
-                "stage": result.get("stage"),
-                "condition": result.get("condition") or condition,
-                "duration_ms": int((time.perf_counter() - started_at) * 1000),
-            }
+            fields: dict[str, Any] = dict(result)
+            fields["recipe"] = result.get("recipe") or recipe
+            fields["status"] = result.get("status")
+            fields["stage"] = result.get("stage")
+            fields["condition"] = result.get("condition") or condition
+            fields["duration_ms"] = int((time.perf_counter() - started_at) * 1000)
             steps = result.get("steps")
             if isinstance(steps, list):
                 fields["steps_count"] = len(steps)
