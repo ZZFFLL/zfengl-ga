@@ -44,10 +44,18 @@ def test_english_schema_exposes_browser_tools():
     assert state["parameters"]["properties"]["max_elements"]["default"] == 120
     assert "read-only" in find["description"].lower()
     assert "real semantic locator" in find["description"].lower()
+    assert "after browser_state" in find["description"].lower()
+    assert "latest structured snapshot" in find["description"].lower()
+    assert "same-origin iframe forms" in find["description"].lower()
+    assert "table cells" in find["description"].lower()
+    assert "visible overlay content" in find["description"].lower()
+    assert "refresh browser_state" in find["description"].lower()
     assert "role/layer/control_kind/frame_path" in find["description"]
     assert "not sufficient by themselves" in find["description"].lower()
+    assert "refresh" not in state["parameters"]["properties"]
     assert "query" in find["parameters"]["properties"]
     assert "refresh" in find["parameters"]["properties"]
+    assert "max_elements" not in find["parameters"]["properties"]
     assert find["parameters"]["properties"]["max_results"]["default"] == 5
     assert "omit index" in action["description"]
     assert "Native select" in action["description"]
@@ -71,6 +79,12 @@ def test_english_schema_exposes_browser_tools():
         "table_locate",
         "component_wait",
     ]
+    for recipe_name in ["custom_select", "layer_select", "table_locate", "component_wait"]:
+        assert recipe_name in recipe["description"]
+    assert "dropdown" in recipe["description"].lower()
+    assert "modal picker" in recipe["description"].lower()
+    assert "bounded overlay" in recipe["description"].lower()
+    assert "blind repeated browser_action" in recipe["description"].lower()
     assert recipe["parameters"]["properties"]["condition"]["enum"] == [
         "layer_open",
         "layer_closed",
@@ -101,10 +115,18 @@ def test_chinese_schema_exposes_browser_tools():
     assert state["parameters"]["properties"]["max_elements"]["default"] == 120
     assert "只读定位" in find["description"]
     assert "真实语义定位" in find["description"]
+    assert "在 browser_state 之后使用" in find["description"]
+    assert "最新结构化快照" in find["description"]
+    assert "同源 iframe 表单" in find["description"]
+    assert "表格单元格" in find["description"]
+    assert "已经出现在 browser_state" in find["description"]
+    assert "先刷新 browser_state" in find["description"]
     assert "role/layer/control_kind/frame_path" in find["description"]
     assert "单独使用不足以定位" in find["description"]
+    assert "refresh" not in state["parameters"]["properties"]
     assert "query" in find["parameters"]["properties"]
     assert "refresh" in find["parameters"]["properties"]
+    assert "max_elements" not in find["parameters"]["properties"]
     assert find["parameters"]["properties"]["max_results"]["default"] == 5
     assert "index" in action["parameters"]["properties"]
     assert "selector" in action["parameters"]["properties"]
@@ -131,6 +153,12 @@ def test_chinese_schema_exposes_browser_tools():
         "table_locate",
         "component_wait",
     ]
+    for recipe_name in ["custom_select", "layer_select", "table_locate", "component_wait"]:
+        assert recipe_name in recipe["description"]
+    assert "下拉" in recipe["description"]
+    assert "弹窗选择器" in recipe["description"]
+    assert "结构化交互" in recipe["description"]
+    assert "盲目连续 browser_action" in recipe["description"]
     assert recipe["parameters"]["properties"]["condition"]["enum"] == [
         "layer_open",
         "layer_closed",

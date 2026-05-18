@@ -19,6 +19,14 @@
 - 目标需要读复杂 DOM、调用页面框架实例、上传文件、截图、CDP、跨域 iframe、Shadow DOM：切回 `tmwebdriver_sop`。
 - 同一动作失败两次、返回 `recovery.stop_retry=true` 或 `repeat_blocked`：停止原地重试，换定位、recipe 或低层路径。
 
+## 结构化浏览器工具编排（iframe/弹层版）
+
+1. 同源 iframe 表单优先流程：调用 `browser_state`，将 `max_elements` 设置为至少 `150` -> `browser_find` -> `browser_recipe` / `browser_action`。
+2. 如果 `browser_find` 返回 `target_not_found` 且 recovery 提示快照被截断，不要重复同一查询；先刷新 `browser_state` 并提高 `max_elements`。
+3. 对 `combobox` / `custom_select`：先定位触发器，再用 `browser_recipe(custom_select)`；不要先猜测 option index。
+4. 对打开后的弹层/下拉：如果 recovery 提示 `component_wait`，先等待 `options_visible` 或 `layer_closed`，再重试，不要盲目重复 click。
+5. 同一路径连续两次失败后，必须换轨到 `web_execute_js` 或重新探测结构，禁止第三次用相同参数重试。
+
 ## 基本流程
 
 ### 1. 先 state，再 indexed action

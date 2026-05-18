@@ -62,7 +62,7 @@
   }},
   {"type": "function", "function": {
     "name": "browser_find",
-      "description": "Read-only semantic locator for indexed browser elements from the real Chrome page. Provide query or table as the real semantic locator; role/layer/control_kind/frame_path are optional filters and are not sufficient by themselves. It scores visible text, labels, field labels, table context, and field ids/names. This is not a global search engine and not a browser_state replacement. Returns candidate indexes with score, reason, and ambiguity instead of acting.",
+      "description": "Read-only semantic locator used after browser_state to find indexed browser elements from the latest structured snapshot of the real Chrome page. Provide query or table as the real semantic locator; role/layer/control_kind/frame_path are optional filters and are not sufficient by themselves. Best for same-origin iframe forms, field labels, table cells, and visible overlay content already present in browser_state. If the page changed or the snapshot was truncated, refresh browser_state before repeating the same query. It scores visible text, labels, field labels, table context, and field ids/names. This is not a global search engine and not a browser_state replacement. Returns candidate indexes with score, reason, and ambiguity instead of acting.",
     "parameters": {"type": "object", "properties": {
       "query": {"type": "string", "description": "Target label/text/value to find"},
       "role": {"type": "string", "description": "Optional role hard filter"},
@@ -77,7 +77,7 @@
   }},
   {"type": "function", "function": {
     "name": "browser_recipe",
-    "description": "Run a fixed deterministic bounded browser operation recipe in the real Chrome page. recipe_hint is advisory; recipes still require bounded arguments and fail closed on ambiguity. Recipes are not a general planner. Use only for custom_select, layer_select, table_locate, and component_wait.",
+    "description": "Run fixed deterministic high-level browser recipes for structured component flows in the real Chrome page: custom_select, layer_select, table_locate, and component_wait. recipe_hint is advisory; recipes still require bounded arguments and fail closed on ambiguity. Recipes are not a general planner. Use them for dropdown, modal picker, or bounded overlay flows that need more than one browser_action step rather than blind repeated browser_action.",
     "parameters": {"type": "object", "properties": {
       "recipe": {"type": "string", "enum": ["custom_select", "layer_select", "table_locate", "component_wait"], "description": "Recipe to run"},
       "target": {"type": "object", "description": "Target locator. custom_select/layer_select require index or query; component_wait accepts query targets only."},
