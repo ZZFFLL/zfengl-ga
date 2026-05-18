@@ -103,8 +103,15 @@
 {"tool": "browser_action", "args": {"action": "wait_text", "text": "提交成功", "timeout": 10}}
 ```
 
+等待后还要确认页面业务状态时，把 `verify` 作为后置验证：
+```json
+{"tool": "browser_action", "args": {"action": "wait_dom_stable", "verify": "text", "verify_text": "提交成功", "timeout": 10}}
+```
+
 要点：
-- 等待动作只证明条件出现/消失，不证明业务成功。
+- 等待动作只证明条件出现/消失；需要业务成功信号时，加 `verify` 后置验证。
+- `wait_dom_stable`、`wait_not_busy`、`wait_route`、`wait_text`、`wait_selector` 这类非索引等待只做页面级 `text`/`selector` 验证；`field_value`/`element_text` 必须用 `wait_index` 或 `wait_enabled` 这类带索引目标的等待。
+- `field_value` 允许空字符串，用于验证字段确实被清空；等待动作使用 `field_value` 时必须显式给 `verify_value`，如果没有期望值不要强行开启它。
 - `verify_failed` 后先读页面状态，不要重复写同一个值。
 
 ## Recipe 用法

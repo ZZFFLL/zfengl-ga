@@ -547,6 +547,21 @@ def build_browser_action_script(
     return result;
   }}
 
+  function finalizeWaitAction(result, target = null) {{
+    if (request.verify && ["field_value", "element_text"].includes(request.verify) && !target) {{
+      return fail("invalid_args", `${{request.verify}} verification requires an indexed wait target.`);
+    }}
+    if (request.verify === "field_value" && (request.verify_value === null || request.verify_value === undefined)) {{
+      return fail("invalid_args", "field_value verification on wait actions requires verify_value.");
+    }}
+    if (request.verify) {{
+      const verification = verifyAction(target);
+      if (verification && verification.status === "failed") return verification;
+      if (verification) result.verification = verification;
+    }}
+    return result;
+  }}
+
   function nativeRoleOf(element, tag, type) {{
     if (tag === "a" && element.hasAttribute("href")) return "link";
     if (tag === "button") return "button";
@@ -701,14 +716,6 @@ def build_browser_action_script(
   }}
 
   try {{
-    const waitActions = new Set(["wait_index", "wait_text", "wait_selector", "wait_dom_stable", "wait_not_busy", "wait_enabled", "wait_route"]);
-    if (request.verify && waitActions.has(request.action)) {{
-      return fail("invalid_args", "verify is not supported for wait actions.");
-    }}
-    if (request.verify === "field_value" && !expectedFieldValue().trim()) {{
-      return fail("invalid_args", "field_value verification requires a non-empty expected value.");
-    }}
-
     if (request.action === "wait_text") {{
       if (!request.text) return fail("invalid_args", "text is required for wait_text.");
       const waited = await waitFor(
@@ -717,7 +724,7 @@ def build_browser_action_script(
         "Timed out waiting for text."
       );
       if (waited && waited.error) return waited.error;
-      return {{ status: "success", action: "wait_text", result: "text_found" }};
+      return finalizeWaitAction({{ status: "success", action: "wait_text", result: "text_found" }});
     }}
 
     if (request.action === "wait_selector") {{
@@ -737,7 +744,7 @@ def build_browser_action_script(
         "Timed out waiting for selector."
       );
       if (waited && waited.error) return waited.error;
-      return {{ status: "success", action: "wait_selector", result: "selector_found" }};
+      return finalizeWaitAction({{ status: "success", action: "wait_selector", result: "selector_found" }});
     }}
 
     if (request.action === "wait_dom_stable") {{
@@ -758,7 +765,7 @@ def build_browser_action_script(
         "Timed out waiting for DOM to become stable."
       );
       if (waited && waited.error) return waited.error;
-      return {{ status: "success", action: "wait_dom_stable", result: "dom_stable" }};
+      return finalizeWaitAction({{ status: "success", action: "wait_dom_stable", result: "dom_stable" }});
     }}
 
     if (request.action === "wait_not_busy") {{
@@ -773,7 +780,7 @@ def build_browser_action_script(
         "Timed out waiting for loading indicators to disappear."
       );
       if (waited && waited.error) return waited.error;
-      return {{ status: "success", action: "wait_not_busy", result: "not_busy" }};
+      return finalizeWaitAction({{ status: "success", action: "wait_not_busy", result: "not_busy" }});
     }}
 
     if (request.action === "wait_route") {{
@@ -785,7 +792,7 @@ def build_browser_action_script(
         "Timed out waiting for route."
       );
       if (waited && waited.error) return waited.error;
-      return {{ status: "success", action: "wait_route", result: "route_matched" }};
+      return finalizeWaitAction({{ status: "success", action: "wait_route", result: "route_matched" }});
     }}
 
     let el = null;
@@ -829,7 +836,7 @@ def build_browser_action_script(
       );
       if (waited && waited.error && waited.error.stage === "frame_unavailable") return waited.error;
       if (waited && waited.error) return waited.error;
-      return {{ status: "success", action: "wait_index", index: request.index, result: "element_visible" }};
+      return finalizeWaitAction({{ status: "success", action: "wait_index", index: request.index, result: "element_visible" }}, el);
     }}
 
     if (request.action === "wait_enabled") {{
@@ -839,7 +846,7 @@ def build_browser_action_script(
         "Timed out waiting for element to become enabled."
       );
       if (waited && waited.error) return waited.error;
-      return {{ status: "success", action: "wait_enabled", index: request.index, result: "element_enabled" }};
+      return finalizeWaitAction({{ status: "success", action: "wait_enabled", index: request.index, result: "element_enabled" }}, el);
     }}
 
     if (el) {{
@@ -1053,6 +1060,19 @@ class BrowserActionLayer:
                 recorded["page_changed"] = True
         return self._augment_truncated_refresh_recovery(recorded)
 
+    def _record_and_augment_failure(
+        self,
+        result: dict[str, Any],
+        *,
+        action: str,
+        index: int | None,
+        driver: Any,
+        target: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        result = self._augment_action_recovery(result, action=action, index=index, target=target)
+        result = self._record_failure(result, driver=driver, target=target)
+        return self._augment_action_recovery(result, action=action, index=index, target=target)
+
     def _preflight_repeated_failure(
         self,
         *,
@@ -1139,6 +1159,19 @@ class BrowserActionLayer:
         return control_kind if control_kind in {"button", "custom_select"} else ""
 
     @staticmethod
+    def _target_context(index: int | None, target: dict[str, Any] | None) -> dict[str, Any]:
+        if not isinstance(target, dict):
+            return {"index": index} if index is not None else {}
+        context: dict[str, Any] = {}
+        if index is not None:
+            context["index"] = index
+        for key in ("selector_hint", "stable_key", "frame_path", "layer", "control_kind"):
+            value = target.get(key)
+            if value not in (None, "", []):
+                context[key] = value
+        return context
+
+    @staticmethod
     def _safe_truncation_total_limit(truncation: dict[str, Any]) -> int:
         try:
             return int(truncation.get("total_limit") or 120)
@@ -1180,7 +1213,24 @@ class BrowserActionLayer:
         recovery = dict(updated.get("recovery") or {})
         query = self._field_query_for_target(target)
         control_kind = str((target or {}).get("control_kind") or "")
-        if action == "click" and updated.get("stage") == "visibility" and query:
+        if updated.get("stage") == "dom_event":
+            context = self._target_context(index, target)
+            if context:
+                updated["target_context"] = context
+            recovery.update(
+                {
+                    "code": "refresh_state_or_low_level",
+                    "message": "The browser bridge or DOM event failed. Refresh browser_use_index before retrying this indexed action; if it repeats, use web_execute_js for low-level probing.",
+                    "stop_retry": bool(recovery.get("stop_retry", False)),
+                    "next_tool": "browser_use_index",
+                    "next_args": {"max_elements": 120},
+                    "alternatives": [
+                        {"tool": "browser_use_index", "args": {"max_elements": 120}},
+                        {"tool": "web_execute_js", "reason": "Use low-level probing if the refreshed index still cannot classify the target."},
+                    ],
+                }
+            )
+        elif action == "click" and updated.get("stage") == "visibility" and query:
             next_args: dict[str, Any] = {"query": query, "refresh": True, "max_results": 5}
             recovery_control_kind = self._visibility_recovery_control_kind(target)
             if recovery_control_kind:
@@ -1452,25 +1502,36 @@ class BrowserActionLayer:
             return finish(failed_result(action or None, "invalid_args", f"Unsupported browser action: {action}", safe_index))
         if verify and verify not in valid_verify:
             return finish(failed_result(action or None, "invalid_args", f"Unsupported verification type: {verify}", safe_index))
-        if verify and action in WAIT_ACTIONS:
-            return finish(failed_result(action, "invalid_args", "verify is not supported for wait actions.", safe_index))
-        if verify == "field_value":
-            expected = verify_value if verify_value is not None else value if value is not None else text
-            if not str(expected or "").strip():
-                return finish(
-                    failed_result(
-                        action,
-                        "invalid_args",
-                        "field_value verification requires a non-empty expected value.",
-                        safe_index,
-                    )
-                )
         if verify in {"text", "element_text"} and not str(verify_text or "").strip():
             return finish(failed_result(action or None, "invalid_args", f"verify_text is required for {verify} verification.", safe_index))
         if verify == "selector" and not str(verify_selector or "").strip():
             return finish(failed_result(action or None, "invalid_args", "verify_selector is required for selector verification.", safe_index))
         if action in {"wait_text", "wait_selector", "wait_dom_stable", "wait_not_busy", "wait_route"}:
             safe_index = None
+        if verify in {"field_value", "element_text"} and action in {
+            "wait_text",
+            "wait_selector",
+            "wait_dom_stable",
+            "wait_not_busy",
+            "wait_route",
+        }:
+            return finish(
+                failed_result(
+                    action,
+                    "invalid_args",
+                    f"{verify} verification requires an indexed wait action such as wait_index or wait_enabled.",
+                    safe_index,
+                )
+            )
+        if verify == "field_value" and action in WAIT_ACTIONS and verify_value is None:
+            return finish(
+                failed_result(
+                    action,
+                    "invalid_args",
+                    "field_value verification on wait actions requires verify_value.",
+                    safe_index,
+                )
+            )
         if action in INDEX_REQUIRED_ACTIONS and safe_index is None:
             return finish(failed_result(action, "invalid_args", f"index is required for {action}."))
         if action == "wait_selector" and not selector:
@@ -1574,8 +1635,10 @@ class BrowserActionLayer:
             result = failed_result(action, "dom_event", str(exc), safe_index)
             result["tab_id"] = driver.default_session_id
             return finish(
-                self._record_failure(
+                self._record_and_augment_failure(
                     result,
+                    action=action,
+                    index=safe_index,
                     driver=driver,
                     target=cached_element if isinstance(cached_element, dict) else None,
                 )
@@ -1584,9 +1647,12 @@ class BrowserActionLayer:
         if not isinstance(raw, dict):
             result = failed_result(action, "dom_event", "browser_action returned a non-object result", safe_index)
             result["tab_id"] = driver.default_session_id
+            result["raw_result_type"] = type(raw).__name__
             return finish(
-                self._record_failure(
+                self._record_and_augment_failure(
                     result,
+                    action=action,
+                    index=safe_index,
                     driver=driver,
                     target=cached_element if isinstance(cached_element, dict) else None,
                 )
@@ -1614,21 +1680,11 @@ class BrowserActionLayer:
                 if option_text and recipe_target:
                     result["suggested_args"] = {"target": recipe_target, "option_text": option_text}
             result = add_recovery(result, action=action, index=safe_index)
-            result = self._augment_action_recovery(
+            result = self._record_and_augment_failure(
                 result,
                 action=action,
                 index=safe_index,
-                target=cached_element if isinstance(cached_element, dict) else None,
-            )
-            result = self._record_failure(
-                result,
                 driver=driver,
-                target=cached_element if isinstance(cached_element, dict) else None,
-            )
-            result = self._augment_action_recovery(
-                result,
-                action=action,
-                index=safe_index,
                 target=cached_element if isinstance(cached_element, dict) else None,
             )
 

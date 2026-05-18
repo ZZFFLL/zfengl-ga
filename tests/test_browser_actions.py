@@ -342,49 +342,64 @@ def test_run_action_requires_expected_selector_for_selector_verification():
     assert driver.calls == []
 
 
-def test_run_action_rejects_verify_on_wait_actions():
-    cases = [
-        ("wait_index", {"index": 1}),
-        ("wait_text", {"text": "Ready"}),
-        ("wait_selector", {"selector": ".ready"}),
-        ("wait_dom_stable", {}),
-        ("wait_not_busy", {}),
-        ("wait_enabled", {"index": 1}),
-        ("wait_route", {"value": "/ready"}),
-    ]
+def test_run_action_allows_verify_on_wait_actions():
+    layer = BrowserActionLayer()
+    driver = FakeDriver(
+        [
+            {
+                "data": {
+                    "status": "success",
+                    "action": "wait_dom_stable",
+                    "result": "dom_stable",
+                    "verification": {"type": "text", "observed": "Ready", "expected": "Ready", "passed": True},
+                }
+            }
+        ]
+    )
 
-    for action, kwargs in cases:
-        layer = BrowserActionLayer()
-        driver = FakeDriver()
+    result = layer.run_action(driver, action="wait_dom_stable", verify="text", verify_text="Ready")
 
-        result = layer.run_action(driver, action=action, verify="text", verify_text="Ready", **kwargs)
-
-        assert result["status"] == "failed"
-        assert result["stage"] == "invalid_args"
-        assert "verify is not supported" in result["error"]
-        assert driver.calls == []
+    assert result["status"] == "success"
+    assert result["verification"]["passed"] is True
+    assert len(driver.calls) == 1
+    assert '"verify": "text"' in driver.calls[0]["script"]
 
 
-def test_run_action_field_value_verification_requires_non_empty_expected_value():
+def test_run_action_rejects_field_value_verify_on_non_index_wait_actions():
     layer = BrowserActionLayer()
     driver = FakeDriver()
 
-    from_blank_text = layer.run_action(driver, action="input", index=1, text="", verify="field_value")
-    from_blank_value = layer.run_action(driver, action="select", index=1, value="  ", verify="field_value")
-    from_blank_verify_value = layer.run_action(
-        driver,
-        action="input",
-        index=1,
-        text="openai",
-        verify="field_value",
-        verify_value="  ",
-    )
+    result = layer.run_action(driver, action="wait_dom_stable", verify="field_value", verify_value="")
 
-    for result in [from_blank_text, from_blank_value, from_blank_verify_value]:
-        assert result["status"] == "failed"
-        assert result["stage"] == "invalid_args"
-        assert "field_value verification requires" in result["error"]
+    assert result["status"] == "failed"
+    assert result["stage"] == "invalid_args"
+    assert "requires an indexed wait action" in result["error"]
     assert driver.calls == []
+
+
+def test_run_action_requires_verify_value_for_wait_field_value_verification():
+    layer = BrowserActionLayer()
+    driver = FakeDriver()
+
+    result = layer.run_action(driver, action="wait_index", index=1, verify="field_value")
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "invalid_args"
+    assert "requires verify_value" in result["error"]
+    assert driver.calls == []
+
+
+def test_run_action_field_value_verification_allows_empty_expected_value():
+    layer = BrowserActionLayer()
+    layer._last_state = {"tab_id": "7", "state_token": "tok-1"}
+    driver = FakeDriver([{"data": {"status": "success", "action": "input", "index": 1}}])
+
+    result = layer.run_action(driver, action="input", index=1, text="", verify="field_value", verify_value="")
+
+    assert result["status"] == "success"
+    assert len(driver.calls) == 1
+    assert '"verify": "field_value"' in driver.calls[0]["script"]
+    assert '"verify_value": ""' in driver.calls[0]["script"]
 
 
 def test_run_action_executes_click_with_cached_token_and_invalidates_state():
@@ -435,6 +450,38 @@ def test_run_action_execute_js_exception_includes_tab_id():
     assert result["status"] == "failed"
     assert result["stage"] == "dom_event"
     assert result["tab_id"] == "7"
+
+
+def test_run_action_dom_event_recovery_refreshes_index_before_low_level_fallback():
+    layer = BrowserActionLayer()
+    layer._last_state = {
+        "tab_id": "7",
+        "state_token": "tok-1",
+        "elements_by_index": {
+            1: {
+                "index": 1,
+                "selector_hint": "#submit",
+                "stable_key": "button#submit",
+                "frame_path": [0],
+                "text": "提交",
+            }
+        },
+    }
+    driver = RaisingDriver()
+
+    result = layer.run_action(driver, action="click", index=1)
+
+    assert result["stage"] == "dom_event"
+    assert result["recovery"]["code"] == "refresh_state_or_low_level"
+    assert result["recovery"]["next_tool"] == "browser_use_index"
+    assert result["recovery"]["next_args"] == {"max_elements": 120}
+    assert result["recovery"]["alternatives"][-1]["tool"] == "web_execute_js"
+    assert result["target_context"] == {
+        "index": 1,
+        "selector_hint": "#submit",
+        "stable_key": "button#submit",
+        "frame_path": [0],
+    }
 
 
 def test_run_action_non_object_result_fails_with_tab_id():
@@ -976,6 +1023,87 @@ global.__GA_TEST_PROBE__ = () => ({ queryCalls });
     assert result["status"] == "success"
     assert result["result"] == "dom_stable"
     assert probe["queryCalls"] >= 4
+
+
+def test_browser_action_script_wait_dom_stable_runs_post_verify_text():
+    script = build_browser_action_script(
+        action="wait_dom_stable",
+        index=None,
+        text=None,
+        value=None,
+        timeout=1,
+        state_token=None,
+        selector=None,
+        verify="text",
+        verify_text="Ready",
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+document.body.innerText = "Ready";
+document.body.textContent = "Ready";
+document.querySelectorAll = (selector) => selector === "*" ? [document.body] : [];
+""",
+    )
+
+    assert result["status"] == "success"
+    assert result["verification"] == {
+        "type": "text",
+        "observed": "Ready",
+        "expected": "Ready",
+        "passed": True,
+    }
+
+
+def test_browser_action_script_wait_dom_stable_rejects_field_value_without_target():
+    script = build_browser_action_script(
+        action="wait_dom_stable",
+        index=None,
+        text=None,
+        value=None,
+        timeout=1,
+        state_token=None,
+        selector=None,
+        verify="field_value",
+        verify_value="",
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+document.querySelectorAll = (selector) => selector === "*" ? [document.body] : [];
+""",
+    )
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "invalid_args"
+    assert "requires an indexed wait target" in result["error"]
+
+
+def test_browser_action_script_wait_index_field_value_requires_verify_value():
+    script = build_browser_action_script(
+        action="wait_index",
+        index=1,
+        text=None,
+        value=None,
+        timeout=1,
+        state_token="tok-1",
+        selector=None,
+        verify="field_value",
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+const input = makeElement({ tag: "input", type: "text", value: "" });
+window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-1", elements: [input] };
+""",
+    )
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "invalid_args"
+    assert "requires verify_value" in result["error"]
 
 
 def test_browser_action_script_wait_not_busy_runtime_waits_until_spinner_disappears():
@@ -2454,6 +2582,36 @@ window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [input] };
         "passed": True,
     }
     assert result["verify_hint"] == "Use verify='field_value' with verify_value to require the field value after input."
+
+
+def test_browser_action_script_input_verify_field_value_allows_empty_expected_value():
+    script = build_browser_action_script(
+        action="input",
+        index=1,
+        text="",
+        value=None,
+        timeout=1,
+        state_token="tok-2",
+        selector=None,
+        verify="field_value",
+        verify_value="",
+    )
+
+    result = run_browser_action_script(
+        script,
+        """
+const input = makeElement({ tag: "input", type: "text", value: "seed" });
+window.__GA_BROWSER_ACTION_STATE__ = { token: "tok-2", elements: [input] };
+""",
+    )
+
+    assert result["status"] == "success"
+    assert result["verification"] == {
+        "type": "field_value",
+        "observed": "",
+        "expected": "",
+        "passed": True,
+    }
 
 
 def test_browser_action_script_input_contenteditable_verify_field_value_success():

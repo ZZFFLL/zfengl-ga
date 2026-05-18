@@ -806,7 +806,7 @@ def test_component_wait_closed_index_recovery_preserves_switch_tab_id_without_in
 
     assert result["status"] == "failed"
     assert result["stage"] == "invalid_args"
-    assert result["recovery"]["next_tool"] == "browser_state"
+    assert result["recovery"]["next_tool"] == "browser_use_index"
     assert result["recovery"]["next_args"] == {"switch_tab_id": "tab-b"}
 
 
@@ -1000,7 +1000,7 @@ def test_component_wait_rejects_index_target_without_wait_index_for_closed_condi
 
     assert result["status"] == "failed"
     assert result["stage"] == "invalid_args"
-    assert result["recovery"]["next_tool"] == "browser_state"
+    assert result["recovery"]["next_tool"] == "browser_use_index"
     assert result["recovery"]["code"] == "use_query_component_wait"
     assert result["recovery"].get("next_args", {}) != {"action": "wait_index", "index": 5}
     assert layer.calls == []
@@ -1035,7 +1035,7 @@ def test_component_wait_layer_closed_does_not_treat_state_missing_as_success():
     assert result["steps"][1]["stage"] == "state_missing"
 
 
-def test_component_wait_returns_browser_state_failure_without_component_not_ready():
+def test_component_wait_returns_browser_use_index_failure_without_component_not_ready():
     class StateFailureLayer(FakeLayer):
         def get_state(self, driver, **kwargs):
             self.calls.append(("state", kwargs))
