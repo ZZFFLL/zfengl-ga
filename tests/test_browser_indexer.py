@@ -1526,6 +1526,108 @@ document.querySelectorAll = (selector) => {
     assert state["truncation"]["iframe_omitted_count"] >= 1
 
 
+def test_browser_state_script_discovers_nested_frame_after_parent_frame_bucket_exhausted():
+    script = build_browser_state_script(include_invisible=False, max_elements=4)
+
+    state = run_browser_state_script(
+        script,
+        """
+const mainButton = makeElement({ tag: "button", text: "Main" });
+const parentButtons = Array.from({ length: 12 }, (_value, index) => makeElement({ tag: "button", text: `Parent ${index}` }));
+const childButton = makeElement({ tag: "button", text: "Nested child" });
+const parentIframe = makeElement({ tag: "iframe", ownerDocument: document });
+const childIframe = makeElement({ tag: "iframe" });
+const grandchildIframe = makeElement({ tag: "iframe" });
+const parentWindow = {
+  ...window,
+  frameElement: parentIframe,
+  parent: window,
+  location: { href: "https://example.test/parent" },
+};
+const parentDocument = {
+  title: "Parent Frame",
+  defaultView: parentWindow,
+  body: null,
+  getElementById: (_id) => null,
+  contains: (element) => element === childIframe || element === parentDocument.body,
+  querySelectorAll: (selector) => {
+    if (selector === "iframe, frame") return [childIframe];
+    if (selector.startsWith("label[")) return [];
+    return parentButtons;
+  },
+};
+const childWindow = {
+  ...window,
+  frameElement: childIframe,
+  parent: parentWindow,
+  location: { href: "https://example.test/child" },
+};
+const childDocument = {
+  title: "Nested Child Frame",
+  defaultView: childWindow,
+  body: null,
+  getElementById: (_id) => null,
+  contains: (element) => element === childButton || element === grandchildIframe || element === childDocument.body,
+  querySelectorAll: (selector) => {
+    if (selector === "iframe, frame") return [grandchildIframe];
+    if (selector.startsWith("label[")) return [];
+    return [childButton];
+  },
+};
+const grandchildWindow = {
+  ...window,
+  frameElement: grandchildIframe,
+  parent: childWindow,
+  location: { href: "https://example.test/grandchild" },
+};
+const grandchildDocument = {
+  title: "Grandchild Frame",
+  defaultView: grandchildWindow,
+  body: null,
+  getElementById: (_id) => null,
+  contains: (element) => element === grandchildDocument.body,
+  querySelectorAll: (selector) => {
+    if (selector === "iframe, frame" || selector.startsWith("label[")) return [];
+    return [];
+  },
+};
+parentDocument.body = makeElement({ tag: "body", ownerDocument: parentDocument });
+childDocument.body = makeElement({ tag: "body", ownerDocument: childDocument });
+grandchildDocument.body = makeElement({ tag: "body", ownerDocument: grandchildDocument });
+parentButtons.forEach((button) => { button.ownerDocument = parentDocument; });
+childButton.ownerDocument = childDocument;
+parentIframe.contentDocument = parentDocument;
+parentIframe.contentWindow = parentWindow;
+childIframe.ownerDocument = parentDocument;
+childIframe.contentDocument = childDocument;
+childIframe.contentWindow = childWindow;
+grandchildIframe.ownerDocument = childDocument;
+grandchildIframe.contentDocument = grandchildDocument;
+grandchildIframe.contentWindow = grandchildWindow;
+document.contains = (element) => element === parentIframe || element === document.body;
+document.querySelectorAll = (selector) => {
+  if (selector === "iframe, frame") return [parentIframe];
+  if (selector.startsWith("label[")) return [];
+  return [mainButton];
+};
+""",
+    )
+
+    assert state["status"] == "success"
+    frame_paths = [frame["frame_path"] for frame in state["frames"]]
+    assert [0] in frame_paths
+    assert [0, 0] in frame_paths
+    assert [0, 0, 0] in frame_paths
+    nested_frame = next(frame for frame in state["frames"] if frame["frame_path"] == [0, 0])
+    assert nested_frame["same_origin_accessible"] is True
+    assert nested_frame["title"] == "Nested Child Frame"
+    grandchild_frame = next(frame for frame in state["frames"] if frame["frame_path"] == [0, 0, 0])
+    assert grandchild_frame["same_origin_accessible"] is True
+    assert grandchild_frame["title"] == "Grandchild Frame"
+    assert state["truncated"] is True
+    assert state["truncation"]["iframe_omitted_count"] >= 9
+
+
 def test_browser_state_script_indexes_interactive_overlay_root():
     script = build_browser_state_script(include_invisible=False, max_elements=5)
 

@@ -56,6 +56,14 @@ def _field_value(field_context: dict[str, Any], *names: str) -> str:
     return ""
 
 
+def _scan_anchor_value(scan_anchor: dict[str, Any], *names: str) -> str:
+    for name in names:
+        value = scan_anchor.get(name)
+        if value:
+            return str(value)
+    return ""
+
+
 def _score_field_context(field_context: dict[str, Any], query: str) -> tuple[float, list[str]]:
     if not query:
         return 0.0, []
@@ -80,6 +88,25 @@ def _score_field_context(field_context: dict[str, Any], query: str) -> tuple[flo
     if field_name and _norm(field_name) == _norm(query):
         score += 70
         reasons.append("field name")
+    return score, reasons
+
+
+def _score_scan_anchor(scan_anchor: dict[str, Any], query: str) -> tuple[float, list[str]]:
+    if not query:
+        return 0.0, []
+    score = 0.0
+    reasons: list[str] = []
+    field_label = _scan_anchor_value(scan_anchor, "field_label")
+    near_text = _scan_anchor_value(scan_anchor, "near_text")
+    if field_label and _norm(field_label) == _norm(query):
+        score += 68
+        reasons.append("scan anchor field label")
+    elif field_label and _contains(field_label, query):
+        score += 52
+        reasons.append("scan anchor field label")
+    elif near_text and _contains(near_text, query):
+        score += 44
+        reasons.append("scan anchor near text")
     return score, reasons
 
 
@@ -132,12 +159,16 @@ def _score_element(
     parts = _text_parts(element)
     labels = [str(label) for label in (element.get("labels") or [])]
     field_context = element.get("field_context") or {}
+    scan_anchor = element.get("scan_anchor") or {}
     if query:
         field_score, field_reasons = _score_field_context(field_context, query)
+        scan_anchor_score, scan_anchor_reasons = _score_scan_anchor(scan_anchor, query)
         label_text_score, label_text_reasons = _score_label_text(parts, labels, query)
         semantic_score, semantic_reasons = label_text_score, label_text_reasons
         if field_score > label_text_score:
             semantic_score, semantic_reasons = field_score, field_reasons
+        if scan_anchor_score > semantic_score:
+            semantic_score, semantic_reasons = scan_anchor_score, scan_anchor_reasons
         if not semantic_score:
             return 0.0, []
         score += semantic_score
@@ -149,16 +180,24 @@ def _score_element(
         column_text = table.get("column_text") or table.get("header_text")
         if row_text:
             row_value = _table_value(table_context, "row_text", "row_header")
-            if not _contains(row_value, row_text):
+            if _contains(row_value, row_text):
+                score += 35
+                reasons.append("table row")
+            elif _contains(_scan_anchor_value(scan_anchor, "row_text"), row_text):
+                score += 35
+                reasons.append("scan anchor table row")
+            else:
                 return 0.0, []
-            score += 35
-            reasons.append("table row")
         if column_text:
             column_value = _table_value(table_context, "column_header", "column_text", "header_text")
-            if not _contains(column_value, column_text):
+            if _contains(column_value, column_text):
+                score += 35
+                reasons.append("table column")
+            elif _contains(_scan_anchor_value(scan_anchor, "column_text"), column_text):
+                score += 35
+                reasons.append("scan anchor table column")
+            else:
                 return 0.0, []
-            score += 35
-            reasons.append("table column")
 
     if element.get("visible") is True:
         score += 10

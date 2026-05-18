@@ -664,6 +664,27 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
     }}
   }};
 
+  const collectFrameSummariesOnly = (doc, framePath) => {{
+    const frames = doc.querySelectorAll("iframe, frame");
+    for (let frameIndex = 0; frameIndex < frames.length; frameIndex += 1) {{
+      const frame = frames[frameIndex];
+      const childFramePath = framePath.concat(frameIndex);
+      try {{
+        const frameDocument = frame.contentDocument;
+        const childWindow = frame.contentWindow;
+        if (!frameDocument || !childWindow) {{
+          frameSummaries.push(frameInfoOf(frame, childFramePath, false, childWindow, frameDocument, "missing frame document"));
+          continue;
+        }}
+        frameSummaries.push(frameInfoOf(frame, childFramePath, true, childWindow, frameDocument, ""));
+        collectFrameSummariesOnly(frameDocument, childFramePath);
+      }} catch (error) {{
+        const message = error && error.message ? error.message : "inaccessible frame";
+        frameSummaries.push(frameInfoOf(frame, childFramePath, false, null, null, message));
+      }}
+    }}
+  }};
+
   const collectDocument = (doc, framePath, frameWindow) => {{
     const isFrameDocument = Boolean(framePath.length);
     const interactiveElements = doc.querySelectorAll(selector);
@@ -679,11 +700,6 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
         break;
       }}
       addElement(element, framePath, frameWindow);
-    }}
-
-    if (frameBucketExhausted) {{
-      collectOverlayCandidates(doc, framePath, frameWindow);
-      return;
     }}
 
     collectOverlayCandidates(doc, framePath, frameWindow);
@@ -708,6 +724,7 @@ def build_browser_state_script(include_invisible=False, max_elements=DEFAULT_MAX
           collectDocument(frameDocument, childFramePath, childWindow);
         }} else {{
           recordOmitted(countDocumentCandidates(frameDocument), true);
+          collectFrameSummariesOnly(frameDocument, childFramePath);
         }}
       }} catch (error) {{
         const message = error && error.message ? error.message : "inaccessible frame";

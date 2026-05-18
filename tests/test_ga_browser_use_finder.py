@@ -358,6 +358,69 @@ def test_find_matches_adjacent_row_label_for_custom_select():
     assert "field row label" in result["matches"][0]["reason"]
 
 
+def test_find_ranks_scan_anchor_field_label_over_generic_text():
+    state = make_state(
+        [
+            {
+                "index": 2,
+                "text": "工作类型说明",
+                "labels": [],
+                "control_kind": "custom_select",
+                "visible": True,
+                "disabled": False,
+            },
+            {
+                "index": 4,
+                "text": "",
+                "labels": [],
+                "control_kind": "custom_select",
+                "visible": True,
+                "disabled": False,
+                "scan_anchor": {
+                    "field_label": "工作类型",
+                    "near_text": "工作类型",
+                    "row_text": "",
+                    "column_text": "",
+                },
+            },
+        ]
+    )
+
+    result = find_in_state(state, query="工作类型", control_kind="custom_select", max_results=5)
+
+    assert result["status"] == "success"
+    assert result["ambiguous"] is False
+    assert result["matches"][0]["index"] == 4
+    assert "scan anchor field label" in result["matches"][0]["reason"]
+
+
+def test_find_matches_scan_anchor_near_text_without_field_context():
+    state = make_state(
+        [
+            {
+                "index": 8,
+                "text": "",
+                "labels": [],
+                "control_kind": "native_input",
+                "visible": True,
+                "disabled": False,
+                "scan_anchor": {
+                    "field_label": "",
+                    "near_text": "请填写项目名称",
+                    "row_text": "",
+                    "column_text": "",
+                },
+            }
+        ]
+    )
+
+    result = find_in_state(state, query="项目名称", control_kind="native_input", max_results=5)
+
+    assert result["status"] == "success"
+    assert result["matches"][0]["index"] == 8
+    assert "scan anchor near text" in result["matches"][0]["reason"]
+
+
 def test_find_matches_field_id_and_field_name():
     state = make_state(
         [
@@ -451,6 +514,60 @@ def test_find_keeps_exact_label_when_field_context_is_weaker():
     assert result["ambiguous"] is False
     assert result["matches"][0]["index"] == 1
     assert "exact label" in result["matches"][0]["reason"]
+
+
+def test_find_table_locator_matches_scan_anchor_when_table_context_absent():
+    state = make_state(
+        [
+            {
+                "index": 6,
+                "text": "",
+                "labels": [],
+                "visible": True,
+                "disabled": False,
+                "scan_anchor": {
+                    "field_label": "",
+                    "near_text": "",
+                    "row_text": "张三 1.00",
+                    "column_text": "工时",
+                },
+            }
+        ]
+    )
+
+    result = find_in_state(state, table={"row_text": "张三", "column_text": "工时"}, max_results=5)
+
+    assert result["status"] == "success"
+    assert result["matches"][0]["index"] == 6
+    assert "scan anchor table row" in result["matches"][0]["reason"]
+    assert "scan anchor table column" in result["matches"][0]["reason"]
+
+
+def test_find_table_locator_uses_scan_anchor_when_table_context_is_weaker():
+    state = make_state(
+        [
+            {
+                "index": 7,
+                "text": "",
+                "labels": [],
+                "visible": True,
+                "disabled": False,
+                "table_context": {"row_text": "张三"},
+                "scan_anchor": {
+                    "field_label": "",
+                    "near_text": "",
+                    "row_text": "张三 1.00",
+                    "column_text": "工时",
+                },
+            }
+        ]
+    )
+
+    result = find_in_state(state, table={"row_text": "张三", "column_text": "工时"}, max_results=5)
+
+    assert result["status"] == "success"
+    assert result["matches"][0]["index"] == 7
+    assert "scan anchor table column" in result["matches"][0]["reason"]
 
 
 def test_find_caps_public_match_score_at_one():

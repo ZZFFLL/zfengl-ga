@@ -40,7 +40,9 @@
 要点：
 - `click` / `input` / `select` / `wait_index` / `wait_enabled` 依赖最近一次 `browser_use_index`。
 - 页面变化后旧 index 可能失效；不要猜旧 index。
-- `browser_use_index` 输出里的 `scan_anchor` 是给 `web_scan` 文本到可操作 index 的引路字段，不会自动执行 recipe。
+- `page_signals` 用来判断页面是否还在 loading、是否有 overlay、当前焦点在哪里；`busy=true` 或 `loading_count>0` 时，先等待稳定再操作。
+- `frames` 用来确认同源 iframe/frame 是否可访问、层级路径是什么；目标在 iframe 内时，优先用 `frame_path` 约束 `browser_find`。
+- `scan_anchor` 用来把 `web_scan` 读到的字段文本、行文本、列文本映射到可操作 index；它不会自动执行 recipe。
 
 ### 2. state 太长或目标不明确，用 browser_find 缩小
 
@@ -57,6 +59,7 @@
 要点：
 - `query` 或 `table` 才是真正定位条件。
 - `role`、`control_kind`、`layer`、`frame_path` 只是过滤条件，不能单独使用。
+- 如果 `web_scan` 只读到了字段名、行名或列名，但看不出可操作 index，调用 `browser_find` 时优先使用这些 `scan_anchor` 语义：字段用 `query`，表格用 `table.row_text` / `table.column_text`。
 - `ambiguous=true` 时补约束，不要拿第一个候选直接操作。
 - `browser_find` 只返回候选，不代表页面已经被操作。
 
