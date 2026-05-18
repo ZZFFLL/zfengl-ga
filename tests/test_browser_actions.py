@@ -2706,6 +2706,87 @@ def test_run_action_stale_tab_includes_state_recovery():
     assert result["recovery"]["next_args"] == {"max_elements": 120}
 
 
+def test_record_failure_refresh_state_recovery_expands_truncated_state_budget():
+    layer = BrowserActionLayer()
+    layer._last_state = {
+        "tab_id": "tab-a",
+        "state_token": "tok-a",
+        "elements_by_index": {},
+        "state": {
+            "status": "success",
+            "truncated": True,
+            "truncation": {
+                "omitted_count": 9,
+                "iframe_omitted_count": 3,
+                "total_limit": 120,
+                "main_reserved": 72,
+                "frame_reserved": 48,
+            },
+            "elements": [],
+        },
+        "state_options": {"include_invisible": False, "max_elements": 120},
+    }
+
+    result = layer._record_failure(
+        {"status": "failed", "stage": "stale_index", "error": "stale"},
+        driver=None,
+        target=None,
+    )
+
+    assert result["recovery"]["code"] == "refresh_state"
+    assert "refresh" not in result["recovery"]["next_args"]
+    assert result["recovery"]["next_args"]["max_elements"] == 150
+    assert "larger max_elements" in result["recovery"]["message"]
+
+
+def test_run_action_refresh_state_failures_expand_truncated_state_budget():
+    for stage in ["stale_index", "state_missing", "verify_failed"]:
+        layer = BrowserActionLayer()
+        layer._last_state = {
+            "tab_id": "7",
+            "state_token": "tok-1",
+            "url": "https://example.test/form",
+            "elements_by_index": {1: {"index": 1, "text": "Save", "selector_hint": "#save"}},
+            "state": {
+                "status": "success",
+                "truncated": True,
+                "truncation": {"omitted_count": 20, "iframe_omitted_count": 5, "total_limit": 160},
+                "elements": [{"index": 1, "text": "Save"}],
+            },
+            "state_options": {"include_invisible": False, "max_elements": 160},
+        }
+        driver = FakeDriver([{"data": {"status": "failed", "action": "click", "index": 1, "stage": stage, "error": stage}}])
+
+        result = layer.run_action(driver, action="click", index=1)
+
+        assert result["stage"] == stage
+        assert result["recovery"]["code"] == "refresh_state"
+        assert "refresh" not in result["recovery"]["next_args"]
+        assert result["recovery"]["next_args"]["max_elements"] == 190
+        assert "browser_state" in result["recovery"]["message"]
+        assert "truncated" in result["recovery"]["message"]
+
+
+def test_find_refresh_target_not_found_drops_stale_follow_up():
+    layer = BrowserActionLayer()
+    state = {
+        "status": "success",
+        "truncated": True,
+        "truncation": {"omitted_count": 10, "iframe_omitted_count": 2, "total_limit": 120},
+        "elements": [{"index": 1, "text": "Save", "visible": True, "disabled": False}],
+    }
+    driver = FakeDriver([state])
+
+    result = layer.find(driver, query="Missing field", refresh=True)
+
+    assert result["status"] == "failed"
+    assert result["recovery"]["code"] == "narrow_locator"
+    assert result["recovery"]["stop_retry"] is True
+    assert "next_tool" not in result["recovery"]
+    assert "next_args" not in result["recovery"]
+    assert "follow_up" not in result["recovery"]
+
+
 def test_run_action_select_custom_control_recovery_includes_target_and_option():
     layer = BrowserActionLayer()
     layer._last_state = {

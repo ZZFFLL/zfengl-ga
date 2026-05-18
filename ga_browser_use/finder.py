@@ -22,6 +22,13 @@ def safe_max_results(value: Any) -> int:
     return max(1, min(parsed, 20))
 
 
+def _safe_truncation_int(truncation: dict[str, Any], key: str, default: int = 0) -> int:
+    try:
+        return int(truncation.get(key) or default)
+    except (TypeError, ValueError):
+        return default
+
+
 def _text_parts(element: dict[str, Any]) -> list[str]:
     parts = [element.get("text"), element.get("value")]
     parts.extend(element.get("labels") or [])
@@ -232,8 +239,23 @@ def find_in_state(
     if not matches:
         result = failed_result(None, "target_not_found", "No browser element matched the requested criteria.")
         result["recovery"]["code"] = "refresh_state_then_find"
-        result["recovery"]["message"] = "Refresh browser_state and retry browser_find with the same semantic locator."
-        result["recovery"]["next_tool"] = "browser_find"
+        truncation = state.get("truncation") if isinstance(state.get("truncation"), dict) else {}
+        omitted = _safe_truncation_int(truncation, "omitted_count")
+        iframe_omitted = _safe_truncation_int(truncation, "iframe_omitted_count")
+        message = "Refresh browser_state and retry browser_find with the same semantic locator."
+        if state.get("truncated"):
+            if omitted:
+                message = f"Refresh browser_state with a larger max_elements value before retrying browser_find; the last snapshot omitted {omitted} elements"
+                if iframe_omitted:
+                    message += f", including {iframe_omitted} iframe/frame elements"
+                message += "."
+            else:
+                message = "Refresh browser_state with a larger max_elements value before retrying browser_find; the last snapshot was truncated and may have omitted matching elements."
+                if iframe_omitted:
+                    message = (
+                        "Refresh browser_state with a larger max_elements value before retrying browser_find; "
+                        f"the last snapshot may have omitted matching elements, including {iframe_omitted} iframe/frame elements."
+                    )
         next_args = {"refresh": True, "query": query_text, "max_results": limit}
         if role:
             next_args["role"] = role
@@ -245,7 +267,16 @@ def find_in_state(
             next_args["frame_path"] = frame_path
         if table:
             next_args["table"] = table
-        result["recovery"]["next_args"] = next_args
+        result["recovery"]["message"] = message
+        if state.get("truncated"):
+            result["recovery"]["next_tool"] = "browser_state"
+            result["recovery"]["next_args"] = {
+                "max_elements": max(150, _safe_truncation_int(truncation, "total_limit", 120) + 30)
+            }
+            result["recovery"]["follow_up"] = {"next_tool": "browser_find", "next_args": next_args}
+        else:
+            result["recovery"]["next_tool"] = "browser_find"
+            result["recovery"]["next_args"] = next_args
         return result
     ambiguous = len(matches) > 1 and abs(matches[0]["score"] - matches[1]["score"]) <= 0.05
     matches = matches[:limit]

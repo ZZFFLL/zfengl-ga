@@ -1051,7 +1051,7 @@ class BrowserActionLayer:
                 recorded["original_stage"] = meta["original_stage"]
             if meta.get("page_changed") is True:
                 recorded["page_changed"] = True
-        return recorded
+        return self._augment_truncated_refresh_recovery(recorded)
 
     def _preflight_repeated_failure(
         self,
@@ -1138,6 +1138,34 @@ class BrowserActionLayer:
         control_kind = str((target or {}).get("control_kind") or "")
         return control_kind if control_kind in {"button", "custom_select"} else ""
 
+    @staticmethod
+    def _safe_truncation_total_limit(truncation: dict[str, Any]) -> int:
+        try:
+            return int(truncation.get("total_limit") or 120)
+        except (TypeError, ValueError):
+            return 120
+
+    def _augment_truncated_refresh_recovery(self, result: dict[str, Any]) -> dict[str, Any]:
+        recovery = result.get("recovery")
+        if not isinstance(recovery, dict) or recovery.get("code") != "refresh_state":
+            return result
+        state = (self._last_state or {}).get("state") if isinstance(self._last_state, dict) else {}
+        if not isinstance(state, dict) or not state.get("truncated"):
+            return result
+        truncation = state.get("truncation") if isinstance(state.get("truncation"), dict) else {}
+        updated = dict(result)
+        updated_recovery = dict(recovery)
+        next_args = dict(updated_recovery.get("next_args") or {})
+        next_args["max_elements"] = max(150, self._safe_truncation_total_limit(truncation) + 30)
+        updated_recovery["next_args"] = next_args
+        base_message = str(updated_recovery.get("message") or "").strip()
+        truncation_message = (
+            "The previous browser_state snapshot was truncated; use a larger max_elements value before choosing a fresh index."
+        )
+        updated_recovery["message"] = f"{base_message} {truncation_message}".strip()
+        updated["recovery"] = updated_recovery
+        return updated
+
     def _augment_action_recovery(
         self,
         result: dict[str, Any],
@@ -1177,7 +1205,7 @@ class BrowserActionLayer:
             )
             recovery["alternatives"] = alternatives
         updated["recovery"] = recovery
-        return updated
+        return self._augment_truncated_refresh_recovery(updated)
 
     def get_state(
         self,
@@ -1348,6 +1376,7 @@ class BrowserActionLayer:
                 recovery["stop_retry"] = True
                 recovery.pop("next_tool", None)
                 recovery.pop("next_args", None)
+                recovery.pop("follow_up", None)
                 result = dict(result)
                 result["recovery"] = recovery
                 return finish(result)

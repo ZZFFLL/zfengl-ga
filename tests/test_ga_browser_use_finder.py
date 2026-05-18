@@ -219,6 +219,94 @@ def test_find_target_not_found_recovery_preserves_constraints():
     assert next_args["table"] == table
 
 
+def test_find_target_not_found_recovery_expands_truncated_state_budget():
+    state = {
+        "status": "success",
+        "truncated": True,
+        "truncation": {
+            "omitted_count": 12,
+            "iframe_omitted_count": 4,
+            "total_limit": 120,
+            "main_reserved": 72,
+            "frame_reserved": 48,
+        },
+        "elements": [
+            {
+                "index": 1,
+                "text": "提交",
+                "role": "button",
+                "control_kind": "button",
+                "layer": "main",
+                "frame_path": [],
+            }
+        ],
+    }
+
+    result = find_in_state(state, query="是否休假", control_kind="custom_select", max_results=5)
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "target_not_found"
+    assert result["recovery"]["code"] == "refresh_state_then_find"
+    assert result["recovery"]["next_tool"] == "browser_state"
+    assert result["recovery"]["next_args"]["max_elements"] == 150
+    assert result["recovery"]["follow_up"]["next_tool"] == "browser_find"
+    assert result["recovery"]["follow_up"]["next_args"]["refresh"] is True
+    assert result["recovery"]["follow_up"]["next_args"]["query"] == "是否休假"
+    assert result["recovery"]["follow_up"]["next_args"]["control_kind"] == "custom_select"
+    assert "omitted 12 elements" in result["recovery"]["message"]
+    assert "iframe" in result["recovery"]["message"].lower()
+
+
+def test_find_target_not_found_recovery_mentions_iframe_when_only_iframe_count_present():
+    state = {
+        "status": "success",
+        "truncated": True,
+        "truncation": {"omitted_count": 0, "iframe_omitted_count": 2, "total_limit": 120},
+        "elements": [{"index": 1, "text": "提交", "visible": True, "disabled": False}],
+    }
+
+    result = find_in_state(state, query="iframe field", max_results=5)
+
+    assert result["status"] == "failed"
+    assert "iframe" in result["recovery"]["message"].lower()
+    assert result["recovery"]["next_tool"] == "browser_state"
+    assert result["recovery"]["next_args"]["max_elements"] == 150
+    assert result["recovery"]["follow_up"]["next_args"]["query"] == "iframe field"
+
+
+def test_find_prefers_dropdown_option_when_layer_filter_is_dropdown():
+    state = make_state(
+        [
+            {
+                "index": 3,
+                "text": "否",
+                "role": "option",
+                "control_kind": "option",
+                "layer": "dropdown",
+                "visible": True,
+                "disabled": False,
+                "frame_path": [0],
+            },
+            {
+                "index": 7,
+                "text": "否",
+                "role": "text",
+                "control_kind": "text",
+                "layer": "main",
+                "visible": True,
+                "disabled": False,
+                "frame_path": [0],
+            },
+        ]
+    )
+
+    result = find_in_state(state, query="否", layer="dropdown", max_results=5)
+
+    assert result["status"] == "success"
+    assert result["matches"][0]["index"] == 3
+    assert result["matches"][0]["element"]["layer"] == "dropdown"
+
+
 def test_find_returns_disabled_candidates_for_read_only_location():
     state = make_state(
         [
