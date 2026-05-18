@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 
 from ga_browser_use.finder import find_in_state, safe_max_results
 from ga_browser_use.indexer import build_browser_state_script, normalize_state_result
 from ga_browser_use.results import FailureFuse, add_recovery, failed_result as structured_failed_result
+from ga_browser_use.runtime_log import log_event
 
 
 SUPPORTED_ACTIONS = {
@@ -73,6 +75,38 @@ def _safe_index(value: Any) -> int | None:
     except (TypeError, ValueError):
         return None
     return index if index > 0 else None
+
+
+def _elapsed_ms(started_at: float) -> int:
+    return int((time.perf_counter() - started_at) * 1000)
+
+
+def _recovery_code(result: dict[str, Any]) -> str | None:
+    recovery = result.get("recovery")
+    if isinstance(recovery, dict):
+        code = recovery.get("code")
+        return str(code) if code else None
+    return None
+
+
+def _log_result(tool: str, started_at: float, result: dict[str, Any], fields: dict[str, Any] | None = None) -> dict[str, Any]:
+    summary = dict(fields or {})
+    summary.update(
+        {
+            "status": result.get("status"),
+            "stage": result.get("stage"),
+            "duration_ms": _elapsed_ms(started_at),
+        }
+    )
+    recovery_code = _recovery_code(result)
+    if recovery_code:
+        summary["recovery_code"] = recovery_code
+    if result.get("tab_id"):
+        summary["tab_id"] = result.get("tab_id")
+    if result.get("page_changed") is not None:
+        summary["page_changed"] = result.get("page_changed")
+    log_event(tool, "end", fields=summary)
+    return result
 
 
 def build_browser_action_script(
@@ -1156,10 +1190,20 @@ class BrowserActionLayer:
         include_invisible: bool = False,
         max_elements: int = 120,
     ) -> dict[str, Any]:
+        started_at = time.perf_counter()
+        log_event(
+            "browser_state",
+            "start",
+            fields={
+                "include_invisible": include_invisible,
+                "max_elements": max_elements,
+                "switch_tab_id": switch_tab_id,
+            },
+        )
         unavailable = self._ensure_driver(driver)
         if unavailable:
             self._last_state = None
-            return unavailable
+            return _log_result("browser_state", started_at, unavailable)
         if switch_tab_id:
             if str(getattr(driver, "default_session_id", "") or "") != str(switch_tab_id):
                 self._reset_failure_fuse()
@@ -1170,7 +1214,7 @@ class BrowserActionLayer:
             raw = _response_payload(driver.execute_js(script, timeout=10))
         except Exception as exc:
             self._last_state = None
-            return failed_result(None, "dom_event", str(exc))
+            return _log_result("browser_state", started_at, failed_result(None, "dom_event", str(exc)))
 
         state = normalize_state_result(raw)
         if state.get("status") == "success":
@@ -1196,7 +1240,16 @@ class BrowserActionLayer:
             }
         else:
             self._last_state = None
-        return state
+        return _log_result(
+            "browser_state",
+            started_at,
+            state,
+            fields={
+                "element_count": len(state.get("elements") or []) if isinstance(state.get("elements"), list) else 0,
+                "elements": state.get("elements") if isinstance(state.get("elements"), list) else [],
+                "url": state.get("url"),
+            },
+        )
 
     def find(
         self,
@@ -1213,21 +1266,49 @@ class BrowserActionLayer:
         include_invisible: bool = False,
         switch_tab_id: str | None = None,
     ) -> dict[str, Any]:
+        started_at = time.perf_counter()
         limit = safe_max_results(max_results)
+        log_event(
+            "browser_find",
+            "start",
+            fields={
+                "role": role,
+                "control_kind": control_kind,
+                "layer": layer,
+                "frame_path": frame_path,
+                "max_results": limit,
+                "refresh": refresh,
+                "include_invisible": include_invisible,
+                "switch_tab_id": switch_tab_id,
+            },
+            sensitive={"query": query, "table": table},
+        )
+
+        def finish(result: dict[str, Any]) -> dict[str, Any]:
+            fields: dict[str, Any] = {}
+            matches = result.get("matches")
+            if isinstance(matches, list):
+                fields["match_count"] = len(matches)
+            if result.get("ambiguous") is not None:
+                fields["ambiguous"] = result.get("ambiguous")
+            return _log_result("browser_find", started_at, result, fields=fields)
+
         has_locator = (
             str(query or "").strip()
             or (isinstance(table, dict) and any(table.get(key) for key in ("row_text", "column_text", "header_text")))
         )
         if not has_locator:
-            return find_in_state(
-                {"status": "success", "elements": []},
-                query=query,
-                role=role,
-                control_kind=control_kind,
-                layer=layer,
-                frame_path=frame_path,
-                table=table,
-                max_results=limit,
+            return finish(
+                find_in_state(
+                    {"status": "success", "elements": []},
+                    query=query,
+                    role=role,
+                    control_kind=control_kind,
+                    layer=layer,
+                    frame_path=frame_path,
+                    table=table,
+                    max_results=limit,
+                )
             )
         requested_tab_id = str(switch_tab_id or getattr(driver, "default_session_id", "") or "")
         cached_tab_id = str((self._last_state or {}).get("tab_id") or "")
@@ -1272,7 +1353,7 @@ class BrowserActionLayer:
                 recovery.pop("next_args", None)
                 result = dict(result)
                 result["recovery"] = recovery
-                return result
+                return finish(result)
             next_args = dict(recovery.get("next_args") or {})
             if switch_tab_id:
                 next_args["switch_tab_id"] = switch_tab_id
@@ -1283,7 +1364,7 @@ class BrowserActionLayer:
                 recovery["next_args"] = next_args
                 result = dict(result)
                 result["recovery"] = recovery
-        return result
+        return finish(result)
 
     def run_action(
         self,
@@ -1306,43 +1387,79 @@ class BrowserActionLayer:
         safe_timeout = _safe_timeout(timeout)
         valid_verify = {"field_value", "text", "selector", "element_text"}
         verify = str(verify or "").strip() or None
+        started_at = time.perf_counter()
+        log_event(
+            "browser_action",
+            "start",
+            fields={
+                "action": action,
+                "index": safe_index,
+                "selector": selector,
+                "verify": verify,
+                "timeout": safe_timeout,
+                "switch_tab_id": switch_tab_id,
+                "has_text": text is not None,
+                "has_value": value is not None,
+            },
+            sensitive={
+                "text": text,
+                "value": value,
+                "verify_text": verify_text,
+                "verify_value": verify_value,
+            },
+        )
+
+        def finish(result: dict[str, Any]) -> dict[str, Any]:
+            return _log_result(
+                "browser_action",
+                started_at,
+                result,
+                fields={
+                    "action": result.get("action") or action,
+                    "index": result.get("index") if result.get("index") is not None else safe_index,
+                    "timeout": safe_timeout,
+                    "verify": verify,
+                },
+            )
 
         if action not in SUPPORTED_ACTIONS:
-            return failed_result(action or None, "invalid_args", f"Unsupported browser action: {action}", safe_index)
+            return finish(failed_result(action or None, "invalid_args", f"Unsupported browser action: {action}", safe_index))
         if verify and verify not in valid_verify:
-            return failed_result(action or None, "invalid_args", f"Unsupported verification type: {verify}", safe_index)
+            return finish(failed_result(action or None, "invalid_args", f"Unsupported verification type: {verify}", safe_index))
         if verify and action in WAIT_ACTIONS:
-            return failed_result(action, "invalid_args", "verify is not supported for wait actions.", safe_index)
+            return finish(failed_result(action, "invalid_args", "verify is not supported for wait actions.", safe_index))
         if verify == "field_value":
             expected = verify_value if verify_value is not None else value if value is not None else text
             if not str(expected or "").strip():
-                return failed_result(
-                    action,
-                    "invalid_args",
-                    "field_value verification requires a non-empty expected value.",
-                    safe_index,
+                return finish(
+                    failed_result(
+                        action,
+                        "invalid_args",
+                        "field_value verification requires a non-empty expected value.",
+                        safe_index,
+                    )
                 )
         if verify in {"text", "element_text"} and not str(verify_text or "").strip():
-            return failed_result(action or None, "invalid_args", f"verify_text is required for {verify} verification.", safe_index)
+            return finish(failed_result(action or None, "invalid_args", f"verify_text is required for {verify} verification.", safe_index))
         if verify == "selector" and not str(verify_selector or "").strip():
-            return failed_result(action or None, "invalid_args", "verify_selector is required for selector verification.", safe_index)
+            return finish(failed_result(action or None, "invalid_args", "verify_selector is required for selector verification.", safe_index))
         if action in {"wait_text", "wait_selector", "wait_dom_stable", "wait_not_busy", "wait_route"}:
             safe_index = None
         if action in INDEX_REQUIRED_ACTIONS and safe_index is None:
-            return failed_result(action, "invalid_args", f"index is required for {action}.")
+            return finish(failed_result(action, "invalid_args", f"index is required for {action}."))
         if action == "wait_selector" and not selector:
-            return failed_result(action, "invalid_args", "selector is required for wait_selector.")
+            return finish(failed_result(action, "invalid_args", "selector is required for wait_selector."))
         if action == "wait_text" and not text:
-            return failed_result(action, "invalid_args", "text is required for wait_text.")
+            return finish(failed_result(action, "invalid_args", "text is required for wait_text."))
         if action == "wait_route" and not (text or value):
-            return failed_result(action, "invalid_args", "text or value is required for wait_route.")
+            return finish(failed_result(action, "invalid_args", "text or value is required for wait_route."))
 
         unavailable = self._ensure_driver(driver)
         if unavailable:
             unavailable["action"] = action
             if safe_index is not None:
                 unavailable["index"] = safe_index
-            return unavailable
+            return finish(unavailable)
         if switch_tab_id:
             if str(getattr(driver, "default_session_id", "") or "") != str(switch_tab_id):
                 self._reset_failure_fuse()
@@ -1353,9 +1470,9 @@ class BrowserActionLayer:
             if not self._last_state:
                 if action == "keys" and safe_index is not None:
                     result = keys_without_index_retry_result(action, safe_index, text, value)
-                    return self._record_failure(result, driver=driver)
+                    return finish(self._record_failure(result, driver=driver))
                 result = failed_result(action, "state_missing", f"Run browser_state before browser_action {action}.", safe_index)
-                return self._record_failure(result, driver=driver)
+                return finish(self._record_failure(result, driver=driver))
             if str(self._last_state.get("tab_id") or "") != str(driver.default_session_id):
                 result = failed_result(
                     action,
@@ -1365,7 +1482,7 @@ class BrowserActionLayer:
                 )
                 result["tab_id"] = driver.default_session_id
                 target = (self._last_state.get("elements_by_index") or {}).get(safe_index)
-                return self._record_failure(result, driver=driver, target=target if isinstance(target, dict) else None)
+                return finish(self._record_failure(result, driver=driver, target=target if isinstance(target, dict) else None))
             state_token = self._last_state.get("state_token")
 
         effective_selector = selector
@@ -1405,7 +1522,7 @@ class BrowserActionLayer:
             )
             if self._should_clear_state_after_action(action, preflight_blocked):
                 self._last_state = None
-            return preflight_blocked
+            return finish(preflight_blocked)
 
         script = build_browser_action_script(
             action=action,
@@ -1430,19 +1547,23 @@ class BrowserActionLayer:
         except Exception as exc:
             result = failed_result(action, "dom_event", str(exc), safe_index)
             result["tab_id"] = driver.default_session_id
-            return self._record_failure(
-                result,
-                driver=driver,
-                target=cached_element if isinstance(cached_element, dict) else None,
+            return finish(
+                self._record_failure(
+                    result,
+                    driver=driver,
+                    target=cached_element if isinstance(cached_element, dict) else None,
+                )
             )
 
         if not isinstance(raw, dict):
             result = failed_result(action, "dom_event", "browser_action returned a non-object result", safe_index)
             result["tab_id"] = driver.default_session_id
-            return self._record_failure(
-                result,
-                driver=driver,
-                target=cached_element if isinstance(cached_element, dict) else None,
+            return finish(
+                self._record_failure(
+                    result,
+                    driver=driver,
+                    target=cached_element if isinstance(cached_element, dict) else None,
+                )
             )
 
         result = dict(raw)
@@ -1487,4 +1608,4 @@ class BrowserActionLayer:
 
         if self._should_clear_state_after_action(action, raw_result) or self._should_clear_state_after_action(action, result):
             self._last_state = None
-        return result
+        return finish(result)

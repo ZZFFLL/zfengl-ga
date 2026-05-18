@@ -4,6 +4,7 @@ import time
 from typing import Any
 
 from ga_browser_use.results import failed_result
+from ga_browser_use.runtime_log import log_event
 
 
 SUPPORTED_RECIPES = {"custom_select", "layer_select", "table_locate", "component_wait"}
@@ -749,38 +750,80 @@ class BrowserRecipeRunner:
         **_: Any,
     ) -> dict[str, Any]:
         recipe = str(recipe or "").strip()
+        started_at = time.perf_counter()
+        log_event(
+            "browser_recipe",
+            "start",
+            fields={
+                "recipe": recipe,
+                "condition": condition,
+                "timeout": timeout,
+                "max_results": max_results,
+                "switch_tab_id": switch_tab_id,
+            },
+            sensitive={
+                "target": target,
+                "option_text": option_text,
+                "confirm_text": confirm_text,
+                "table": table,
+            },
+        )
+
+        def finish(result: dict[str, Any]) -> dict[str, Any]:
+            recovery = result.get("recovery")
+            fields: dict[str, Any] = {
+                "recipe": result.get("recipe") or recipe,
+                "status": result.get("status"),
+                "stage": result.get("stage"),
+                "condition": result.get("condition") or condition,
+                "duration_ms": int((time.perf_counter() - started_at) * 1000),
+            }
+            steps = result.get("steps")
+            if isinstance(steps, list):
+                fields["steps_count"] = len(steps)
+            if isinstance(recovery, dict) and recovery.get("code"):
+                fields["recovery_code"] = recovery.get("code")
+            log_event("browser_recipe", "end", fields=fields)
+            return result
+
         if recipe not in SUPPORTED_RECIPES:
-            return failed_result(None, "invalid_args", f"Unsupported browser recipe: {recipe}")
+            return finish(failed_result(None, "invalid_args", f"Unsupported browser recipe: {recipe}"))
         if recipe == "custom_select":
             if not option_text:
-                return failed_result(None, "invalid_args", "option_text is required for custom_select.")
-            return self._custom_select(
-                driver,
-                target=target,
-                option_text=option_text,
-                timeout=timeout,
-                max_results=max_results,
-                switch_tab_id=switch_tab_id,
+                return finish(failed_result(None, "invalid_args", "option_text is required for custom_select."))
+            return finish(
+                self._custom_select(
+                    driver,
+                    target=target,
+                    option_text=option_text,
+                    timeout=timeout,
+                    max_results=max_results,
+                    switch_tab_id=switch_tab_id,
+                )
             )
         if recipe == "layer_select":
             if not option_text:
-                return failed_result(None, "invalid_args", "option_text is required for layer_select.")
-            return self._layer_select(
+                return finish(failed_result(None, "invalid_args", "option_text is required for layer_select."))
+            return finish(
+                self._layer_select(
+                    driver,
+                    target=target,
+                    option_text=option_text,
+                    confirm_text=confirm_text,
+                    timeout=timeout,
+                    max_results=max_results,
+                    switch_tab_id=switch_tab_id,
+                )
+            )
+        if recipe == "table_locate":
+            return finish(self._table_locate(driver, table=table, max_results=max_results, switch_tab_id=switch_tab_id))
+        return finish(
+            self._component_wait(
                 driver,
+                condition=condition or "",
                 target=target,
-                option_text=option_text,
-                confirm_text=confirm_text,
                 timeout=timeout,
                 max_results=max_results,
                 switch_tab_id=switch_tab_id,
             )
-        if recipe == "table_locate":
-            return self._table_locate(driver, table=table, max_results=max_results, switch_tab_id=switch_tab_id)
-        return self._component_wait(
-            driver,
-            condition=condition or "",
-            target=target,
-            timeout=timeout,
-            max_results=max_results,
-            switch_tab_id=switch_tab_id,
         )
