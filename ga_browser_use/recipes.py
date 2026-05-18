@@ -85,6 +85,15 @@ class BrowserRecipeRunner:
         return fallback if layer and layer != "main" else None
 
     @staticmethod
+    def _match_element_value(match: dict[str, Any] | None, key: str) -> Any:
+        if not isinstance(match, dict):
+            return None
+        if key in match:
+            return match.get(key)
+        element = match.get("element")
+        return element.get(key) if isinstance(element, dict) else None
+
+    @staticmethod
     def _recipe_retry_args(
         recipe: str,
         *,
@@ -220,15 +229,20 @@ class BrowserRecipeRunner:
         target = target or {}
         index = self._target_index(target)
         if index is not None:
+            synthetic_element = {"index": index}
+            for key in ("frame_path", "layer"):
+                if key in target:
+                    synthetic_element[key] = target[key]
             return (
-                {"status": "success", "matches": [{"index": index, "element": {"index": index}}], "ambiguous": False},
-                {"index": index},
+                {"status": "success", "matches": [{"index": index, "element": synthetic_element}], "ambiguous": False},
+                {"index": index, "element": synthetic_element},
             )
         result = self.layer.find(
             driver,
             query=target.get("query") or kwargs.pop("query", None),
             max_results=kwargs.pop("max_results", 5),
             **self._tab_kwargs(switch_tab_id),
+            **{key: target[key] for key in ("frame_path", "layer") if key in target and key not in kwargs},
             **kwargs,
         )
         if result.get("status") != "success":
@@ -321,6 +335,7 @@ class BrowserRecipeRunner:
         steps: list[dict[str, Any]],
         require_overlay_closed: bool,
         switch_tab_id: str | None,
+        trigger_frame_path: Any = None,
     ) -> dict[str, Any] | None:
         state = self.layer.get_state(driver, max_elements=120, **self._tab_kwargs(switch_tab_id))
         steps.append({"tool": "browser_state", "status": state.get("status")})
@@ -331,10 +346,13 @@ class BrowserRecipeRunner:
         target_match: dict[str, Any] | None = None
         has_query_target = bool(str(target.get("query") or "").strip())
         if has_query_target:
+            verify_target = dict(target)
+            if trigger_frame_path is not None and "frame_path" not in verify_target:
+                verify_target["frame_path"] = trigger_frame_path
             target_find, target_match = self._find_one(
                 driver,
                 recipe=recipe,
-                target=target,
+                target=verify_target,
                 max_results=max_results,
                 recovery_args=recovery_args,
                 switch_tab_id=switch_tab_id,
@@ -359,10 +377,13 @@ class BrowserRecipeRunner:
         if not require_overlay_closed:
             return None
 
+        option_target: dict[str, Any] = {"query": option_text, "layer": "dropdown"}
+        if trigger_frame_path is not None:
+            option_target["frame_path"] = trigger_frame_path
         option_find, option = self._find_one(
             driver,
             recipe=recipe,
-            target={"query": option_text},
+            target=option_target,
             max_results=max_results,
             recovery_args=recovery_args,
             switch_tab_id=switch_tab_id,
@@ -424,6 +445,7 @@ class BrowserRecipeRunner:
             return self._with_steps(trigger_find, steps)
 
         trigger_index = trigger["index"]
+        trigger_frame_path = self._match_element_value(trigger, "frame_path")
         click_trigger = self.layer.run_action(
             driver,
             action="click",
@@ -439,6 +461,9 @@ class BrowserRecipeRunner:
         state = self.layer.get_state(driver, max_elements=120, **self._tab_kwargs(switch_tab_id))
         steps.append({"tool": "browser_state", "status": state.get("status")})
 
+        option_find_kwargs: dict[str, Any] = {"layer": "dropdown"}
+        if trigger_frame_path is not None:
+            option_find_kwargs["frame_path"] = trigger_frame_path
         option_find, option = self._find_one(
             driver,
             recipe="custom_select",
@@ -446,10 +471,46 @@ class BrowserRecipeRunner:
             max_results=max_results,
             recovery_args=recovery_args,
             switch_tab_id=switch_tab_id,
+            **option_find_kwargs,
         )
         option = self._prefer_overlay_match(option_find, option)
         steps.append({"tool": "browser_find", **option_find})
         if not option:
+            if option_find.get("status") != "success" and option_find.get("stage") == "target_not_found":
+                next_target: dict[str, Any] = {"query": option_text, "layer": "dropdown"}
+                if trigger_frame_path is not None:
+                    next_target["frame_path"] = trigger_frame_path
+                next_args: dict[str, Any] = {
+                    "recipe": "component_wait",
+                    "condition": "options_visible",
+                    "target": next_target,
+                    "timeout": timeout,
+                    "max_results": max_results,
+                }
+                if switch_tab_id:
+                    next_args["switch_tab_id"] = switch_tab_id
+                follow_up_args = self._recipe_retry_args(
+                    "custom_select",
+                    target=target,
+                    option_text=option_text,
+                    timeout=timeout,
+                    max_results=max_results,
+                    switch_tab_id=switch_tab_id,
+                )
+                option_find["recipe"] = "custom_select"
+                option_find["recovery"] = {
+                    "code": "use_query_component_wait",
+                    "message": "The trigger opened but no overlay option matched yet. Wait for dropdown options, then retry custom_select with the same target and option_text.",
+                    "stop_retry": False,
+                    "next_tool": "browser_recipe",
+                    "next_args": next_args,
+                }
+                if follow_up_args:
+                    option_find["recovery"]["follow_up"] = {
+                        "next_tool": "browser_recipe",
+                        "next_args": follow_up_args,
+                    }
+                return self._with_steps(option_find, steps)
             if option_find.get("status") == "success":
                 option_find = self._overlay_target_not_found(
                     "custom_select",
@@ -482,6 +543,7 @@ class BrowserRecipeRunner:
             steps=steps,
             require_overlay_closed=require_overlay_closed,
             switch_tab_id=switch_tab_id,
+            trigger_frame_path=trigger_frame_path,
         )
         if verification:
             return verification

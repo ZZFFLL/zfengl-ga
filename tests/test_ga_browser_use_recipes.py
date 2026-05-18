@@ -82,7 +82,7 @@ def test_custom_select_rejects_invalid_index_before_any_find():
     assert layer.calls == []
 
 
-def test_custom_select_option_search_does_not_hard_filter_popover():
+def test_custom_select_option_search_uses_dropdown_layer():
     layer = FakeLayer()
     runner = BrowserRecipeRunner(layer)
 
@@ -90,7 +90,7 @@ def test_custom_select_option_search_does_not_hard_filter_popover():
 
     assert result["status"] == "success"
     assert layer.calls[3][0] == "find"
-    assert "layer" not in layer.calls[3][1]
+    assert layer.calls[3][1]["layer"] == "dropdown"
 
 
 def test_custom_select_query_target_keeps_trigger_lookup_bounded():
@@ -104,6 +104,185 @@ def test_custom_select_query_target_keeps_trigger_lookup_bounded():
     assert layer.calls[0][1]["query"] == "工作类型"
     assert layer.calls[0][1]["control_kind"] == "custom_select"
     assert layer.calls[0][1]["max_results"] == 3
+
+
+def test_custom_select_reuses_trigger_frame_path_when_searching_overlay_option():
+    class Layer:
+        def __init__(self):
+            self.calls = []
+
+        def find(self, driver, **kwargs):
+            self.calls.append(("find", kwargs))
+            find_count = sum(1 for call in self.calls if call[0] == "find")
+            if find_count == 1:
+                return {
+                    "status": "success",
+                    "matches": [{"index": 4, "element": {"index": 4, "frame_path": [0, 1], "layer": "main"}}],
+                    "ambiguous": False,
+                }
+            if find_count == 2:
+                return {
+                    "status": "success",
+                    "matches": [
+                        {
+                            "index": 8,
+                            "element": {"index": 8, "frame_path": [0, 1], "layer": "dropdown", "text": "否"},
+                        }
+                    ],
+                    "ambiguous": False,
+                }
+            return {
+                "status": "success",
+                "matches": [{"index": 4, "element": {"index": 4, "frame_path": [0, 1], "layer": "main", "value": "否"}}],
+                "ambiguous": False,
+            }
+
+        def run_action(self, driver, **kwargs):
+            self.calls.append(("action", kwargs))
+            return {"status": "success", "action": kwargs["action"], "index": kwargs["index"], "page_changed": True}
+
+        def get_state(self, driver, **kwargs):
+            self.calls.append(("state", kwargs))
+            return {"status": "success", "elements": []}
+
+    layer = Layer()
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="custom_select", target={"query": "是否休假"}, option_text="否")
+
+    assert result["status"] == "success"
+    option_find_call = [item for item in layer.calls if item[0] == "find"][1][1]
+    assert option_find_call["frame_path"] == [0, 1]
+    assert option_find_call["layer"] == "dropdown"
+
+
+def test_custom_select_query_verification_reuses_trigger_frame_path():
+    class Layer:
+        def __init__(self):
+            self.calls = []
+
+        def find(self, driver, **kwargs):
+            self.calls.append(("find", kwargs))
+            find_count = sum(1 for call in self.calls if call[0] == "find")
+            if find_count == 1:
+                return {
+                    "status": "success",
+                    "matches": [{"index": 4, "element": {"index": 4, "frame_path": [0], "layer": "main"}}],
+                    "ambiguous": False,
+                }
+            if find_count == 2:
+                return {
+                    "status": "success",
+                    "matches": [{"index": 8, "element": {"index": 8, "frame_path": [0], "layer": "dropdown", "text": "否"}}],
+                    "ambiguous": False,
+                }
+            return {
+                "status": "success",
+                "matches": [{"index": 4, "element": {"index": 4, "frame_path": [0], "layer": "main", "value": "否"}}],
+                "ambiguous": False,
+            }
+
+        def run_action(self, driver, **kwargs):
+            self.calls.append(("action", kwargs))
+            return {"status": "success", "action": kwargs["action"], "index": kwargs["index"], "page_changed": True}
+
+        def get_state(self, driver, **kwargs):
+            self.calls.append(("state", kwargs))
+            return {"status": "success", "elements": []}
+
+    layer = Layer()
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="custom_select", target={"query": "是否休假"}, option_text="否")
+
+    assert result["status"] == "success"
+    verification_find_call = [item for item in layer.calls if item[0] == "find"][2][1]
+    assert verification_find_call["query"] == "是否休假"
+    assert verification_find_call["frame_path"] == [0]
+    overlay_closed_find_call = [item for item in layer.calls if item[0] == "find"][3][1]
+    assert overlay_closed_find_call["query"] == "否"
+    assert overlay_closed_find_call["frame_path"] == [0]
+    assert overlay_closed_find_call["layer"] == "dropdown"
+
+
+def test_custom_select_target_not_found_after_open_returns_component_wait_recovery():
+    class Layer:
+        def __init__(self):
+            self.calls = []
+
+        def find(self, driver, **kwargs):
+            self.calls.append(("find", kwargs))
+            find_count = sum(1 for call in self.calls if call[0] == "find")
+            if find_count == 1:
+                return {
+                    "status": "success",
+                    "matches": [{"index": 4, "element": {"index": 4, "frame_path": [0], "layer": "main"}}],
+                    "ambiguous": False,
+                }
+            return {"status": "failed", "stage": "target_not_found", "recovery": {"code": "refresh_state_then_find"}}
+
+        def run_action(self, driver, **kwargs):
+            self.calls.append(("action", kwargs))
+            return {"status": "success", "action": "click", "index": kwargs["index"], "page_changed": True}
+
+        def get_state(self, driver, **kwargs):
+            self.calls.append(("state", kwargs))
+            return {"status": "success", "elements": []}
+
+    layer = Layer()
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="custom_select", target={"query": "是否休假"}, option_text="否")
+
+    assert result["status"] == "failed"
+    assert result["recipe"] == "custom_select"
+    assert result["recovery"]["code"] == "use_query_component_wait"
+    assert result["recovery"]["next_tool"] == "browser_recipe"
+    assert result["recovery"]["next_args"] == {
+        "recipe": "component_wait",
+        "condition": "options_visible",
+        "target": {"query": "否", "frame_path": [0], "layer": "dropdown"},
+        "timeout": 10,
+        "max_results": 5,
+    }
+    assert result["recovery"]["follow_up"] == {
+        "next_tool": "browser_recipe",
+        "next_args": {
+            "recipe": "custom_select",
+            "target": {"query": "是否休假"},
+            "option_text": "否",
+            "timeout": 10,
+            "max_results": 5,
+        },
+    }
+
+
+def test_custom_select_index_target_preserves_frame_path_for_option_recovery():
+    class Layer:
+        def __init__(self):
+            self.calls = []
+
+        def find(self, driver, **kwargs):
+            self.calls.append(("find", kwargs))
+            return {"status": "failed", "stage": "target_not_found", "recovery": {"code": "refresh_state_then_find"}}
+
+        def run_action(self, driver, **kwargs):
+            self.calls.append(("action", kwargs))
+            return {"status": "success", "action": "click", "index": kwargs["index"], "page_changed": True}
+
+        def get_state(self, driver, **kwargs):
+            self.calls.append(("state", kwargs))
+            return {"status": "success", "elements": []}
+
+    layer = Layer()
+    runner = BrowserRecipeRunner(layer)
+
+    result = runner.run(None, recipe="custom_select", target={"index": 5, "frame_path": [0]}, option_text="否")
+
+    assert result["status"] == "failed"
+    option_find_call = [item for item in layer.calls if item[0] == "find"][0][1]
+    assert option_find_call["frame_path"] == [0]
+    assert result["recovery"]["next_args"]["target"] == {"query": "否", "frame_path": [0], "layer": "dropdown"}
 
 
 def test_custom_select_refuses_main_layer_singleton_option_after_open():
