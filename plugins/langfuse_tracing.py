@@ -33,7 +33,7 @@ if _lf:
         return None
 
     _orig_log = llmcore._write_llm_log
-    def _patched_log(label, content):
+    def _patched_log(label, content, log_path=None):
         try:
             model_name = getattr(_tls, 'model', None) or _get_model_from_config()
             if label == 'Prompt':
@@ -46,7 +46,7 @@ if _lf:
                     model=model_name)
                 _tls.gen.end(); _tls.gen = None
         except Exception: pass
-        return _orig_log(label, content)
+        return _orig_log(label, content, log_path)
     llmcore._write_llm_log = _patched_log
 
     def _extract_usage(buf):

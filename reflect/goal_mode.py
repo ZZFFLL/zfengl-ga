@@ -5,6 +5,7 @@ import os, json, time
 
 INTERVAL = 3   # check间隔短，agent跑完立刻再检查
 ONCE = False
+GOAL_MODE_DEFAULT_MAX_TURNS = 100
 
 _dir = os.path.dirname(os.path.abspath(__file__))
 STATE_FILE = ''
@@ -66,7 +67,7 @@ def check():
     elapsed = time.time() - start_time
     remaining = budget_sec - elapsed
     turn = state.get('turns_used', 0) + 1
-    max_turns = state.get('max_turns', 50)  # 防空转上限
+    max_turns = state.get('max_turns', GOAL_MODE_DEFAULT_MAX_TURNS)  # 防空转上限
     
     # 预算耗尽或轮次上限
     if remaining <= 0 or turn > max_turns:

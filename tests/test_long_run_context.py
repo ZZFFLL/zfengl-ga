@@ -25,15 +25,19 @@ class LongRunContextTests(unittest.TestCase):
             {},
         )
 
-    def test_normal_mode_long_run_ask_user_pressure_moves_to_turn_70(self):
+    def test_normal_mode_long_run_ask_user_pressure_starts_at_turn_120_then_repeats_every_60(self):
         handler = self.make_handler()
 
-        prompt_65 = self.callback_prompt(handler, 65)
         prompt_70 = self.callback_prompt(handler, 70)
+        prompt_120 = self.callback_prompt(handler, 120)
+        prompt_121 = self.callback_prompt(handler, 121)
+        prompt_180 = self.callback_prompt(handler, 180)
 
-        self.assertNotIn("必须总结情况进行ask_user", prompt_65)
-        self.assertIn("已连续执行第 70 轮", prompt_70)
-        self.assertIn("必须总结情况进行ask_user", prompt_70)
+        self.assertNotIn("必须总结情况进行ask_user", prompt_70)
+        self.assertIn("已连续执行第 120 轮", prompt_120)
+        self.assertIn("必须总结情况进行ask_user", prompt_120)
+        self.assertNotIn("必须总结情况进行ask_user", prompt_121)
+        self.assertIn("已连续执行第 180 轮", prompt_180)
 
     def test_normal_mode_max_turns_is_240(self):
         self.assertEqual(agentmain.NORMAL_RUNNER_MAX_TURNS, 240)
@@ -47,17 +51,29 @@ class LongRunContextTests(unittest.TestCase):
         self.assertIn("用户补充的关键约束", prompt)
         self.assertIn("已验证结论", prompt)
 
-    def test_plan_mode_max_turns_and_ask_user_pressure_move_up(self):
+    def test_normal_mode_global_memory_refresh_is_not_masked_by_stall_warning(self):
+        handler = self.make_handler()
+
+        prompt = self.callback_prompt(handler, 20)
+
+        self.assertIn("[Memory]", prompt)
+        self.assertIn("禁止无效重试", prompt)
+
+    def test_plan_mode_max_turns_and_ask_user_pressure_starts_at_180_then_repeats_every_90(self):
         handler = self.make_handler()
         handler.enter_plan_mode("./temp/plan.md")
 
-        prompt_90 = self.callback_prompt(handler, 90, plan=True)
         prompt_100 = self.callback_prompt(handler, 100, plan=True)
+        prompt_180 = self.callback_prompt(handler, 180, plan=True)
+        prompt_181 = self.callback_prompt(handler, 181, plan=True)
+        prompt_270 = self.callback_prompt(handler, 270, plan=True)
 
         self.assertEqual(handler.max_turns, 480)
-        self.assertNotIn("Plan模式已运行 90 轮，已达上限", prompt_90)
-        self.assertIn("Plan模式已运行 100 轮", prompt_100)
-        self.assertIn("必须 ask_user 汇报进度并确认是否继续", prompt_100)
+        self.assertNotIn("必须 ask_user 汇报进度并确认是否继续", prompt_100)
+        self.assertIn("Plan模式已运行 180 轮", prompt_180)
+        self.assertIn("必须 ask_user 汇报进度并确认是否继续", prompt_180)
+        self.assertNotIn("必须 ask_user 汇报进度并确认是否继续", prompt_181)
+        self.assertIn("Plan模式已运行 270 轮", prompt_270)
 
     def test_plan_mode_checkpoint_every_30_turns(self):
         handler = self.make_handler()
@@ -69,15 +85,28 @@ class LongRunContextTests(unittest.TestCase):
         self.assertIn("计划文件之外的用户关键约束", prompt)
         self.assertIn("已验证执行状态", prompt)
 
-    def test_working_memory_keeps_latest_60_lines_directly(self):
-        history = [f"[Agent] step {i}" for i in range(70)]
+    def test_normal_working_memory_keeps_latest_80_lines_directly(self):
+        history = [f"[Agent] step {i}" for i in range(90)]
         handler = GenericAgentHandler(SimpleNamespace(verbose=False, task_dir=None), history, "./temp")
         handler.current_turn = 1
 
         prompt = handler._get_anchor_prompt()
 
         self.assertIn("[Agent] step 10", prompt)
-        self.assertIn("[Agent] step 69", prompt)
+        self.assertIn("[Agent] step 89", prompt)
+        self.assertIn("<earlier_context>", prompt)
+        self.assertNotIn("[Agent] step 9\n[Agent] step 10", prompt)
+
+    def test_plan_working_memory_keeps_latest_120_lines_directly(self):
+        history = [f"[Agent] step {i}" for i in range(130)]
+        handler = GenericAgentHandler(SimpleNamespace(verbose=False, task_dir=None), history, "./temp")
+        handler.current_turn = 1
+        handler.working["in_plan_mode"] = "./temp/plan.md"
+
+        prompt = handler._get_anchor_prompt()
+
+        self.assertIn("[Agent] step 10", prompt)
+        self.assertIn("[Agent] step 129", prompt)
         self.assertIn("<earlier_context>", prompt)
         self.assertNotIn("[Agent] step 9\n[Agent] step 10", prompt)
 
