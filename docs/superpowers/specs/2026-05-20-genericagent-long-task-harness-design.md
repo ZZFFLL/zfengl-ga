@@ -18,7 +18,6 @@ The harness should also reduce repeated empty loops, false completion claims, po
 - Do not redesign Plan Mode, Goal Mode, Reflect Mode, or Goal Hive in this pass.
 - Do not add a WebUI surface in this pass.
 - Do not persist raw chain-of-thought.
-- Do not make MemPalace a required dependency.
 - Do not change GA's current tool schema in the first pass unless a test proves it is necessary.
 
 ## Current GA Context Model
@@ -336,7 +335,7 @@ Minimum tests:
 Existing regression tests to keep running:
 
 ```bash
-python -m pytest tests/test_long_run_context.py tests/test_goal_mode.py tests/test_webui_server.py -q
+python -m pytest tests/test_long_run_context.py tests/test_goal_mode.py -q
 ```
 
 New focused tests:
@@ -389,4 +388,4 @@ The design is successful when:
 
 Implement only Phase 1 and the minimal pieces of Phase 2 needed for completion status.
 
-Do not implement UI, multi-agent orchestration changes, MemPalace sync, or external framework adapters in the first implementation.
+Do not implement UI, multi-agent orchestration changes, or external framework adapters in the first implementation.
