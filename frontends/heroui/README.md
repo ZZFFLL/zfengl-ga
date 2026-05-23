@@ -2,6 +2,14 @@
 
 Stage 1 frontend for GenericAgent.
 
+One-click start on Windows:
+
+```cmd
+start.cmd
+```
+
+This starts the bridge first, waits 2 seconds, then starts the Vite UI.
+
 Run the bridge:
 
 ```bash
