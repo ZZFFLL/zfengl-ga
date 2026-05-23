@@ -1,0 +1,148 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+
+const app = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+const api = readFileSync(new URL("./api.ts", import.meta.url), "utf8");
+const state = readFileSync(new URL("./state.ts", import.meta.url), "utf8");
+const components = [
+  "components/ChatSurface.tsx",
+  "components/Composer.tsx",
+  "components/ConversationRail.tsx",
+]
+  .map((path) => readFileSync(new URL(path, import.meta.url), "utf8"))
+  .join("\n");
+const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+const source = `${app}\n${api}\n${state}\n${components}`;
+
+test("webui uses HeroUI components for the agent workbench shell", () => {
+  assert.match(source, /from "@heroui\/react"/);
+  assert.match(source, /Tooltip/);
+  assert.match(source, /from "react-markdown"/);
+  assert.match(source, /from "remark-gfm"/);
+  assert.match(source, /新建聊天/);
+  assert.match(source, /搜索/);
+  assert.match(source, /最近/);
+  assert.match(source, /暂无会话/);
+  assert.match(source, /批量删除会话/);
+  assert.match(source, /全选所有会话/);
+  assert.match(source, /取消全选会话/);
+  assert.match(source, /selectedIds\.length === sessions\.length/);
+  assert.match(source, /删除 \{selectedIds\.length\} 个/);
+  assert.match(source, /正在理解请求/);
+  assert.match(source, /正在处理/);
+  assert.match(source, /本轮执行完成/);
+  assert.match(source, /tool\.start/);
+  assert.match(source, /tool\.end/);
+  assert.match(source, /timeline\.step/);
+  assert.match(source, /artifact\.created/);
+  assert.match(source, /ExecutionStep/);
+  assert.match(source, /tool_name/);
+  assert.match(source, /tool_label/);
+  assert.match(source, /input/);
+  assert.match(source, /output/);
+  assert.match(source, /error/);
+  assert.match(source, /elapsed_ms/);
+  assert.match(source, /timeline-step-duration/);
+  assert.match(source, /\/session\/new/);
+  assert.match(source, /answer\.delta/);
+  assert.match(source, /answer\.final/);
+  assert.match(source, /responses/);
+  assert.match(source, /新会话/);
+  assert.match(source, /deleteSessions/);
+  assert.match(source, /复制回答/);
+  assert.match(source, /重新生成回答/);
+  assert.match(source, /正在加载会话/);
+  assert.match(source, /消息导航/);
+  assert.match(source, /跳到上一条用户消息/);
+  assert.match(source, /跳到下一条用户消息/);
+  assert.match(source, /回到最新消息/);
+  assert.match(source, /Tooltip\.Content/);
+  assert.match(source, /Tooltip\.Arrow/);
+  assert.match(source, /placement="left"/);
+  assert.match(source, /currentTop \+ 80/);
+  assert.match(source, /data-user-message-anchor/);
+  assert.match(source, /scrollToUserMessage\("previous"\)/);
+  assert.match(source, /scrollToUserMessage\("next"\)/);
+  assert.match(source, /appendFinalAssistantMessage/);
+  assert.match(app, /applyStreamEvent\(activeTurnStateRef\.current \?\? createInitialTurnState\(turnId\), event\)/);
+  assert.match(app, /setActiveTurn\(nextTurn\)/);
+  assert.match(app, /activeTurn\?\.status === "streaming" \? "正在流式输出" : "已就绪"/);
+  assert.doesNotMatch(app, /activeTurn \? "正在流式输出" : "已就绪"/);
+  assert.match(components, /scrollTo\(\{ top: scrollElement\.scrollHeight/);
+  assert.doesNotMatch(source, /Library/);
+  assert.doesNotMatch(source, /Explore/);
+  assert.doesNotMatch(source, /New Chat/);
+  assert.doesNotMatch(source, /New chat/);
+  assert.doesNotMatch(source, /分享/);
+  assert.doesNotMatch(source, /modelLabel="GPT-5\.4"/);
+  assert.doesNotMatch(source, /晚餐快手菜建议/);
+  assert.doesNotMatch(source, /Understanding request/);
+  assert.doesNotMatch(source, /Working/);
+  assert.doesNotMatch(source, /Unknown error/);
+  assert.doesNotMatch(source, /回答有帮助/);
+  assert.doesNotMatch(source, /回答没有帮助/);
+  assert.doesNotMatch(source, /更多回答操作/);
+  assert.doesNotMatch(source, /任务已完成，您可随时发起新请求。/);
+  assert.doesNotMatch(source, /<span>回到最新消息<\/span>/);
+  assert.doesNotMatch(state, /title:\s*"任务已完成"/);
+  assert.doesNotMatch(source, /ThumbsUp/);
+  assert.doesNotMatch(source, /ThumbsDown/);
+  assert.doesNotMatch(source, /Ellipsis/);
+  assert.doesNotMatch(app, /refreshMessagesAfterTurn/);
+});
+
+test("webui keeps the screenshot-style chat layout contract", () => {
+  assert.match(styles, /\.chat-workbench-shell/);
+  assert.match(styles, /\.chat-workbench-shell\.is-sidebar-collapsed/);
+  assert.match(styles, /\.workspace-sidebar/);
+  assert.match(styles, /\.conversation-header/);
+  assert.match(styles, /\.conversation-scroll/);
+  assert.match(styles, /\.message-row--user/);
+  assert.match(styles, /\.composer-card/);
+  assert.match(styles, /\.recent-item/);
+  assert.match(styles, /\.batch-delete-bar/);
+  assert.match(styles, /width: 100%/);
+  assert.match(styles, /transition: grid-template-columns 220ms/);
+  assert.match(styles, /grid-template-columns: 240px minmax\(0, 1fr\)/);
+  assert.match(styles, /grid-template-rows: 64px minmax\(0, 1fr\) auto/);
+  assert.match(styles, /\.conversation-main\s*{[^}]*grid-column: 2/s);
+  assert.match(styles, /\.conversation-main\s*{[^}]*height: 100vh/s);
+  assert.match(styles, /\.conversation-scroll\s*{[^}]*overflow-y: auto/s);
+  assert.match(styles, /\.conversation-scroll::\-webkit-scrollbar/);
+  assert.match(styles, /scrollbar-width: thin/);
+  assert.match(styles, /\.message-scroll-nav/);
+  assert.match(styles, /\.message-scroll-nav-button/);
+  assert.match(styles, /\.message-scroll-nav-latest/);
+  assert.match(styles, /\.message-scroll-nav\s*{[^}]*position: absolute/s);
+  assert.match(styles, /\.message-scroll-nav\s*{[^}]*flex-direction: column/s);
+  assert.match(styles, /width: min\(714px, 100%\)/);
+  assert.match(styles, /width: min\(714px, calc\(100% - 32px\)\)/);
+  assert.match(styles, /\.composer-input\s*{[^}]*min-height: 112px/s);
+  assert.match(styles, /\.message-bubble\s*{[^}]*font-size: 16px/s);
+  assert.match(styles, /\.message-bubble :where\(pre\)/);
+  assert.match(styles, /\.conversation-loading/);
+  assert.match(styles, /\.turn-timeline/);
+  assert.match(styles, /\.timeline-step-card/);
+  assert.match(styles, /\.thought-panel/);
+  assert.match(styles, /\.artifact-card/);
+  assert.match(styles, /\.tool-card/);
+  assert.match(styles, /\.timeline-tool-name/);
+  assert.match(styles, /\.timeline-step-duration/);
+  assert.match(styles, /\.timeline-step--tape/);
+  assert.match(styles, /\.timeline-step--agent/);
+  assert.match(styles, /\.recent-item\s*{[^}]*font-size: 14px/s);
+  assert.doesNotMatch(styles, /\.turn-complete/);
+  assert.doesNotMatch(styles, /\.share-button/);
+  assert.doesNotMatch(styles, /\.model-button/);
+});
+
+test("deleting inactive sessions does not interrupt the active turn stream", () => {
+  const deleteStart = app.indexOf("async function handleDeleteSessions");
+  const deleteEnd = app.indexOf("const activeSession", deleteStart);
+  const deleteSource = app.slice(deleteStart, deleteEnd);
+
+  assert.ok(deleteSource.indexOf("const activeWasDeleted") < deleteSource.indexOf("closeActiveSource"));
+  assert.match(deleteSource, /if \(activeWasDeleted\) \{[\s\S]*closeActiveSource\(activeSourceRef\.current\)/);
+  assert.match(deleteSource, /setActiveTurn\(\(current\) => \(activeWasDeleted \? null : current\)\)/);
+});
