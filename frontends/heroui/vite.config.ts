@@ -12,6 +12,7 @@ export default defineConfig(({ mode }) => {
       proxy: {
         "/status": bridgeTarget,
         "/config": bridgeTarget,
+        "/model-profile": bridgeTarget,
         "/model-profiles": bridgeTarget,
         "/sessions": bridgeTarget,
         "/session": bridgeTarget,

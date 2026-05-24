@@ -12,6 +12,7 @@ HTTP API:
   GET    /config
   POST   /config
   GET    /model-profiles
+  POST   /model-profile
   GET    /sessions
   POST   /session/new
   GET    /session/{sid}
@@ -84,6 +85,7 @@ class AgentManager:
         self.lock = threading.RLock()
         self.ga_root = str(DEFAULT_GA_ROOT)
         self.config: Dict[str, Any] = {}
+        self.selected_llm_no: Optional[int] = None
         self.sessions: Dict[str, Session] = {}
         self.active_session_id: Optional[str] = None
         self.deleted_session_ids: Set[str] = set()
@@ -264,6 +266,8 @@ class AgentManager:
             agentmain = importlib.import_module("agentmain")
             GA = getattr(agentmain, "GenericAgent")
             agent = GA()
+            if self.selected_llm_no is not None and hasattr(agent, "next_llm"):
+                agent.next_llm(self.selected_llm_no)
             agent.inc_out = True
             agent.verbose = True
             threading.Thread(target=agent.run, daemon=True, name=f"GA-{sess.id}").start()
@@ -280,11 +284,11 @@ class AgentManager:
             if hasattr(agent, "load_llm_sessions"):
                 agent.load_llm_sessions()
             clients = getattr(agent, "llmclients", [])
-            active_no = getattr(agent, "llm_no", None)
+            active_no = self.selected_llm_no if self.selected_llm_no is not None else getattr(agent, "llm_no", None)
             if clients and hasattr(agent, "get_llm_name"):
                 return [
                     {
-                        "id": i,
+                        "id": str(i),
                         "name": agent.get_llm_name(client),
                         "model": agent.get_llm_name(client, model=True),
                         "active": i == active_no,
@@ -292,10 +296,35 @@ class AgentManager:
                     for i, client in enumerate(clients)
                 ]
             if hasattr(agent, "list_llms"):
-                return [{"id": i, "name": name, "active": active} for i, name, active in agent.list_llms()]
+                selected = self.selected_llm_no
+                return [{"id": str(i), "name": name, "active": i == selected if selected is not None else active} for i, name, active in agent.list_llms()]
         except Exception as e:
             print(f"get model profiles failed: {e}", file=sys.stderr)
         return []
+
+    def switch_model_profile(self, profile_id: Any, session_id: Optional[str] = None) -> dict:
+        try:
+            next_llm_no = int(str(profile_id))
+        except (TypeError, ValueError):
+            raise web.HTTPBadRequest(text=json.dumps({"error": "invalid profile id"}, ensure_ascii=False), content_type="application/json")
+
+        profiles = self.list_model_profiles()
+        if not any(str(profile.get("id")) == str(next_llm_no) for profile in profiles):
+            raise web.HTTPBadRequest(text=json.dumps({"error": f"profile not found: {profile_id}"}, ensure_ascii=False), content_type="application/json")
+
+        with self.lock:
+            sess = self.sessions.get(session_id) if session_id else None
+            if session_id and not sess:
+                raise web.HTTPNotFound(text=json.dumps({"error": f"session not found: {session_id}"}, ensure_ascii=False), content_type="application/json")
+            if sess and sess.status == "running":
+                raise web.HTTPConflict(text=json.dumps({"error": "session is running; switch after the current turn finishes"}, ensure_ascii=False), content_type="application/json")
+
+            self.selected_llm_no = next_llm_no
+            self.config["activeProfileId"] = str(next_llm_no)
+            if sess and sess.agent and hasattr(sess.agent, "next_llm"):
+                sess.agent.next_llm(next_llm_no)
+
+        return {"ok": True, "activeProfileId": str(next_llm_no), "profiles": self.list_model_profiles()}
 
     def snapshot(self, sess: Session, include_messages: bool = True) -> dict:
         out = {
@@ -745,7 +774,14 @@ async def save_config_handler(request):
 
 
 async def model_profiles_handler(request):
-    return json_ok({"profiles": manager.list_model_profiles()})
+    return json_ok({"profiles": manager.list_model_profiles(), "activeProfileId": manager.config.get("activeProfileId")})
+
+
+async def switch_model_profile_handler(request):
+    data = await read_json(request)
+    profile_id = data.get("profileId", data.get("id"))
+    session_id = data.get("sessionId")
+    return json_ok(manager.switch_model_profile(profile_id, session_id if isinstance(session_id, str) and session_id else None))
 
 
 async def list_sessions_handler(request):
@@ -824,6 +860,7 @@ def create_app():
     app.router.add_get("/config", get_config_handler)
     app.router.add_post("/config", save_config_handler)
     app.router.add_get("/model-profiles", model_profiles_handler)
+    app.router.add_post("/model-profile", switch_model_profile_handler)
     app.router.add_get("/sessions", list_sessions_handler)
     app.router.add_post("/session/new", new_session_handler)
     app.router.add_get("/session/{sid}", get_session_handler)

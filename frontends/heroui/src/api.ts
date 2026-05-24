@@ -1,4 +1,5 @@
 import type { ExecutionStep, ImageAttachment, MessageRecord, SessionRecord, SessionTranscript, StreamEvent } from "./types";
+import { parseGenericAgentOutputSteps } from "./ga_output_parser";
 
 const API_BASE = normalizeBase(import.meta.env.VITE_GA_HEROUI_API_TARGET ?? "");
 
@@ -47,6 +48,7 @@ type BridgeStatusResponse = BridgeStatus;
 
 type BridgeProfilesResponse = {
   profiles?: ModelProfile[];
+  activeProfileId?: string;
 };
 
 type BridgeMessage = {
@@ -101,6 +103,16 @@ export async function getBridgeConfig(): Promise<BridgeConfig> {
 
 export async function listModelProfiles(): Promise<ModelProfile[]> {
   const response = await fetch(apiUrl("/model-profiles"));
+  const payload = await readJson<BridgeProfilesResponse>(response);
+  return payload.profiles ?? [];
+}
+
+export async function switchModelProfile(profileId: string, sessionId?: string): Promise<ModelProfile[]> {
+  const response = await fetch(apiUrl("/model-profile"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ profileId, sessionId }),
+  });
   const payload = await readJson<BridgeProfilesResponse>(response);
   return payload.profiles ?? [];
 }
@@ -337,24 +349,16 @@ function mapMessageRecord(message: BridgeMessage): MessageRecord {
 
 function mapOutputsToTimeline(messages: MessageRecord[]): ExecutionStep[] {
   return messages.flatMap((message) => {
-    if (!message.outputs?.length) {
-      return [];
-    }
     const responseId = message.response_id || `${message.turn_id || message.created_at}:response`;
-    return message.outputs.map((output, index): ExecutionStep => ({
-      id: `${responseId}:output:${index + 1}`,
-      turn_id: message.turn_id,
-      response_id: message.response_id,
-      kind: "agent",
-      title: `GA 输出 ${index + 1}`,
-      status: "done",
-      summary: summarizeOutput(output),
-      detail: output,
-      tool_name: "GenericAgent.outputs",
-      tool_label: typeof message.ga_turn === "number" ? `GA Turn ${message.ga_turn}` : "GA 输出",
-      output,
-      created_at: message.created_at,
-    }));
+    return (message.outputs ?? []).flatMap((output, index) =>
+      parseGenericAgentOutputSteps(output, {
+        idPrefix: `${responseId}:output:${index + 1}`,
+        turnId: message.turn_id,
+        responseId: message.response_id,
+        createdAt: message.created_at,
+        gaTurn: message.ga_turn,
+      }),
+    );
   });
 }
 
@@ -366,38 +370,23 @@ function emitBridgeOutputs(
   createdAt: string,
   onEvent: (event: StreamEvent) => void,
 ) {
-  if (!message.outputs?.length) {
-    return;
-  }
-  message.outputs.forEach((output, index) => {
-    onEvent({
-      type: "timeline.step",
-      turn_id: turnId,
-      session_id: sessionId,
-      data: {
-        id: `${responseId}:output:${index + 1}`,
+  (message.outputs ?? []).forEach((output, index) => {
+    const steps = parseGenericAgentOutputSteps(output, {
+      idPrefix: `${responseId}:output:${index + 1}`,
+      turnId,
+      responseId,
+      createdAt,
+      gaTurn: message.gaTurn,
+    });
+    steps.forEach((step) => {
+      onEvent({
+        type: "timeline.step",
         turn_id: turnId,
-        response_id: responseId,
-        kind: "agent",
-        title: `GA 输出 ${index + 1}`,
-        status: "done",
-        summary: summarizeOutput(output),
-        detail: output,
-        tool_name: "GenericAgent.outputs",
-        tool_label: typeof message.gaTurn === "number" ? `GA Turn ${message.gaTurn}` : "GA 输出",
-        output,
-        created_at: createdAt,
-      },
+        session_id: sessionId,
+        data: step,
+      });
     });
   });
-}
-
-function summarizeOutput(output: string): string {
-  const firstLine = output.split(/\r?\n/).find((line) => line.trim());
-  if (!firstLine) {
-    return "GenericAgent 输出";
-  }
-  return firstLine.length > 80 ? `${firstLine.slice(0, 77)}...` : firstLine;
 }
 
 async function readJson<T>(response: Response): Promise<T> {

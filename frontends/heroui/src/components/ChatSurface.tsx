@@ -35,6 +35,12 @@ type ChatSurfaceProps = {
   isLoadingMessages: boolean;
 };
 
+type ToolDetailSection = {
+  kind: "input" | "output" | "error" | "detail";
+  label: string;
+  content: string;
+};
+
 export function ChatSurface({ messages, timeline, artifacts, activeTurn, isLoadingMessages }: ChatSurfaceProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const isEmpty = messages.length === 0 && timeline.length === 0 && !activeTurn && !isLoadingMessages;
@@ -283,10 +289,10 @@ function TimelineView({ steps, artifacts }: { steps: ExecutionStep[]; artifacts:
 }
 
 function TimelineStepCard({ step }: { step: ExecutionStep }) {
-  const hasDetail = Boolean(step.detail.trim());
   const icon = readStepIcon(step);
   const statusLabel = readStepStatusLabel(step.status);
-  const detailSections = splitToolDetail(step.detail);
+  const detailSections = step.kind === "thought" ? [] : buildToolDetailSections(step);
+  const hasDetail = detailSections.length > 0 || Boolean(step.detail.trim());
   const elapsedLabel = readElapsedLabel(step.elapsed_ms);
   const showToolLabel = Boolean(step.tool_label && !step.title.includes(step.tool_label));
 
@@ -314,7 +320,7 @@ function TimelineStepCard({ step }: { step: ExecutionStep }) {
               {detailSections.length > 0 ? (
                 <div className="tool-detail-sections">
                   {detailSections.map((section) => (
-                    <section className="tool-detail-section" key={section.label}>
+                    <section className={`tool-detail-section tool-detail-section--${section.kind}`} key={`${section.kind}:${section.label}`}>
                       <strong>{section.label}</strong>
                       <pre>{section.content}</pre>
                     </section>
@@ -421,14 +427,60 @@ function displayArtifactPath(path: string) {
   return path.split(/[\\/]/).pop() || path;
 }
 
-function splitToolDetail(detail: string) {
+function buildToolDetailSections(step: ExecutionStep): ToolDetailSection[] {
+  const sections: ToolDetailSection[] = [];
+  const input = readNonEmptyText(step.input);
+  const output = readNonEmptyText(step.output);
+  const error = readNonEmptyText(step.error);
+
+  if (input) {
+    sections.push({ kind: "input", label: "入参", content: input });
+  }
+  if (output) {
+    sections.push({ kind: "output", label: "结果", content: output });
+  }
+  if (error) {
+    sections.push({ kind: "error", label: "错误", content: error });
+  }
+  if (sections.length > 0) {
+    return sections;
+  }
+
+  const parsedSections = splitToolDetail(step.detail);
+  if (parsedSections.length > 0) {
+    return parsedSections;
+  }
+
+  const detail = readNonEmptyText(step.detail);
+  return detail ? [{ kind: "detail", label: "详情", content: detail }] : [];
+}
+
+function splitToolDetail(detail: string): ToolDetailSection[] {
   return detail
     .split("\n")
     .map((line) => {
       const match = line.match(/^(参数|结果|输出|错误)：([\s\S]*)$/);
-      return match ? { label: match[1], content: match[2] } : null;
+      return match ? { kind: readDetailSectionKind(match[1]), label: match[1], content: match[2] } : null;
     })
-    .filter((section): section is { label: string; content: string } => Boolean(section));
+    .filter((section): section is ToolDetailSection => Boolean(section));
+}
+
+function readDetailSectionKind(label: string): ToolDetailSection["kind"] {
+  if (label === "参数") {
+    return "input";
+  }
+  if (label === "结果" || label === "输出") {
+    return "output";
+  }
+  if (label === "错误") {
+    return "error";
+  }
+  return "detail";
+}
+
+function readNonEmptyText(value?: string) {
+  const text = value?.trim();
+  return text ? text : "";
 }
 
 function readElapsedLabel(elapsedMs?: number) {

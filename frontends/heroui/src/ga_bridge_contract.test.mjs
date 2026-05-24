@@ -28,11 +28,14 @@ test("HeroUI frontend has a dedicated GenericAgent bridge copy", () => {
   assert.match(bridge, /"outputs"/);
   assert.match(bridge, /"model"/);
   assert.match(bridge, /get_llm_name\(client, model=True\)/);
+  assert.match(bridge, /selected_llm_no/);
+  assert.match(bridge, /def switch_model_profile/);
   assert.match(bridge, /def _persist_session_and_message/);
   assert.match(bridge, /persist=False/);
   assert.doesNotMatch(bridge, /self\._persist_message\(sess, user_msg\)/);
   assert.match(bridge, /app\.router\.add_post\("\/session\/new", new_session_handler\)/);
   assert.match(bridge, /app\.router\.add_get\("\/session\/\{sid\}\/messages", messages_handler\)/);
+  assert.match(bridge, /app\.router\.add_post\("\/model-profile", switch_model_profile_handler\)/);
 });
 
 test("HeroUI api adapter speaks the GA bridge polling contract", () => {
@@ -47,13 +50,91 @@ test("HeroUI api adapter speaks the GA bridge polling contract", () => {
   assert.match(api, /answer\.final/);
   assert.match(api, /emitBridgeOutputs/);
   assert.match(api, /type: "timeline\.step"/);
-  assert.match(api, /tool_name: "GenericAgent\.outputs"/);
-  assert.match(api, /tool_label: typeof message\.gaTurn === "number" \? `GA Turn \$\{message\.gaTurn\}` : "GA 输出"/);
+  assert.match(api, /parseGenericAgentOutputSteps/);
+  assert.doesNotMatch(api, /tool_name: "GenericAgent\.outputs"/);
   assert.match(api, /turn_id: message\.turn_id/);
   assert.match(api, /response_id: message\.responseId/);
   assert.match(api, /response_id: message\.responseId \|\| message\.response_id/);
+  assert.match(api, /switchModelProfile/);
+  assert.match(api, /\/model-profile/);
   assert.doesNotMatch(api, /new EventSource/);
   assert.doesNotMatch(api, /\/api\/turns\/\$\{encodeURIComponent\(turnId\)\}\/events/);
+});
+
+test("HeroUI bridge switches model profile for idle sessions and blocks running sessions", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-bridge-"));
+  const dbPath = join(tempDir, "sessions.sqlite3");
+  const script = `
+import importlib.util
+import sys
+import types
+from pathlib import Path
+
+bridge_path = Path(${JSON.stringify(bridgePath)})
+spec = importlib.util.spec_from_file_location("heroui_bridge_under_test_profile_switch", bridge_path)
+bridge = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bridge
+spec.loader.exec_module(bridge)
+
+class Backend:
+    def __init__(self, name, model):
+        self.name = name
+        self.model = model
+        self.history = []
+
+class Client:
+    def __init__(self, name, model):
+        self.backend = Backend(name, model)
+        self.last_tools = ""
+
+class FakeAgent:
+    def __init__(self):
+        self.llm_no = 0
+        self.llmclients = [Client("primary", "gpt-a"), Client("backup", "gpt-b")]
+        self.inc_out = False
+        self.verbose = False
+    def load_llm_sessions(self):
+        return None
+    def get_llm_name(self, client=None, model=False):
+        client = client or self.llmclients[self.llm_no]
+        return client.backend.model if model else client.backend.name
+    def next_llm(self, n=-1):
+        self.llm_no = ((self.llm_no + 1) if n < 0 else n) % len(self.llmclients)
+        self.llmclient = self.llmclients[self.llm_no]
+    def run(self):
+        return None
+
+sys.modules["agentmain"] = types.SimpleNamespace(GenericAgent=FakeAgent)
+
+manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
+session = manager.create_session(cwd=bridge.DEFAULT_GA_ROOT, title="profile switch")
+session.agent = manager.make_agent(session)
+
+assert manager.list_model_profiles()[0]["active"] is True
+result = manager.switch_model_profile("1", session.id)
+assert result["activeProfileId"] == "1"
+assert manager.selected_llm_no == 1
+assert session.agent.llm_no == 1
+assert result["profiles"][1]["active"] is True
+
+next_session = manager.create_session(cwd=bridge.DEFAULT_GA_ROOT, title="next session")
+next_agent = manager.make_agent(next_session)
+assert next_agent.llm_no == 1
+
+session.status = "running"
+try:
+    manager.switch_model_profile("0", session.id)
+except bridge.web.HTTPConflict as exc:
+    assert "session is running" in exc.text
+else:
+    raise AssertionError("running session switch should fail")
+`;
+
+  try {
+    execFileSync("python", ["-c", script], { stdio: "pipe" });
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
 });
 
 test("HeroUI bridge persists sessions and messages across manager restarts", () => {
@@ -204,4 +285,5 @@ test("Vite development server proxies GA bridge endpoints", () => {
   assert.match(vite, /"\/session"/);
   assert.match(vite, /"\/sessions"/);
   assert.match(vite, /"\/status"/);
+  assert.match(vite, /"\/model-profile"/);
 });
