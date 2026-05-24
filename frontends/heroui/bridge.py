@@ -68,22 +68,13 @@ def _extract_summary_text(text: str) -> str:
     raw = (text or "").strip()
     if not raw:
         return ""
-    match = re.search(r"<summary>\s*([\s\S]*?)\s*</summary>", raw, flags=re.IGNORECASE)
+    match = re.search(r"<summary>\s*([\s\S]*?)\s*</(?:summary|parameter)>", raw, flags=re.IGNORECASE)
     if match:
         return " ".join(match.group(1).split())
     lines = [line.strip() for line in raw.splitlines() if line.strip()]
     if not lines:
         return ""
     return lines[0]
-
-
-def _strip_summary_markup(text: str) -> str:
-    return re.sub(
-        r"<summary>\s*([\s\S]*?)\s*</summary>",
-        lambda match: " ".join(match.group(1).split()),
-        str(text or ""),
-        flags=re.IGNORECASE,
-    ).strip()
 
 
 def _round_label(turn_no: int) -> str:
@@ -389,7 +380,7 @@ class AgentManager:
                 "type": "phase.update",
                 "turn_id": turn_id,
                 "session_id": sess.id,
-                "data": {"phase": "understanding", "label": "正在理解请求"},
+                "data": {"phase": "understanding", "label": "正在思考"},
             }
         if event_type == "llm.visible_delta":
             return {
@@ -407,15 +398,8 @@ class AgentManager:
                 return None
             text = str(raw.get("text") or "")
             summary = str(raw.get("summary") or "") or _extract_summary_text(text) or "模型输出"
-            thinking_summary = str(raw.get("thinking_summary") or summary)
-            visible_text = _strip_summary_markup(text)
-            detail_lines = []
-            if summary:
-                detail_lines.append(f"摘要：{summary}")
-            if thinking_summary and thinking_summary != summary:
-                detail_lines.append(f"过程：{thinking_summary}")
-            if visible_text and visible_text != summary:
-                detail_lines.append(f"模型输出：{visible_text}")
+            thinking_summary = str(raw.get("thinking_summary") or "")
+            detail = thinking_summary if thinking_summary and thinking_summary != summary else ""
             return {
                 "type": "timeline.step",
                 "turn_id": turn_id,
@@ -428,7 +412,7 @@ class AgentManager:
                     "title": summary,
                     "status": "done",
                     "summary": summary,
-                    "detail": "\n\n".join(detail_lines),
+                    "detail": detail,
                     "elapsed_ms": raw.get("elapsed_ms"),
                     "default_open": False,
                     "created_at": created_at,

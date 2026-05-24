@@ -570,8 +570,7 @@ event = manager.convert_agent_event(
 assert event["type"] == "timeline.step"
 assert event["data"]["title"] == "用户请求今日AI新闻，调用搜索获取"
 assert event["data"]["summary"] == "用户请求今日AI新闻，调用搜索获取"
-assert "摘要：用户请求今日AI新闻，调用搜索获取" in event["data"]["detail"]
-assert "模型输出：用户请求今日AI新闻，调用搜索获取我需要先搜索。" in event["data"]["detail"]
+assert event["data"]["detail"] == ""
 assert event["data"]["elapsed_ms"] == 1234
 assert event["data"]["default_open"] is False
 assert event["data"]["retract_response_id"] == response_id

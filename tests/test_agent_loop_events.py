@@ -370,7 +370,7 @@ def test_agent_runner_loop_emits_clean_model_delta_and_thinking_summary():
     llm_end = next(event for event in events if event["type"] == "llm.end")
 
     assert "llm.visible_delta" in event_types
-    assert "".join(deltas) == "Visible <summary>准备调用命令</summary>text"
+    assert "".join(deltas) == "Visible text"
     assert "private reasoning" not in "".join(deltas)
     assert llm_end["summary"] == "准备调用命令"
     assert llm_end["thinking_summary"] == "准备调用命令"

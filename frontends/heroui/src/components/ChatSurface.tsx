@@ -249,7 +249,18 @@ function ActiveTurnTimeline({ activeTurn }: { activeTurn: TurnState }) {
 
   return (
     <div className="turn-timeline" aria-label="本轮执行过程">
-      {activeTurn.phase && activeTurn.status === "streaming" ? <div className="turn-phase">{activeTurn.phase.label}</div> : null}
+      {activeTurn.phase && activeTurn.status === "streaming" ? (
+        <div className="turn-phase">
+          <span>{activeTurn.phase.label}</span>
+          {activeTurn.phase.phase === "understanding" ? (
+            <span className="thinking-dots" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </span>
+          ) : null}
+        </div>
+      ) : null}
       {rounds.map((round, index) => (
         <TurnRoundView key={round.id} round={round} showSeparator={index > 0} />
       ))}
@@ -411,7 +422,7 @@ function readStepIcon(step: ExecutionStep) {
 function readStepHeadline(step: ExecutionStep) {
   const title = readNonEmptyText(step.title);
   if (isModelSummaryStep(step)) {
-    return readSummaryFromModelDetail(step.detail) || readNonEmptyText(step.summary) || title || "模型输出";
+    return readNonEmptyText(step.summary) || title || "模型输出";
   }
   return title || readNonEmptyText(step.summary) || "执行步骤";
 }
@@ -450,10 +461,6 @@ function buildToolDetailSections(step: ExecutionStep): ToolDetailSection[] {
   if (error) {
     sections.push({ kind: "error", label: "错误", content: error });
   }
-  if (step.kind === "phase" && step.default_open && detail) {
-    return [{ kind: "output", label: "模型输出", content: detail }];
-  }
-
   if (sections.length === 0) {
     const parsedSections = splitToolDetail(step.detail);
     if (parsedSections.length > 0) {
@@ -494,15 +501,6 @@ function readDetailSectionKind(label: string): ToolDetailSection["kind"] {
 function readNonEmptyText(value?: string) {
   const text = value?.trim();
   return text ? text : "";
-}
-
-function readSummaryFromModelDetail(detail?: string) {
-  const text = readNonEmptyText(detail);
-  if (!text) {
-    return "";
-  }
-  const match = text.match(/<summary>\s*([\s\S]*?)\s*<\/summary>/i);
-  return match ? match[1].trim().replace(/\s+/g, " ") : "";
 }
 
 function readElapsedLabel(elapsedMs?: number) {

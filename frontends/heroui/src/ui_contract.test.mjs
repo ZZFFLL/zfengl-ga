@@ -31,7 +31,7 @@ test("webui uses HeroUI components for the agent workbench shell", () => {
   assert.match(source, /取消全选会话/);
   assert.match(source, /selectedIds\.length === sessions\.length/);
   assert.match(source, /删除 \{selectedIds\.length\} 个/);
-  assert.match(source, /正在理解请求/);
+  assert.match(source, /正在思考/);
   assert.match(source, /正在处理/);
   assert.match(source, /本轮执行完成/);
   assert.match(source, /tool\.start/);
@@ -164,6 +164,7 @@ test("webui uses HeroUI components for the agent workbench shell", () => {
   assert.doesNotMatch(source, /modelLabel="GPT-5\.4"/);
   assert.doesNotMatch(source, /晚餐快手菜建议/);
   assert.doesNotMatch(source, /Understanding request/);
+  assert.doesNotMatch(source, /正在理解请求/);
   assert.doesNotMatch(source, /Working/);
   assert.doesNotMatch(source, /Unknown error/);
   assert.doesNotMatch(source, /回答有帮助/);
@@ -224,6 +225,8 @@ test("webui keeps the screenshot-style chat layout contract", () => {
   assert.match(styles, /\.message-bubble :where\(pre\)/);
   assert.match(styles, /\.conversation-loading/);
   assert.match(styles, /\.turn-timeline/);
+  assert.match(styles, /\.thinking-dots/);
+  assert.match(styles, /@keyframes thinking-dot-bounce/);
   assert.match(styles, /\.timeline-step-card/);
   assert.match(styles, /\.thought-panel/);
   assert.match(styles, /\.artifact-card/);
@@ -235,11 +238,10 @@ test("webui keeps the screenshot-style chat layout contract", () => {
   assert.match(components, /buildToolDetailSections/);
   assert.match(components, /readStepHeadline/);
   assert.match(components, /!isModelSummaryStep\(step\)/);
-  assert.match(components, /readSummaryFromModelDetail/);
   assert.match(components, /label: "入参"/);
   assert.match(components, /label: "结果"/);
   assert.match(components, /label: sections\.length > 0 \? "过程" : "详情"/);
-  assert.match(components, /label: "模型输出"/);
+  assert.doesNotMatch(components, /readSummaryFromModelDetail/);
   assert.doesNotMatch(components, /timeline-tool-name/);
   assert.doesNotMatch(components, /timeline-tool-label/);
   assert.match(components, /className=\{`tool-detail-section tool-detail-section--\$\{section\.kind\}`\}/);
@@ -332,6 +334,8 @@ test("model process cards stay collapsed and final answers stay normal messages"
   assert.match(bridge, /"type": "answer\.final"/);
   assert.match(bridge, /default_open/);
   assert.match(bridge, /thinking_summary/);
+  assert.doesNotMatch(bridge, /模型输出：/);
+  assert.doesNotMatch(bridge, /摘要：/);
   assert.match(components, /isModelSummaryStep/);
   assert.match(components, /Boolean\(step\.default_open && !isModelSummaryStep\(step\)\)/);
   assert.match(components, /readStepHeadline/);

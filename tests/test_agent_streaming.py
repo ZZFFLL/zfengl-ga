@@ -25,7 +25,7 @@ def test_filter_removes_thinking_tool_use_and_file_content_blocks():
         "after"
     )
 
-    assert drain_filter([text]) == "before <summary>需要读取 package.json</summary>visible after"
+    assert drain_filter([text]) == "before visible after"
 
 
 def test_filter_handles_protocol_tags_split_across_chunks():
@@ -71,6 +71,13 @@ def test_extract_model_process_summary_prefers_summary_tag():
         )
         == "已经拿到脚本字段，准备总结"
     )
+
+
+def test_filter_treats_malformed_summary_parameter_close_as_protocol_block():
+    text = "<summary>查询当前记忆文件内容</parameter>可见正文"
+
+    assert drain_filter([text]) == "可见正文"
+    assert extract_model_process_summary(text) == "查询当前记忆文件内容"
 
 
 def test_extract_model_process_summary_uses_bounded_thinking_first_line_when_no_summary():

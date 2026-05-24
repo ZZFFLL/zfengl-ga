@@ -389,8 +389,8 @@ function localizePhaseLabel(label: unknown, phase: unknown): string {
 }
 
 const PHASE_LABELS: Record<string, string> = {
-  "understanding request": "正在理解请求",
-  understanding: "正在理解请求",
+  "understanding request": "正在思考",
+  understanding: "正在思考",
   working: "正在处理",
   "calling tool": "正在调用工具",
   calling_tool: "正在调用工具",

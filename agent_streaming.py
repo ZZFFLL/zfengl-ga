@@ -1,8 +1,8 @@
 import re
 
 
-_BLOCK_TAGS = ("thinking", "think", "tool_use", "tool_call", "file_content")
-_SUMMARY_RE = re.compile(r"<summary>\s*([\s\S]*?)\s*</summary>", re.IGNORECASE)
+_BLOCK_TAGS = ("thinking", "think", "summary", "tool_use", "tool_call", "file_content")
+_SUMMARY_RE = re.compile(r"<summary>\s*([\s\S]*?)\s*</(?:summary|parameter)>", re.IGNORECASE)
 _TAG_RE = re.compile(r"</?([a-zA-Z_][a-zA-Z0-9_]*)[^>]*>")
 
 
@@ -24,16 +24,15 @@ class ModelDisplayStreamFilter:
         visible = []
         while self._buffer:
             if self._blocked_tag:
-                close_tag = f"</{self._blocked_tag}>"
-                close_idx = self._buffer.lower().find(close_tag)
-                if close_idx < 0:
+                close_match = _blocked_close_match(self._buffer, self._blocked_tag)
+                if close_match is None:
                     if final:
                         self._buffer = ""
                         self._blocked_tag = ""
                     else:
                         self._buffer = self._buffer[-64:]
                     break
-                self._buffer = self._buffer[close_idx + len(close_tag):]
+                self._buffer = self._buffer[close_match.end():]
                 self._blocked_tag = ""
                 continue
 
@@ -107,7 +106,14 @@ def _strip_protocol_tags(text):
     out = str(text or "")
     for tag in _BLOCK_TAGS:
         out = re.sub(rf"<{tag}[^>]*>[\s\S]*?</{tag}>", "", out, flags=re.IGNORECASE)
+    out = re.sub(r"<summary[^>]*>[\s\S]*?</parameter>", "", out, flags=re.IGNORECASE)
     return out
+
+
+def _blocked_close_match(text, tag):
+    if tag == "summary":
+        return re.search(r"</(?:summary|parameter)>", text, flags=re.IGNORECASE)
+    return re.search(rf"</{re.escape(tag)}>", text, flags=re.IGNORECASE)
 
 
 def _possible_blocked_opening_start(text):

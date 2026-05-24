@@ -382,7 +382,7 @@ function subscribeTurnPolling(
             type: "phase.update",
             turn_id: turnId,
             session_id: sessionId,
-            data: { phase: "understanding", label: "正在理解请求" },
+            data: { phase: "understanding", label: "正在思考" },
           });
         }
       } else if (status === "error" || status === "cancelled") {

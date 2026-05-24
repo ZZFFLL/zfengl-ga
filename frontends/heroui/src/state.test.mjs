@@ -75,7 +75,7 @@ test("phase.update localizes legacy English status labels", () => {
     data: { phase: "understanding", label: "Understanding request" },
   });
 
-  assert.deepEqual(state.phase, { phase: "understanding", label: "正在理解请求" });
+  assert.deepEqual(state.phase, { phase: "understanding", label: "正在思考" });
 });
 
 test("tool.start and tool.end maintain tool cards", () => {
