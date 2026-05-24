@@ -719,6 +719,182 @@ assert session.messages[-1]["content"] == "最终回答"
   }
 });
 
+test("HeroUI bridge synthesizes terminal events when a structured turn only emits done", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-bridge-"));
+  const dbPath = join(tempDir, "sessions.sqlite3");
+  const script = `
+import importlib.util
+import queue
+import sys
+from pathlib import Path
+
+bridge_path = Path(${JSON.stringify(bridgePath)})
+spec = importlib.util.spec_from_file_location("heroui_bridge_under_test_terminal_done", bridge_path)
+bridge = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bridge
+spec.loader.exec_module(bridge)
+
+class FakeAgent:
+    structured_events = True
+    inc_out = True
+
+    def put_task(self, prompt, images=None):
+        q = queue.Queue()
+        q.put({"done": "plain final", "turn": 1, "outputs": []})
+        return q
+
+manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
+session = manager.create_session(cwd="E:/tmp/ga", title="terminal done")
+session.agent = FakeAgent()
+turn_id = "ga|" + session.id + "|1"
+manager.run_agent_turn(session, turn_id, "prompt")
+
+types = [event["type"] for event in session.events]
+assert "answer.final" in types, types
+assert "turn.done" in types, types
+assert session.messages[-1]["content"] == "plain final"
+`;
+
+  try {
+    execFileSync("python", ["-c", script], { stdio: "pipe" });
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("HeroUI bridge writes synthesized final answers before earlier agent.done terminal events", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-bridge-"));
+  const dbPath = join(tempDir, "sessions.sqlite3");
+  const script = `
+import importlib.util
+import queue
+import sys
+from pathlib import Path
+
+bridge_path = Path(${JSON.stringify(bridgePath)})
+spec = importlib.util.spec_from_file_location("heroui_bridge_under_test_terminal_order", bridge_path)
+bridge = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bridge
+spec.loader.exec_module(bridge)
+
+class FakeAgent:
+    structured_events = True
+    inc_out = True
+
+    def put_task(self, prompt, images=None):
+        q = queue.Queue()
+        q.put({"event": {"type": "agent.done", "turn": 1}})
+        q.put({"done": "final after terminal", "turn": 1, "outputs": []})
+        return q
+
+manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
+session = manager.create_session(cwd="E:/tmp/ga", title="terminal order")
+session.agent = FakeAgent()
+turn_id = "ga|" + session.id + "|1"
+manager.run_agent_turn(session, turn_id, "prompt")
+
+types = [event["type"] for event in session.events]
+assert types == ["answer.final", "turn.done"], types
+assert session.events[0]["data"]["text"] == "final after terminal"
+`;
+
+  try {
+    execFileSync("python", ["-c", script], { stdio: "pipe" });
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("HeroUI bridge emits a terminal event when a structured turn is cancelled before completion", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-bridge-"));
+  const dbPath = join(tempDir, "sessions.sqlite3");
+  const script = `
+import importlib.util
+import queue
+import sys
+from pathlib import Path
+
+bridge_path = Path(${JSON.stringify(bridgePath)})
+spec = importlib.util.spec_from_file_location("heroui_bridge_under_test_terminal_cancel", bridge_path)
+bridge = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bridge
+spec.loader.exec_module(bridge)
+
+class FakeAgent:
+    structured_events = True
+    inc_out = True
+
+    def put_task(self, prompt, images=None):
+        return queue.Queue()
+
+manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
+session = manager.create_session(cwd="E:/tmp/ga", title="terminal cancel")
+session.agent = FakeAgent()
+session.cancel_requested = True
+turn_id = "ga|" + session.id + "|1"
+manager.run_agent_turn(session, turn_id, "prompt")
+
+types = [event["type"] for event in session.events]
+assert "turn.error" in types, types
+assert session.status == "cancelled"
+`;
+
+  try {
+    execFileSync("python", ["-c", script], { stdio: "pipe" });
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("HeroUI bridge emits a terminal event when a structured turn raises after streaming begins", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-bridge-"));
+  const dbPath = join(tempDir, "sessions.sqlite3");
+  const script = `
+import importlib.util
+import sys
+from pathlib import Path
+
+bridge_path = Path(${JSON.stringify(bridgePath)})
+spec = importlib.util.spec_from_file_location("heroui_bridge_under_test_terminal_error", bridge_path)
+bridge = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bridge
+spec.loader.exec_module(bridge)
+
+class FailingQueue:
+    def __init__(self):
+        self.calls = 0
+
+    def get(self, timeout=1.0):
+        self.calls += 1
+        if self.calls == 1:
+            return {"event": {"type": "llm.visible_delta", "turn": 1, "delta": "hello"}}
+        raise RuntimeError("boom")
+
+class FakeAgent:
+    structured_events = True
+    inc_out = True
+
+    def put_task(self, prompt, images=None):
+        return FailingQueue()
+
+manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
+session = manager.create_session(cwd="E:/tmp/ga", title="terminal error")
+session.agent = FakeAgent()
+turn_id = "ga|" + session.id + "|1"
+manager.run_agent_turn(session, turn_id, "prompt")
+
+types = [event["type"] for event in session.events]
+assert "answer.delta" in types, types
+assert "turn.error" in types, types
+`;
+
+  try {
+    execFileSync("python", ["-c", script], { stdio: "pipe" });
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
 test("Vite development server proxies GA bridge endpoints", () => {
   assert.equal(existsSync(vitePath), true);
   const vite = readFileSync(vitePath, "utf8");

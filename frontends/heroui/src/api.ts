@@ -280,6 +280,7 @@ function subscribeTurnPolling(
     sawStructuredEvents: false,
     sawStructuredTimeline: false,
     sawRunning: false,
+    sawTerminalEvent: false,
   };
 
   const poll = async () => {
@@ -323,9 +324,15 @@ function subscribeTurnPolling(
         }
       }
 
+      const terminalEvents: BridgeTimelineEvent[] = [];
       for (const event of relevantEvents) {
         if (event.type === "answer.final") {
           state.emittedFinal = true;
+        }
+        if (event.type === "turn.done" || event.type === "turn.error") {
+          state.sawTerminalEvent = true;
+          terminalEvents.push(event);
+          continue;
         }
         onEvent(event);
       }
@@ -358,6 +365,13 @@ function subscribeTurnPolling(
         if (!state.sawStructuredTimeline) {
           emitBridgeOutputs(message, turnId, sessionId, responseId, createdAt, onEvent);
         }
+      }
+      if (state.sawTerminalEvent) {
+        for (const event of terminalEvents) {
+          onEvent(event);
+        }
+        close();
+        return;
       }
 
       const status = String(payload.status ?? "");

@@ -703,6 +703,70 @@ class AgentManager:
         turn_outputs: List[str] = []
         response_id = self.make_response_id(turn_id, 1)
         structured_final_text = ""
+        emitted_final_event = False
+        emitted_terminal_event = False
+        pending_terminal_event: Optional[dict] = None
+
+        def remember_stream_event(event_type: str) -> None:
+            nonlocal emitted_final_event, emitted_terminal_event
+            if event_type == "answer.final":
+                emitted_final_event = True
+            if event_type in {"turn.done", "turn.error"}:
+                emitted_terminal_event = True
+
+        def add_stream_event(event: dict) -> None:
+            nonlocal pending_terminal_event
+            event_type = str(event.get("type") or "")
+            if event_type == "turn.done" and not emitted_final_event:
+                pending_terminal_event = dict(event)
+                return
+            self.add_event(sess, event)
+            remember_stream_event(event_type)
+
+        def flush_pending_terminal_event() -> None:
+            nonlocal pending_terminal_event
+            if pending_terminal_event is None or emitted_terminal_event:
+                return
+            event = pending_terminal_event
+            pending_terminal_event = None
+            self.add_event(sess, event)
+            remember_stream_event(str(event.get("type") or ""))
+
+        def add_final_event_if_missing(text: str) -> None:
+            if emitted_final_event:
+                return
+            clean_text = str(text or "").strip()
+            if not clean_text:
+                return
+            add_stream_event(
+                {
+                    "type": "answer.final",
+                    "turn_id": turn_id,
+                    "session_id": sess.id,
+                    "data": {
+                        "text": clean_text,
+                        "response_id": response_id,
+                        "created_at": to_iso_timestamp(time.time()),
+                    },
+                }
+            )
+            flush_pending_terminal_event()
+
+        def add_terminal_event_if_missing(event_type: str, data: Optional[dict] = None) -> None:
+            if emitted_terminal_event:
+                return
+            event = {
+                "type": event_type,
+                "turn_id": turn_id,
+                "session_id": sess.id,
+                "data": data or {},
+            }
+            if event_type == "turn.error":
+                self.add_event(sess, event)
+                remember_stream_event(event_type)
+                return
+            add_stream_event(event)
+
         try:
             if sess.agent is None:
                 sess.agent = self.make_agent(sess)
@@ -738,7 +802,7 @@ class AgentManager:
                                                     "data": {"response_id": retract_response_id},
                                                 },
                                             )
-                                    self.add_event(sess, converted)
+                                    add_stream_event(converted)
                                     sess.updated_at = time.time()
                             continue
                         if isinstance(item.get("turn"), int):
@@ -780,6 +844,7 @@ class AgentManager:
             if sess.cancel_requested:
                 with self.lock:
                     sess.partial = None
+                    add_terminal_event_if_missing("turn.error", {"message": "任务已取消"})
                     # Ensure status stays cancelled (don't overwrite)
                     if sess.status != "cancelled":
                         sess.status = "cancelled"
@@ -793,6 +858,8 @@ class AgentManager:
                 import re as _re
                 full = _re.sub(r'\n*`{5}\n*\[Info\] Final response to user\.\n*`{5}\s*$', '', full)
                 assistant_content = structured_final_text.strip() if getattr(agent, "structured_events", False) and structured_final_text.strip() else full
+                add_final_event_if_missing(assistant_content)
+                add_terminal_event_if_missing("turn.done", {"ok": True})
                 self.add_message(
                     sess,
                     "assistant",
@@ -814,6 +881,7 @@ class AgentManager:
                 sess.partial = None
                 sess.status = "error"
                 sess.last_error = str(e)
+                add_terminal_event_if_missing("turn.error", {"message": str(e) or "请求失败"})
                 self.add_message(
                     sess,
                     "error",

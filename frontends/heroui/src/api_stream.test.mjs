@@ -216,6 +216,126 @@ test("subscribeTurn ignores structured events from previous turns", async () => 
   assert.deepEqual(events.map((event) => event.type), ["timeline.step", "answer.final", "turn.done"]);
 });
 
+test("subscribeTurn polling does not duplicate backend turn.done events", async () => {
+  const { subscribeTurn } = await import("./api.ts");
+  const events = [];
+  const originalEventSource = globalThis.EventSource;
+  const originalFetch = globalThis.fetch;
+  const originalWindow = globalThis.window;
+  globalThis.EventSource = undefined;
+  globalThis.window = { setTimeout: () => 0 };
+  globalThis.fetch = async () => ({
+    ok: true,
+    async json() {
+      return {
+        status: "idle",
+        events: [
+          {
+            seq: 1,
+            type: "answer.final",
+            turn_id: "ga|sess-1|2",
+            session_id: "sess-1",
+            data: { text: "完成", response_id: "ga|sess-1|2:response:1" },
+          },
+          { seq: 2, type: "turn.done", turn_id: "ga|sess-1|2", session_id: "sess-1", data: { ok: true } },
+        ],
+        messages: [{ id: 3, role: "assistant", content: "完成", ts: 1 }],
+      };
+    },
+  });
+
+  try {
+    subscribeTurn("ga|sess-1|2", (event) => events.push(event));
+    await new Promise((resolve) => setImmediate(resolve));
+  } finally {
+    globalThis.EventSource = originalEventSource;
+    globalThis.fetch = originalFetch;
+    globalThis.window = originalWindow;
+  }
+
+  assert.deepEqual(events.map((event) => event.type), ["answer.final", "turn.done"]);
+});
+
+test("subscribeTurn polling does not duplicate backend turn.error events", async () => {
+  const { subscribeTurn } = await import("./api.ts");
+  const events = [];
+  const originalEventSource = globalThis.EventSource;
+  const originalFetch = globalThis.fetch;
+  const originalWindow = globalThis.window;
+  globalThis.EventSource = undefined;
+  globalThis.window = { setTimeout: () => 0 };
+  globalThis.fetch = async () => ({
+    ok: true,
+    async json() {
+      return {
+        status: "error",
+        lastError: "boom",
+        events: [{ seq: 1, type: "turn.error", turn_id: "ga|sess-1|2", session_id: "sess-1", data: { message: "boom" } }],
+        messages: [],
+      };
+    },
+  });
+
+  try {
+    subscribeTurn("ga|sess-1|2", (event) => events.push(event));
+    await new Promise((resolve) => setImmediate(resolve));
+  } finally {
+    globalThis.EventSource = originalEventSource;
+    globalThis.fetch = originalFetch;
+    globalThis.window = originalWindow;
+  }
+
+  assert.deepEqual(events.map((event) => event.type), ["turn.error"]);
+});
+
+test("subscribeTurn polling preserves legacy outputs after backend turn.done replay", async () => {
+  const { subscribeTurn } = await import("./api.ts");
+  const events = [];
+  const originalEventSource = globalThis.EventSource;
+  const originalFetch = globalThis.fetch;
+  const originalWindow = globalThis.window;
+  globalThis.EventSource = undefined;
+  globalThis.window = { setTimeout: () => 0 };
+  globalThis.fetch = async () => ({
+    ok: true,
+    async json() {
+      return {
+        status: "idle",
+        events: [
+          {
+            seq: 1,
+            type: "answer.final",
+            turn_id: "ga|sess-1|2",
+            session_id: "sess-1",
+            data: { text: "完成", response_id: "ga|sess-1|2:response:1" },
+          },
+          { seq: 2, type: "turn.done", turn_id: "ga|sess-1|2", session_id: "sess-1", data: { ok: true } },
+        ],
+        messages: [
+          {
+            id: 3,
+            role: "assistant",
+            content: "完成",
+            responseId: "ga|sess-1|2:response:1",
+            outputs: ["🔧 Tool: code_run\nargs:\n{\"cmd\":\"dir\"}\n[Status] ok\n[stdout]\nfile.txt\n"],
+          },
+        ],
+      };
+    },
+  });
+
+  try {
+    subscribeTurn("ga|sess-1|2", (event) => events.push(event));
+    await new Promise((resolve) => setImmediate(resolve));
+  } finally {
+    globalThis.EventSource = originalEventSource;
+    globalThis.fetch = originalFetch;
+    globalThis.window = originalWindow;
+  }
+
+  assert.deepEqual(events.map((event) => event.type), ["answer.final", "timeline.step", "turn.done"]);
+});
+
 test("subscribeTurn does not stream raw partial text when structured events are present", async () => {
   const { subscribeTurn } = await import("./api.ts");
   const events = [];

@@ -135,6 +135,8 @@ Required frontend fields for tool cards:
 - `subscribeTurn()` filters by exact `turn_id` and advances `lastEventSeq` for every returned event. This prevents previous turns from replaying into the active turn.
 - Native SSE and polling fallback share the same `events.seq` cursor, so refresh, reconnect, and fallback preserve source order.
 - Historical reload uses `/session/{sid}` and rebuilds timeline from persisted `events`; if no timeline events exist, it falls back to legacy `outputs[]`.
+- The HeroUI bridge synthesizes missing terminal frontend events for bridge-owned completion paths: a plain `done` queue item gets `answer.final` and `turn.done`, while cancellation or bridge exceptions get `turn.error`. This keeps SSE subscribers from waiting forever even when internal GA `agent.done` is absent.
+- If polling fallback receives a backend terminal event and an assistant message in the same payload, it still processes the message and any legacy `outputs[]` fallback before closing, then skips status-derived duplicate terminal events.
 
 ## Raw Output Boundary
 
