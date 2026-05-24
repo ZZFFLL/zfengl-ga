@@ -2,12 +2,38 @@ import type { MessageRecord, SessionRecord, SessionTranscript, StreamEvent } fro
 
 const API_BASE = normalizeBase(import.meta.env.VITE_GA_HEROUI_API_TARGET ?? "");
 
+export type BridgeStatus = {
+  ok?: boolean;
+  ready?: boolean;
+  running?: boolean;
+  gaRoot?: string;
+  mykeyPath?: string;
+  sessionCount?: number;
+  activeSessionId?: string;
+  transport?: {
+    http?: boolean;
+    wsEventsOnly?: boolean;
+  };
+};
+
+export type ModelProfile = {
+  id: string;
+  name: string;
+  active: boolean;
+};
+
 type BridgeSession = {
   id: string;
   title: string;
   createdAt: number | string;
   updatedAt: number | string;
   lastError?: string;
+};
+
+type BridgeStatusResponse = BridgeStatus;
+
+type BridgeProfilesResponse = {
+  profiles?: ModelProfile[];
 };
 
 type BridgeMessage = {
@@ -48,6 +74,17 @@ export async function listSessions(): Promise<SessionRecord[]> {
   const response = await fetch(apiUrl("/sessions"));
   const payload = await readJson<{ sessions: BridgeSession[] }>(response);
   return payload.sessions.map(mapSessionRecord);
+}
+
+export async function getBridgeStatus(): Promise<BridgeStatus> {
+  const response = await fetch(apiUrl("/status"));
+  return readJson<BridgeStatusResponse>(response);
+}
+
+export async function listModelProfiles(): Promise<ModelProfile[]> {
+  const response = await fetch(apiUrl("/model-profiles"));
+  const payload = await readJson<BridgeProfilesResponse>(response);
+  return payload.profiles ?? [];
 }
 
 export async function createSession(title = "新会话"): Promise<SessionRecord> {

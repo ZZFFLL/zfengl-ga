@@ -1,7 +1,18 @@
-import { Button } from "@heroui/react";
+import { Button, Chip } from "@heroui/react";
 import { Menu, Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { createSession, createTurn, deleteSessions, listSessions, listTranscript, subscribeTurn } from "./api";
+import {
+  createSession,
+  createTurn,
+  deleteSessions,
+  getBridgeStatus,
+  listModelProfiles,
+  listSessions,
+  listTranscript,
+  subscribeTurn,
+  type BridgeStatus,
+  type ModelProfile,
+} from "./api";
 import { ChatSurface } from "./components/ChatSurface";
 import { Composer } from "./components/Composer";
 import { ConversationRail } from "./components/ConversationRail";
@@ -21,6 +32,8 @@ export function App() {
   const [artifacts, setArtifacts] = useState<ArtifactRecord[]>([]);
   const [activeTurn, setActiveTurn] = useState<TurnState | null>(null);
   const [appError, setAppError] = useState("");
+  const [bridgeStatus, setBridgeStatus] = useState<BridgeStatus | null>(null);
+  const [modelProfiles, setModelProfiles] = useState<ModelProfile[]>([]);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const activeSourceRef = useRef<EventSource | null>(null);
@@ -44,14 +57,28 @@ export function App() {
         if (existing.length > 0) {
           setSessions(existing);
           setActiveSessionId(existing[0].id);
-          return;
+        } else {
+          setSessions([]);
+          setActiveSessionId("");
         }
-        setSessions([]);
-        setActiveSessionId("");
+        void refreshBridgeMetadata();
       } catch (error) {
         if (!cancelled) {
           setAppError(readError(error));
         }
+      }
+    }
+
+    async function refreshBridgeMetadata() {
+      try {
+        const [status, profiles] = await Promise.all([getBridgeStatus(), listModelProfiles()]);
+        if (cancelled) {
+          return;
+        }
+        setBridgeStatus(status);
+        setModelProfiles(profiles);
+      } catch {
+        // Optional GA metadata should not block session restoration.
       }
     }
 
@@ -225,12 +252,14 @@ export function App() {
   }
 
   const activeSession = sessions.find((session) => session.id === activeSessionId);
+  const activeModelProfile = modelProfiles.find((profile) => profile.active);
+  const modelLabel = activeModelProfile?.name ?? (modelProfiles.length > 0 ? `${modelProfiles.length} 个模型配置` : "本地模型");
   return (
     <main className={`chat-workbench-shell ${sidebarCollapsed ? "is-sidebar-collapsed" : ""}`}>
       <ConversationRail
         sessions={sessions}
         activeSessionId={activeSessionId}
-        modelLabel="本地模型"
+        modelLabel={modelLabel}
         onCreateSession={handleCreateSession}
         onDeleteSessions={handleDeleteSessions}
         onSelectSession={handleSelectSession}
@@ -251,6 +280,17 @@ export function App() {
             <span>{activeTurn?.status === "streaming" ? "正在流式输出" : "已就绪"}</span>
           </div>
           <div className="header-actions">
+            <div className="bridge-meta-strip" aria-label="GA Bridge 状态">
+              <Chip color={bridgeStatus?.ready ? "success" : "warning"} size="sm" variant="soft">
+                <Chip.Label>GA Bridge</Chip.Label>
+              </Chip>
+              <Chip color="accent" size="sm" variant="soft">
+                <Chip.Label>持久化</Chip.Label>
+              </Chip>
+              <Chip size="sm" variant="secondary">
+                <Chip.Label>{sessions.length} 会话</Chip.Label>
+              </Chip>
+            </div>
             <Button size="sm" variant="tertiary">
               <Search size={16} />
               搜索

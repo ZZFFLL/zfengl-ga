@@ -17,6 +17,7 @@ const source = `${app}\n${api}\n${state}\n${components}`;
 
 test("webui uses HeroUI components for the agent workbench shell", () => {
   assert.match(source, /from "@heroui\/react"/);
+  assert.match(source, /Chip/);
   assert.match(source, /Tooltip/);
   assert.match(source, /from "react-markdown"/);
   assert.match(source, /from "remark-gfm"/);
@@ -48,8 +49,13 @@ test("webui uses HeroUI components for the agent workbench shell", () => {
   assert.match(source, /answer\.delta/);
   assert.match(source, /answer\.final/);
   assert.match(source, /responses/);
+  assert.match(source, /GA Bridge/);
+  assert.match(source, /持久化/);
+  assert.match(source, /modelProfiles/);
   assert.match(source, /新会话/);
   assert.match(source, /deleteSessions/);
+  assert.match(api, /\/model-profiles/);
+  assert.match(api, /\/status/);
   assert.match(source, /复制回答/);
   assert.match(source, /重新生成回答/);
   assert.match(source, /正在加载会话/);
@@ -68,6 +74,13 @@ test("webui uses HeroUI components for the agent workbench shell", () => {
   assert.match(app, /applyStreamEvent\(activeTurnStateRef\.current \?\? createInitialTurnState\(turnId\), event\)/);
   assert.match(app, /setActiveTurn\(nextTurn\)/);
   assert.match(app, /activeTurn\?\.status === "streaming" \? "正在流式输出" : "已就绪"/);
+  assert.match(app, /getBridgeStatus/);
+  assert.match(app, /listModelProfiles/);
+  assert.match(app, /const existing = await listSessions\(\)/);
+  assert.match(app, /void refreshBridgeMetadata\(\)/);
+  assert.match(app, /\{sessions\.length\} 会话/);
+  assert.doesNotMatch(app, /Promise\.all\(\[\s*listSessions\(\),\s*getBridgeStatus\(\),\s*listModelProfiles\(\)\s*\]\)/s);
+  assert.doesNotMatch(app, /bridgeStatus\?\.sessionCount \?\? sessions\.length/);
   assert.doesNotMatch(app, /activeTurn \? "正在流式输出" : "已就绪"/);
   assert.match(components, /scrollTo\(\{ top: scrollElement\.scrollHeight/);
   assert.doesNotMatch(source, /Library/);

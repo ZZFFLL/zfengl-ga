@@ -308,6 +308,13 @@ textarea {
   gap: 10px;
 }
 
+.bridge-meta-strip {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
 .header-actions .button {
   height: 32px;
   min-height: 32px;
@@ -1138,7 +1145,11 @@ textarea {
 
   .header-actions {
     grid-column: 1 / -1;
-    justify-content: flex-end;
+    justify-content: space-between;
+  }
+
+  .bridge-meta-strip {
+    justify-content: flex-start;
   }
 
   .conversation-title h1 {

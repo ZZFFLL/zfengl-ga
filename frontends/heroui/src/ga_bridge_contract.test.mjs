@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
@@ -23,6 +26,9 @@ test("HeroUI frontend has a dedicated GenericAgent bridge copy", () => {
   assert.match(bridge, /"responseId"/);
   assert.match(bridge, /"gaTurn"/);
   assert.match(bridge, /"outputs"/);
+  assert.match(bridge, /def _persist_session_and_message/);
+  assert.match(bridge, /persist=False/);
+  assert.doesNotMatch(bridge, /self\._persist_message\(sess, user_msg\)/);
   assert.match(bridge, /app\.router\.add_post\("\/session\/new", new_session_handler\)/);
   assert.match(bridge, /app\.router\.add_get\("\/session\/\{sid\}\/messages", messages_handler\)/);
 });
@@ -42,6 +48,145 @@ test("HeroUI api adapter speaks the GA bridge polling contract", () => {
   assert.match(api, /response_id: message\.responseId \|\| message\.response_id/);
   assert.doesNotMatch(api, /new EventSource/);
   assert.doesNotMatch(api, /\/api\/turns\/\$\{encodeURIComponent\(turnId\)\}\/events/);
+});
+
+test("HeroUI bridge persists sessions and messages across manager restarts", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-bridge-"));
+  const dbPath = join(tempDir, "sessions.sqlite3");
+  const script = `
+import importlib.util
+import sys
+from pathlib import Path
+
+bridge_path = Path(${JSON.stringify(bridgePath)})
+spec = importlib.util.spec_from_file_location("heroui_bridge_under_test", bridge_path)
+bridge = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bridge
+spec.loader.exec_module(bridge)
+
+db_path = ${JSON.stringify(dbPath)}
+manager1 = bridge.AgentManager(db_path=db_path)
+session = manager1.create_session(cwd="E:/tmp/ga", title="First chat")
+manager1.add_message(session, "user", "hello from ui", turn_id="turn-1", source="user")
+manager1.add_message(
+    session,
+    "assistant",
+    "hello from ga",
+    turn_id="turn-1",
+    responseId="resp-1",
+    response_id="resp-1",
+    gaTurn=3,
+    outputs=["thinking", "done"],
+    source="assistant",
+)
+
+manager2 = bridge.AgentManager(db_path=db_path)
+restored = list(manager2.sessions.values())
+assert len(restored) == 1, restored
+assert restored[0].id == session.id
+assert restored[0].title == "First chat"
+assert restored[0].cwd == "E:/tmp/ga"
+assert restored[0].msg_seq == 2
+assert len(restored[0].messages) == 2
+assert restored[0].messages[0]["role"] == "user"
+assert restored[0].messages[0]["turn_id"] == "turn-1"
+assert restored[0].messages[1]["role"] == "assistant"
+assert restored[0].messages[1]["responseId"] == "resp-1"
+assert restored[0].messages[1]["response_id"] == "resp-1"
+assert restored[0].messages[1]["gaTurn"] == 3
+assert restored[0].messages[1]["outputs"] == ["thinking", "done"]
+`;
+
+  try {
+    execFileSync("python", ["-c", script], { stdio: "pipe" });
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("HeroUI bridge route handlers restore persisted sessions and message detail", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-bridge-"));
+  const dbPath = join(tempDir, "sessions.sqlite3");
+  const script = `
+import asyncio
+import importlib.util
+import json
+import sys
+from pathlib import Path
+
+bridge_path = Path(${JSON.stringify(bridgePath)})
+spec = importlib.util.spec_from_file_location("heroui_bridge_under_test_routes", bridge_path)
+bridge = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bridge
+spec.loader.exec_module(bridge)
+
+db_path = ${JSON.stringify(dbPath)}
+bridge.manager = bridge.AgentManager(db_path=db_path)
+session = bridge.manager.create_session(cwd="E:/tmp/ga", title="route restore")
+bridge.manager.add_message(session, "user", "hello route", turn_id="turn-1", source="user")
+bridge.manager.add_message(session, "assistant", "hello detail", turn_id="turn-1", responseId="resp-1")
+
+bridge.manager = bridge.AgentManager(db_path=db_path)
+
+class Request:
+    def __init__(self, sid=None):
+        self.match_info = {"sid": sid} if sid else {}
+
+async def main():
+    list_response = await bridge.list_sessions_handler(Request())
+    listed = json.loads(list_response.text)
+    assert listed["sessions"][0]["id"] == session.id
+    assert listed["sessions"][0]["title"] == "route restore"
+
+    detail_response = await bridge.get_session_handler(Request(session.id))
+    detail = json.loads(detail_response.text)
+    assert detail["session"]["id"] == session.id
+    assert len(detail["messages"]) == 2
+    assert detail["messages"][0]["content"] == "hello route"
+    assert detail["messages"][1]["responseId"] == "resp-1"
+
+asyncio.run(main())
+`;
+
+  try {
+    execFileSync("python", ["-c", script], { stdio: "pipe" });
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("HeroUI bridge does not resurrect deleted sessions from stale worker writes", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-bridge-"));
+  const dbPath = join(tempDir, "sessions.sqlite3");
+  const script = `
+import importlib.util
+import sys
+from pathlib import Path
+
+bridge_path = Path(${JSON.stringify(bridgePath)})
+spec = importlib.util.spec_from_file_location("heroui_bridge_under_test_delete", bridge_path)
+bridge = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bridge
+spec.loader.exec_module(bridge)
+
+manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
+session = manager.create_session(cwd="E:/tmp/ga", title="delete race")
+manager.add_message(session, "user", "stale prompt", turn_id="turn-1", source="user")
+manager.delete_session(session.id)
+
+# Simulate a stale background turn still holding the old Session object.
+manager.add_message(session, "assistant", "late answer", turn_id="turn-1", responseId="resp-1")
+manager._persist_session(session)
+
+reloaded = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
+assert session.id not in reloaded.sessions
+`;
+
+  try {
+    execFileSync("python", ["-c", script], { stdio: "pipe" });
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
 });
 
 test("Vite development server proxies GA bridge endpoints", () => {

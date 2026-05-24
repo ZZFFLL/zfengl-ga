@@ -26,7 +26,7 @@ WS API:
 """
 from __future__ import annotations
 
-import asyncio, contextlib, importlib, json, os, sys
+import asyncio, contextlib, importlib, json, os, sqlite3, sys
 import threading, time, traceback, uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -51,6 +51,7 @@ def find_default_ga_root() -> Path:
 
 
 DEFAULT_GA_ROOT = find_default_ga_root()
+DEFAULT_HEROUI_DB_PATH = APP_DIR / ".data" / "sessions.sqlite3"
 
 for _s in (sys.stdout, sys.stderr):
     with contextlib.suppress(Exception):
@@ -79,12 +80,16 @@ class Session:
 
 
 class AgentManager:
-    def __init__(self):
+    def __init__(self, db_path: Optional[str] = None):
         self.lock = threading.RLock()
         self.ga_root = str(DEFAULT_GA_ROOT)
         self.config: Dict[str, Any] = {}
         self.sessions: Dict[str, Session] = {}
         self.active_session_id: Optional[str] = None
+        self.deleted_session_ids: Set[str] = set()
+        self.db_path = Path(db_path or os.environ.get("HEROUI_BRIDGE_DB") or DEFAULT_HEROUI_DB_PATH)
+        self._init_store()
+        self._load_sessions()
 
     @property
     def mykey_path(self) -> str:
@@ -101,6 +106,155 @@ class AgentManager:
 
     def make_response_id(self, turn_id: str, response_no: int) -> str:
         return f"{turn_id}:response:{response_no}"
+
+    def _connect(self) -> sqlite3.Connection:
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def _init_store(self) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS sessions (
+                    id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    cwd TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL,
+                    status TEXT NOT NULL,
+                    msg_seq INTEGER NOT NULL,
+                    last_error TEXT NOT NULL DEFAULT ''
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS messages (
+                    session_id TEXT NOT NULL,
+                    id INTEGER NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    ts REAL NOT NULL,
+                    payload TEXT NOT NULL,
+                    PRIMARY KEY (session_id, id),
+                    FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
+                )
+                """
+            )
+            conn.commit()
+
+    def _load_sessions(self) -> None:
+        sessions: Dict[str, Session] = {}
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id, title, cwd, created_at, updated_at, status, msg_seq, last_error FROM sessions ORDER BY updated_at ASC"
+            ).fetchall()
+            for row in rows:
+                sessions[row["id"]] = Session(
+                    id=row["id"],
+                    title=row["title"],
+                    cwd=row["cwd"],
+                    created_at=float(row["created_at"]),
+                    updated_at=float(row["updated_at"]),
+                    msg_seq=int(row["msg_seq"]),
+                    status=self._restore_status(str(row["status"])),
+                    last_error=str(row["last_error"] or ""),
+                )
+            if sessions:
+                msg_rows = conn.execute(
+                    "SELECT session_id, id, role, content, ts, payload FROM messages ORDER BY session_id ASC, id ASC"
+                ).fetchall()
+                for row in msg_rows:
+                    sess = sessions.get(row["session_id"])
+                    if not sess:
+                        continue
+                    msg = {
+                        "id": int(row["id"]),
+                        "role": row["role"],
+                        "content": row["content"],
+                        "ts": float(row["ts"]),
+                    }
+                    payload = str(row["payload"] or "")
+                    if payload:
+                        with contextlib.suppress(Exception):
+                            msg.update(json.loads(payload))
+                    sess.messages.append(msg)
+        with self.lock:
+            self.sessions = sessions
+            self.active_session_id = next(reversed(sessions), None) if sessions else None
+
+    def _restore_status(self, status: str) -> str:
+        if status == "running":
+            return "idle"
+        if status in {"idle", "error", "cancelled"}:
+            return status
+        return "idle"
+
+    def _persist_session(self, sess: Session) -> None:
+        self._persist_session_and_message(sess)
+
+    def _persist_session_row(self, conn: sqlite3.Connection, sess: Session) -> None:
+        if sess.id in self.deleted_session_ids:
+            return
+        conn.execute(
+            """
+            INSERT INTO sessions (id, title, cwd, created_at, updated_at, status, msg_seq, last_error)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                title=excluded.title,
+                cwd=excluded.cwd,
+                created_at=excluded.created_at,
+                updated_at=excluded.updated_at,
+                status=excluded.status,
+                msg_seq=excluded.msg_seq,
+                last_error=excluded.last_error
+            """,
+            (
+                sess.id,
+                sess.title,
+                sess.cwd,
+                sess.created_at,
+                sess.updated_at,
+                sess.status,
+                sess.msg_seq,
+                sess.last_error,
+            ),
+        )
+
+    def _persist_message_row(self, conn: sqlite3.Connection, sess: Session, msg: dict) -> None:
+        if sess.id in self.deleted_session_ids:
+            return
+        payload = {k: v for k, v in msg.items() if k not in {"id", "role", "content", "ts"}}
+        conn.execute(
+            """
+            INSERT INTO messages (session_id, id, role, content, ts, payload)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(session_id, id) DO UPDATE SET
+                role=excluded.role,
+                content=excluded.content,
+                ts=excluded.ts,
+                payload=excluded.payload
+            """,
+            (
+                sess.id,
+                int(msg["id"]),
+                str(msg["role"]),
+                str(msg["content"]),
+                float(msg["ts"]),
+                json.dumps(payload, ensure_ascii=False, default=str),
+            ),
+        )
+
+    def _persist_session_and_message(self, sess: Session, msg: Optional[dict] = None) -> None:
+        if sess.id in self.deleted_session_ids:
+            return
+        with self._connect() as conn:
+            self._persist_session_row(conn, sess)
+            if msg is not None:
+                self._persist_message_row(conn, sess, msg)
+            conn.commit()
 
     def make_agent(self, sess: Session):
         root = self.ensure_ga_import_path()
@@ -146,7 +300,7 @@ class AgentManager:
             out["partial"] = dict(sess.partial) if sess.partial else None
         return out
 
-    def add_message(self, sess: Session, role: str, content: str, **extra) -> dict:
+    def add_message(self, sess: Session, role: str, content: str, persist: bool = True, **extra) -> dict:
         sess.msg_seq += 1
         msg = {"id": sess.msg_seq, "role": role, "content": content, "ts": time.time()}
         msg.update(extra)
@@ -154,6 +308,8 @@ class AgentManager:
         sess.updated_at = time.time()
         if role == "user" and content.strip() and sess.title == "New chat":
             sess.title = content.strip().replace("\n", " ")[:40]
+        if persist:
+            self._persist_session_and_message(sess, msg)
         return msg
 
     def create_session(self, cwd: Optional[str] = None, title: str = "New chat") -> Session:
@@ -161,7 +317,9 @@ class AgentManager:
         sess = Session(id=sid, title=title or "New chat", cwd=str(cwd or self.ga_root))
         with self.lock:
             self.sessions[sid] = sess
+            self.deleted_session_ids.discard(sid)
             self.active_session_id = sid
+        self._persist_session(sess)
         emit_session_state(sess, "created")
         return sess
 
@@ -177,11 +335,17 @@ class AgentManager:
             sess = self.sessions.pop(sid, None)
             if not sess:
                 raise web.HTTPNotFound(text=json.dumps({"error": f"session not found: {sid}"}, ensure_ascii=False), content_type="application/json")
+            self.deleted_session_ids.add(sid)
+            sess.cancel_requested = True
             if self.active_session_id == sid:
                 self.active_session_id = next(iter(self.sessions), None)
             if sess.agent and hasattr(sess.agent, "abort"):
                 with contextlib.suppress(Exception):
                     sess.agent.abort()
+        with self._connect() as conn:
+            conn.execute("DELETE FROM messages WHERE session_id = ?", (sid,))
+            conn.execute("DELETE FROM sessions WHERE id = ?", (sid,))
+            conn.commit()
         emit_session_state(sess, "closed")
         return {"ok": True, "sessionId": sid}
 
@@ -196,13 +360,14 @@ class AgentManager:
             extra = {}
             if image_ids:
                 extra["image_ids"] = image_ids
-            user_msg = self.add_message(sess, "user", prompt, **extra)
+            user_msg = self.add_message(sess, "user", prompt, persist=False, **extra)
             turn_id = self.make_turn_id(sid, user_msg["id"])
             user_msg["turn_id"] = turn_id
             user_msg["source"] = "user"
             sess.status = "running"
             sess.cancel_requested = False
             sess.last_error = ""
+            self._persist_session_and_message(sess, user_msg)
             sess.partial = {
                 "id": sess.msg_seq + 1,
                 "role": "assistant",
@@ -285,6 +450,7 @@ class AgentManager:
                     if sess.status != "cancelled":
                         sess.status = "cancelled"
                     sess.updated_at = time.time()
+                    self._persist_session(sess)
                 emit_session_state(sess, "cancelled")
                 return
             with self.lock:
@@ -305,6 +471,7 @@ class AgentManager:
                 )
                 sess.status = "idle"
                 sess.last_error = ""
+                self._persist_session(sess)
             emit_session_state(sess, "idle")
         except Exception as e:
             tb = traceback.format_exc()
@@ -323,6 +490,7 @@ class AgentManager:
                     outputs=turn_outputs,
                     source="error",
                 )
+                self._persist_session(sess)
             print(tb, file=sys.stderr)
             emit_session_state(sess, "error")
 
@@ -356,6 +524,7 @@ class AgentManager:
             sess.status = "cancelled"
             sess.partial = None
             sess.updated_at = time.time()
+            self._persist_session(sess)
         emit_session_state(sess, "cancelled")
         return {"ok": True, "sessionId": sid}
 
@@ -567,7 +736,11 @@ async def model_profiles_handler(request):
 
 async def list_sessions_handler(request):
     with manager.lock:
-        sessions = [manager.snapshot(s, include_messages=False) for s in manager.sessions.values()]
+        sessions = sorted(
+            (manager.snapshot(s, include_messages=False) for s in manager.sessions.values()),
+            key=lambda session: session["updatedAt"],
+            reverse=True,
+        )
     return json_ok({"sessions": sessions, "activeSessionId": manager.active_session_id})
 
 
