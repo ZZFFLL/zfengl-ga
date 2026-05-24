@@ -115,6 +115,7 @@ test("webui uses HeroUI components for the agent workbench shell", () => {
   assert.match(api, /after_event=/);
   assert.match(api, /payload\.events/);
   assert.match(api, /return steps\.length > 0 \? steps : mapOutputsToTimeline\(messages\)/);
+  assert.match(api, /detail_delta/);
   assert.doesNotMatch(api, /isFinalResponseOutput/);
   assert.doesNotMatch(api, /filter\(\(output\) => !isFinalResponseOutput\(output\)\)/);
   assert.doesNotMatch(api, /Final response to user/);
@@ -237,6 +238,7 @@ test("webui keeps the screenshot-style chat layout contract", () => {
   assert.match(components, /readSummaryFromModelDetail/);
   assert.match(components, /label: "入参"/);
   assert.match(components, /label: "结果"/);
+  assert.match(components, /label: sections\.length > 0 \? "过程" : "详情"/);
   assert.match(components, /label: "模型输出"/);
   assert.doesNotMatch(components, /timeline-tool-name/);
   assert.doesNotMatch(components, /timeline-tool-label/);

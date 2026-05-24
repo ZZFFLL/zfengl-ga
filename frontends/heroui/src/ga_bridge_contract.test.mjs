@@ -579,6 +579,42 @@ assert event["data"]["retract_response_id"] == response_id
 tool = manager.convert_agent_event(session, turn_id, response_id, {"type": "tool.start", "turn": 1, "tool_name": "web_scan", "tool_kind": "search"})
 assert tool["data"]["title"] == "第1轮 调用了 web_scan"
 assert tool["data"]["tool_label"] == "第1轮"
+
+tool_delta = manager.convert_agent_event(session, turn_id, response_id, {"type": "tool.delta", "turn": 2, "index": 0, "tool_name": "file_read", "tool_kind": "read", "delta": "[Action] Reading file\\n"})
+assert tool_delta["data"]["detail_delta"] == "[Action] Reading file\\n"
+assert "output_delta" not in tool_delta["data"]
+
+tool_done = manager.convert_agent_event(session, turn_id, response_id, {
+    "type": "tool.end",
+    "turn": 2,
+    "index": 0,
+    "tool_name": "file_read",
+    "tool_kind": "read",
+    "status": "done",
+    "output": "[FILE] 268 lines\\n202| literal [Error] text",
+    "detail": "[Action] Reading file\\n",
+    "error": "",
+    "elapsed_ms": 12,
+})
+assert tool_done["data"]["status"] == "done"
+assert tool_done["data"]["output"].startswith("[FILE] 268 lines")
+assert tool_done["data"]["detail"] == "[Action] Reading file\\n"
+assert tool_done["data"]["error"] == ""
+
+tool_failed = manager.convert_agent_event(session, turn_id, response_id, {
+    "type": "tool.end",
+    "turn": 2,
+    "index": 1,
+    "tool_name": "file_write",
+    "tool_kind": "file",
+    "status": "failed",
+    "output": "",
+    "detail": "[Status] failed\\n",
+    "error": "No content found",
+})
+assert tool_failed["data"]["status"] == "failed"
+assert tool_failed["data"]["detail"] == "[Status] failed\\n"
+assert tool_failed["data"]["error"] == "No content found"
 `;
 
   try {

@@ -31,6 +31,72 @@ class BaseHandler:
             return StepOutcome(None, next_prompt=f"未知工具 {tool_name}", should_exit=False)
 
 def json_default(o): return list(o) if isinstance(o, set) else str(o)
+def _format_tool_result(data):
+    if data is None:
+        return ""
+    if type(data) in [dict, list]:
+        return json.dumps(data, ensure_ascii=False, default=json_default, indent=2)
+    return str(data)
+
+def _coerced_tool_result_dict(tool_name, data):
+    if isinstance(data, dict):
+        return data
+    if str(tool_name or "") != "web_execute_js" or not isinstance(data, str):
+        return None
+    try:
+        parsed = json.loads(data)
+    except Exception:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+def _tool_result_status(tool_name, data):
+    name = str(tool_name or "")
+    if name == "file_read":
+        return "failed" if isinstance(data, str) and data.strip().startswith("Error:") else "done"
+    data_dict = _coerced_tool_result_dict(tool_name, data)
+    if data_dict is not None:
+        status = str(data_dict.get("status") or "").lower()
+        if status in {"error", "failed", "failure", "exception"}:
+            return "failed"
+        if status == "success":
+            return "done"
+        if data_dict.get("error") or data_dict.get("exception"):
+            return "failed"
+        return "done"
+    if isinstance(data, str):
+        text = data.strip().lower()
+        if name in {"code_run", "web_execute_js"} and text.startswith(("[error]", "error:", "exception:")):
+            return "failed"
+    return "done"
+
+def _tool_result_output(tool_name, data, status):
+    if status == "failed" or data is None:
+        return ""
+    name = str(tool_name or "")
+    data_dict = _coerced_tool_result_dict(tool_name, data)
+    if data_dict is not None:
+        if name == "code_run" and "stdout" in data_dict:
+            return str(data_dict.get("stdout") or "")
+        if name == "web_execute_js" and "js_return" in data_dict:
+            return str(data_dict.get("js_return") or "")
+        if "content" in data_dict:
+            return str(data_dict.get("content") or "")
+        if "msg" in data_dict and str(data_dict.get("status") or "").lower() == "success":
+            return str(data_dict.get("msg") or "")
+        if "result" in data_dict and len(data_dict) == 1:
+            return str(data_dict.get("result") or "")
+    return _format_tool_result(data)
+
+def _tool_result_error(data, status, tool_name=""):
+    if status != "failed":
+        return ""
+    data_dict = _coerced_tool_result_dict(tool_name, data)
+    if data_dict is not None:
+        for key in ("msg", "error", "exception", "stderr", "stdout"):
+            if data_dict.get(key):
+                return str(data_dict.get(key))
+    return _format_tool_result(data)
+
 def exhaust(g):
     try: 
         while True: next(g)
@@ -199,7 +265,8 @@ def agent_runner_loop(client, system_prompt, user_input, handler, tools_schema,
             except StopIteration as e: outcome = e.value
             if tool_name != 'no_tool':
                 elapsed_ms = int((time.time() - tool_started_at) * 1000)
-                failed = isinstance(getattr(outcome, "data", None), str) and "[Error]" in outcome.data
+                detail = "".join(tool_chunks)
+                status = _tool_result_status(tool_name, getattr(outcome, "data", None))
                 _emit_event(
                     event_sink,
                     "tool.end",
@@ -208,9 +275,11 @@ def agent_runner_loop(client, system_prompt, user_input, handler, tools_schema,
                     tool_call_id=tid,
                     tool_name=tool_name,
                     tool_kind=_tool_kind(tool_name),
-                    status="failed" if failed else "done",
+                    status=status,
                     result=getattr(outcome, "data", None),
-                    output="".join(tool_chunks),
+                    output=_tool_result_output(tool_name, getattr(outcome, "data", None), status),
+                    error=_tool_result_error(getattr(outcome, "data", None), status, tool_name),
+                    detail=detail,
                     elapsed_ms=elapsed_ms,
                 )
             

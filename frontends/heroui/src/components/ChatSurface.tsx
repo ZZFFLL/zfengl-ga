@@ -329,7 +329,6 @@ function TimelineStepCard({ step }: { step: ExecutionStep }) {
           </Disclosure.Content>
         ) : null}
       </Disclosure>
-      {step.error ? <p className="timeline-step-summary timeline-step-summary--error">{step.error}</p> : null}
     </div>
   );
 }
@@ -451,19 +450,22 @@ function buildToolDetailSections(step: ExecutionStep): ToolDetailSection[] {
   if (error) {
     sections.push({ kind: "error", label: "错误", content: error });
   }
-  if (sections.length > 0) {
-    return sections;
-  }
   if (step.kind === "phase" && step.default_open && detail) {
     return [{ kind: "output", label: "模型输出", content: detail }];
   }
 
-  const parsedSections = splitToolDetail(step.detail);
-  if (parsedSections.length > 0) {
-    return parsedSections;
+  if (sections.length === 0) {
+    const parsedSections = splitToolDetail(step.detail);
+    if (parsedSections.length > 0) {
+      return parsedSections;
+    }
   }
 
-  return detail ? [{ kind: "detail", label: "详情", content: detail }] : [];
+  if (detail && !sections.some((section) => section.content === detail)) {
+    sections.push({ kind: "detail", label: sections.length > 0 ? "过程" : "详情", content: detail });
+  }
+
+  return sections;
 }
 
 function splitToolDetail(detail: string): ToolDetailSection[] {

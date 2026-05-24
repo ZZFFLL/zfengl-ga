@@ -469,7 +469,7 @@ class AgentManager:
                     "status": "running",
                     "summary": tool_title,
                     "detail": "",
-                    "output_delta": str(raw.get("delta") or ""),
+                    "detail_delta": str(raw.get("delta") or ""),
                     "tool_name": tool_name,
                     "tool_label": round_label,
                     "created_at": created_at,
@@ -477,6 +477,9 @@ class AgentManager:
             }
         if event_type == "tool.end":
             status = str(raw.get("status") or "done")
+            error = str(raw.get("error") or "")
+            if status == "failed" and not error:
+                error = str(raw.get("result") or "")
             return {
                 "type": "timeline.step",
                 "turn_id": turn_id,
@@ -489,9 +492,9 @@ class AgentManager:
                     "title": tool_title,
                     "status": "failed" if status == "failed" else "done",
                     "summary": tool_title,
-                    "detail": "",
+                    "detail": str(raw.get("detail") or ""),
                     "output": str(raw.get("output") or ""),
-                    "error": str(raw.get("result") or "") if status == "failed" else "",
+                    "error": error if status == "failed" else "",
                     "elapsed_ms": raw.get("elapsed_ms"),
                     "tool_name": tool_name,
                     "tool_label": round_label,

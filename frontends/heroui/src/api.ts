@@ -486,6 +486,7 @@ function mapEventsToTimeline(events: BridgeTimelineEvent[], messages: MessageRec
     }
     const current = steps.find((step) => step.id === id);
     const outputDelta = typeof data.output_delta === "string" ? data.output_delta : "";
+    const detailDelta = typeof data.detail_delta === "string" ? data.detail_delta : "";
     const step: ExecutionStep = {
       id,
       turn_id: typeof data.turn_id === "string" ? data.turn_id : undefined,
@@ -494,7 +495,12 @@ function mapEventsToTimeline(events: BridgeTimelineEvent[], messages: MessageRec
       title: String(data.title ?? "执行步骤"),
       status: data.status === "failed" ? "failed" : data.status === "running" ? "running" : "done",
       summary: String(data.summary ?? current?.summary ?? ""),
-      detail: String(data.detail ?? current?.detail ?? ""),
+      detail:
+        detailDelta
+          ? `${current?.detail ?? ""}${detailDelta}`
+          : typeof data.detail === "string"
+            ? data.detail
+            : current?.detail ?? "",
       input: typeof data.input === "string" ? data.input : current?.input,
       output: typeof data.output === "string" ? data.output : outputDelta ? `${current?.output ?? ""}${outputDelta}` : current?.output,
       error: typeof data.error === "string" ? data.error : current?.error,

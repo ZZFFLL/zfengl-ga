@@ -419,6 +419,7 @@ function reduceTimelineStep(state: TurnState, event: StreamEvent): TurnState {
   const stepId = String(event.data.id ?? `${state.turnId}:step:${state.steps.length + 1}`);
   const current = state.steps.find((item) => item.id === stepId);
   const outputDelta = typeof event.data.output_delta === "string" ? event.data.output_delta : "";
+  const detailDelta = typeof event.data.detail_delta === "string" ? event.data.detail_delta : "";
   const step: ExecutionStep = {
     id: stepId,
     turn_id: typeof event.data.turn_id === "string" ? event.data.turn_id : state.turnId,
@@ -426,7 +427,12 @@ function reduceTimelineStep(state: TurnState, event: StreamEvent): TurnState {
     title: String(event.data.title ?? "执行步骤"),
     status: readStepStatus(event.data.status),
     summary: String(event.data.summary ?? current?.summary ?? ""),
-    detail: String(event.data.detail ?? current?.detail ?? ""),
+    detail:
+      detailDelta
+        ? `${current?.detail ?? ""}${detailDelta}`
+        : typeof event.data.detail === "string"
+          ? event.data.detail
+          : current?.detail ?? "",
     input: typeof event.data.input === "string" ? event.data.input : current?.input,
     output:
       typeof event.data.output === "string"

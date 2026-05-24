@@ -1,7 +1,14 @@
 import json
 from dataclasses import dataclass
 
-from agent_loop import BaseHandler, StepOutcome, agent_runner_loop
+from agent_loop import (
+    BaseHandler,
+    StepOutcome,
+    _tool_result_error,
+    _tool_result_output,
+    _tool_result_status,
+    agent_runner_loop,
+)
 
 
 @dataclass
@@ -126,6 +133,48 @@ class EventHandler(BaseHandler):
         return StepOutcome(response, next_prompt=None)
 
 
+class FileFailureHandler(EventHandler):
+    def do_file_read(self, args, response):
+        yield "[Action] Reading file: E:\\missing.txt\n"
+        return StepOutcome("Error: [Errno 2] No such file or directory", next_prompt="\n")
+
+    def do_file_write(self, args, response):
+        yield "[Status] ❌ 失败: 未在回复中找到<file_content>代码块内容\n"
+        return StepOutcome({"status": "error", "msg": "No content found"}, next_prompt="\n")
+
+
+class FileReadContentHandler(EventHandler):
+    def do_file_read(self, args, response):
+        yield "[Action] Reading file: E:\\zfengl-ai-project\\GenericAgent\\agent_loop.py\n"
+        return StepOutcome(
+            '由于设置了show_linenos，以下返回信息为：(行号|)内容 。\n'
+            '[FILE] 268 lines | PARTIAL showing 69; assess need for more\n'
+            '202| failed = isinstance(getattr(outcome, "data", None), str) and "[Error]" in outcome.data\n',
+            next_prompt="\n",
+        )
+
+
+class FileFailureClient:
+    def __init__(self, tool_name):
+        self.last_tools = ""
+        self.tool_name = tool_name
+
+    def chat(self, messages, tools):
+        yield f"I will call {self.tool_name}."
+        return FakeResponse(
+            content=f"I will call {self.tool_name}.",
+            tool_calls=[
+                FakeToolCall(
+                    id=f"call-{self.tool_name}",
+                    function=FakeFunction(
+                        name=self.tool_name,
+                        arguments=json.dumps({"path": "E:\\missing.txt"}),
+                    ),
+                )
+            ],
+        )
+
+
 def test_agent_runner_loop_emits_ordered_structured_events():
     events = []
     handler = EventHandler()
@@ -196,6 +245,102 @@ def test_agent_runner_loop_without_event_sink_keeps_legacy_chunks_only():
 
     assert any(isinstance(chunk, dict) and chunk.get("turn") == 1 for chunk in chunks)
     assert not any(isinstance(chunk, dict) and chunk.get("type") == "tool.start" for chunk in chunks)
+
+
+def test_agent_runner_loop_marks_file_read_error_result_as_failed_card_output():
+    events = []
+
+    list(
+        agent_runner_loop(
+            FileFailureClient("file_read"),
+            "system",
+            "read missing",
+            FileFailureHandler(),
+            tools_schema=[],
+            verbose=True,
+            yield_info=True,
+            max_turns=1,
+            event_sink=events.append,
+        )
+    )
+
+    tool_end = next(event for event in events if event["type"] == "tool.end")
+
+    assert tool_end["status"] == "failed"
+    assert "[Action] Reading file:" in tool_end["detail"]
+    assert tool_end["output"] == ""
+    assert "Error: [Errno 2]" in tool_end["error"]
+
+
+def test_agent_runner_loop_keeps_file_read_content_with_error_marker_successful():
+    events = []
+
+    list(
+        agent_runner_loop(
+            FileFailureClient("file_read"),
+            "system",
+            "read source",
+            FileReadContentHandler(),
+            tools_schema=[],
+            verbose=True,
+            yield_info=True,
+            max_turns=1,
+            event_sink=events.append,
+        )
+    )
+
+    tool_end = next(event for event in events if event["type"] == "tool.end")
+
+    assert tool_end["status"] == "done"
+    assert "[Action] Reading file:" in tool_end["detail"]
+    assert "PARTIAL showing 69" in tool_end["output"]
+    assert '"[Error]" in outcome.data' in tool_end["output"]
+    assert tool_end["error"] == ""
+
+
+def test_agent_runner_loop_marks_file_write_error_dict_as_failed_card_output():
+    events = []
+
+    list(
+        agent_runner_loop(
+            FileFailureClient("file_write"),
+            "system",
+            "write missing content",
+            FileFailureHandler(),
+            tools_schema=[],
+            verbose=True,
+            yield_info=True,
+            max_turns=1,
+            event_sink=events.append,
+        )
+    )
+
+    tool_end = next(event for event in events if event["type"] == "tool.end")
+
+    assert tool_end["status"] == "failed"
+    assert "未在回复中找到<file_content>" in tool_end["detail"]
+    assert tool_end["output"] == ""
+    assert "No content found" in tool_end["error"]
+
+
+def test_builtin_tool_result_contracts_do_not_guess_from_success_content():
+    assert _tool_result_status("file_read", '202| literal "[Error]" in source') == "done"
+    assert _tool_result_status("file_read", "Error: File not found: missing.py") == "failed"
+    assert _tool_result_status("file_write", {"status": "success", "writed_bytes": 10}) == "done"
+    assert _tool_result_status("file_write", {"status": "error", "msg": "No content found"}) == "failed"
+    assert _tool_result_status("file_patch", {"status": "success", "msg": "文件局部修改成功"}) == "done"
+    assert _tool_result_status("file_patch", {"status": "error", "msg": "未找到匹配"}) == "failed"
+    assert _tool_result_status("code_run", {"status": "success", "stdout": "[Error] as data", "exit_code": 0}) == "done"
+    assert _tool_result_status("code_run", {"status": "error", "stdout": "Traceback", "exit_code": 1}) == "failed"
+    assert _tool_result_status("web_scan", {"status": "success", "content": "visible [Error] page text"}) == "done"
+    assert _tool_result_status("web_scan", {"status": "error", "msg": "没有可用的浏览器标签页"}) == "failed"
+    assert _tool_result_status("web_execute_js", '{"status": "error", "msg": "没有可用的浏览器标签页"}') == "failed"
+    assert _tool_result_status("ask_user", {"status": "INTERRUPT", "intent": "HUMAN_INTERVENTION"}) == "done"
+    assert _tool_result_status("update_working_checkpoint", {"result": "working key_info updated"}) == "done"
+    assert _tool_result_status("start_long_term_update", "Memory Management SOP not found. Do not update memory.") == "done"
+
+    assert _tool_result_output("code_run", {"status": "success", "stdout": "ok\n", "exit_code": 0}, "done") == "ok\n"
+    assert _tool_result_error({"status": "error", "msg": "No content found"}, "failed") == "No content found"
 
 
 def test_agent_runner_loop_emits_clean_model_delta_and_thinking_summary():
