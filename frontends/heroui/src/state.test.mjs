@@ -31,6 +31,33 @@ test("answer.delta appends streaming text and marks state streaming", () => {
   assert.equal(state.status, "streaming");
 });
 
+test("answer.retract clears only the matching streaming draft", () => {
+  let state = createInitialTurnState("turn-1");
+  state = applyStreamEvent(state, {
+    ...baseEvent,
+    type: "answer.delta",
+    data: { response_id: "turn-1:response:1", delta: "draft text" },
+  });
+  state = applyStreamEvent(state, {
+    ...baseEvent,
+    type: "answer.retract",
+    data: { response_id: "turn-1:response:2" },
+  });
+
+  assert.equal(state.answer, "draft text");
+  assert.equal(state.currentResponseId, "turn-1:response:1");
+
+  state = applyStreamEvent(state, {
+    ...baseEvent,
+    type: "answer.retract",
+    data: { response_id: "turn-1:response:1" },
+  });
+
+  assert.equal(state.answer, "");
+  assert.equal(state.currentResponseId, "");
+  assert.equal(state.responses.length, 0);
+});
+
 test("phase.update replaces current phase", () => {
   const state = applyStreamEvent(createInitialTurnState("turn-1"), {
     ...baseEvent,

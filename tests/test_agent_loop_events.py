@@ -17,9 +17,9 @@ class FakeToolCall:
 
 
 class FakeResponse:
-    def __init__(self, content="", tool_calls=None):
+    def __init__(self, content="", tool_calls=None, thinking=""):
         self.content = content
-        self.thinking = ""
+        self.thinking = thinking
         self.tool_calls = tool_calls or []
 
 
@@ -46,6 +46,65 @@ class FakeClient:
             )
         yield "Done."
         return FakeResponse(content="Done.", tool_calls=[])
+
+
+class StreamingProtocolClient:
+    def __init__(self):
+        self.last_tools = ""
+
+    def chat(self, messages, tools):
+        yield "Visible "
+        yield "<thinking>private reasoning</thinking>"
+        yield "<summary>准备调用命令</summary>"
+        yield "text"
+        return FakeResponse(
+            content="<summary>准备调用命令</summary>Visible text",
+            thinking="private reasoning",
+            tool_calls=[
+                FakeToolCall(
+                    id="call-1",
+                    function=FakeFunction(
+                        name="code_run",
+                        arguments=json.dumps({"type": "python", "code": "print('ok')"}),
+                    ),
+                )
+            ],
+        )
+
+
+class NoToolProtocolClient:
+    def __init__(self):
+        self.last_tools = ""
+
+    def chat(self, messages, tools):
+        yield "Visible answer"
+        return FakeResponse(
+            content="Visible answer <thinking>private reasoning</thinking><tool_use>{}</tool_use><file_content>secret</file_content>",
+            thinking="private reasoning",
+            tool_calls=[],
+        )
+
+
+class NoToolEmptyContentStreamingClient:
+    def __init__(self):
+        self.last_tools = ""
+
+    def chat(self, messages, tools):
+        yield "Visible final "
+        yield "<thinking>private reasoning</thinking>"
+        yield "answer"
+        return FakeResponse(content="", thinking="private reasoning", tool_calls=[])
+
+
+class NoToolProtocolOnlyContentClient:
+    def __init__(self):
+        self.last_tools = ""
+
+    def chat(self, messages, tools):
+        yield "Visible "
+        yield "<thinking>private reasoning</thinking>"
+        yield "answer"
+        return FakeResponse(content="<thinking>private reasoning</thinking>", thinking="private reasoning", tool_calls=[])
 
 
 class FakeParent:
@@ -89,6 +148,7 @@ def test_agent_runner_loop_emits_ordered_structured_events():
     assert event_types == [
         "turn.start",
         "llm.start",
+        "llm.visible_delta",
         "llm.end",
         "tool.start",
         "tool.delta",
@@ -96,6 +156,7 @@ def test_agent_runner_loop_emits_ordered_structured_events():
         "turn.end",
         "turn.start",
         "llm.start",
+        "llm.visible_delta",
         "llm.end",
         "agent.final",
         "turn.end",
@@ -135,6 +196,152 @@ def test_agent_runner_loop_without_event_sink_keeps_legacy_chunks_only():
 
     assert any(isinstance(chunk, dict) and chunk.get("turn") == 1 for chunk in chunks)
     assert not any(isinstance(chunk, dict) and chunk.get("type") == "tool.start" for chunk in chunks)
+
+
+def test_agent_runner_loop_emits_clean_model_delta_and_thinking_summary():
+    events = []
+    handler = EventHandler()
+
+    list(
+        agent_runner_loop(
+            StreamingProtocolClient(),
+            "system",
+            "run it",
+            handler,
+            tools_schema=[],
+            verbose=True,
+            yield_info=True,
+            max_turns=1,
+            event_sink=events.append,
+        )
+    )
+
+    event_types = [event["type"] for event in events]
+    deltas = [
+        event["delta"]
+        for event in events
+        if event["type"] == "llm.visible_delta" and event["turn"] == 1
+    ]
+    llm_end = next(event for event in events if event["type"] == "llm.end")
+
+    assert "llm.visible_delta" in event_types
+    assert "".join(deltas) == "Visible <summary>准备调用命令</summary>text"
+    assert "private reasoning" not in "".join(deltas)
+    assert llm_end["summary"] == "准备调用命令"
+    assert llm_end["thinking_summary"] == "准备调用命令"
+
+
+def test_agent_runner_loop_sanitizes_agent_final_text_for_no_tool_response():
+    events = []
+    handler = EventHandler()
+
+    list(
+        agent_runner_loop(
+            NoToolProtocolClient(),
+            "system",
+            "run it",
+            handler,
+            tools_schema=[],
+            verbose=True,
+            yield_info=True,
+            max_turns=1,
+            event_sink=events.append,
+        )
+    )
+
+    final_event = next(event for event in events if event["type"] == "agent.final")
+
+    assert final_event["text"] == "Visible answer"
+    assert "<thinking>" not in final_event["text"]
+    assert "<tool_use>" not in final_event["text"]
+    assert "<file_content>" not in final_event["text"]
+
+
+def test_agent_runner_loop_uses_visible_stream_fallback_for_empty_final_content():
+    events = []
+    handler = EventHandler()
+
+    list(
+        agent_runner_loop(
+            NoToolEmptyContentStreamingClient(),
+            "system",
+            "run it",
+            handler,
+            tools_schema=[],
+            verbose=True,
+            yield_info=True,
+            max_turns=1,
+            event_sink=events.append,
+        )
+    )
+
+    final_event = next(event for event in events if event["type"] == "agent.final")
+    deltas = [event["delta"] for event in events if event["type"] == "llm.visible_delta"]
+
+    assert "".join(deltas) == "Visible final answer"
+    assert final_event["text"] == "Visible final answer"
+
+
+def test_agent_runner_loop_uses_visible_stream_fallback_when_final_content_sanitizes_empty():
+    events = []
+    handler = EventHandler()
+
+    list(
+        agent_runner_loop(
+            NoToolProtocolOnlyContentClient(),
+            "system",
+            "run it",
+            handler,
+            tools_schema=[],
+            verbose=True,
+            yield_info=True,
+            max_turns=1,
+            event_sink=events.append,
+        )
+    )
+
+    final_event = next(event for event in events if event["type"] == "agent.final")
+
+    assert final_event["text"] == "Visible answer"
+
+
+def test_structured_event_path_yields_sanitized_model_chunks_but_legacy_path_remains_raw():
+    structured_handler = EventHandler()
+    structured_chunks = list(
+        agent_runner_loop(
+            NoToolProtocolOnlyContentClient(),
+            "system",
+            "run it",
+            structured_handler,
+            tools_schema=[],
+            verbose=True,
+            yield_info=True,
+            max_turns=1,
+            event_sink=lambda event: None,
+        )
+    )
+
+    legacy_handler = EventHandler()
+    legacy_chunks = list(
+        agent_runner_loop(
+            NoToolProtocolOnlyContentClient(),
+            "system",
+            "run it",
+            legacy_handler,
+            tools_schema=[],
+            verbose=True,
+            yield_info=True,
+            max_turns=1,
+        )
+    )
+
+    structured_text = "".join(str(chunk) for chunk in structured_chunks)
+    legacy_text = "".join(str(chunk) for chunk in legacy_chunks)
+
+    assert "private reasoning" not in structured_text
+    assert "<thinking>" not in structured_text
+    assert "private reasoning" in legacy_text
+    assert "<thinking>" in legacy_text
 
 
 def test_generic_agent_structured_events_default_disabled():

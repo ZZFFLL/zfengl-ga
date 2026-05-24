@@ -60,13 +60,287 @@ test("HeroUI api adapter speaks the GA bridge polling contract", () => {
   assert.match(api, /after_event=/);
   assert.match(api, /payload\.events/);
   assert.doesNotMatch(api, /tool_name: "GenericAgent\.outputs"/);
+  assert.match(api, /new EventSource/);
+  assert.match(api, /function subscribeTurnPolling/);
   assert.match(api, /turn_id: message\.turn_id/);
   assert.match(api, /response_id: message\.responseId/);
   assert.match(api, /response_id: message\.responseId \|\| message\.response_id/);
   assert.match(api, /switchModelProfile/);
   assert.match(api, /\/model-profile/);
-  assert.doesNotMatch(api, /new EventSource/);
   assert.doesNotMatch(api, /\/api\/turns\/\$\{encodeURIComponent\(turnId\)\}\/events/);
+});
+
+test("HeroUI bridge exposes persisted SSE events with replay cursor", () => {
+  assert.equal(existsSync(bridgePath), true);
+  const bridge = readFileSync(bridgePath, "utf8");
+
+  assert.match(bridge, /class EventStreamHub/);
+  assert.match(bridge, /event_hub = EventStreamHub\(\)/);
+  assert.match(bridge, /async def events_handler\(request\):/);
+  assert.match(bridge, /text\/event-stream/);
+  assert.match(bridge, /after_event/);
+  assert.match(bridge, /Last-Event-ID/);
+  assert.match(bridge, /event_hub\.publish\(stored\)/);
+  assert.match(bridge, /app\.router\.add_get\("\/session\/\{sid\}\/events", events_handler\)/);
+});
+
+test("HeroUI bridge maps model deltas, retracts, and process summaries", () => {
+  assert.equal(existsSync(bridgePath), true);
+  const bridge = readFileSync(bridgePath, "utf8");
+
+  assert.match(bridge, /event_type == "llm\.visible_delta"/);
+  assert.match(bridge, /"type": "answer\.delta"/);
+  assert.match(bridge, /"type": "answer\.retract"/);
+  assert.match(bridge, /thinking_summary/);
+  assert.match(bridge, /retract_response_id/);
+  assert.match(bridge, /_round_label\(ga_turn\)/);
+});
+
+test("HeroUI bridge live SSE filters by session before advancing cursor", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-bridge-"));
+  const dbPath = join(tempDir, "sessions.sqlite3");
+  const script = `
+import asyncio
+import importlib.util
+import sys
+from pathlib import Path
+
+bridge_path = Path(${JSON.stringify(bridgePath)})
+spec = importlib.util.spec_from_file_location("heroui_bridge_under_test_sse_live", bridge_path)
+bridge = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bridge
+spec.loader.exec_module(bridge)
+
+class FakeRequest:
+    def __init__(self, sid, query=None, headers=None):
+        self.match_info = {"sid": sid}
+        self.query = query or {}
+        self.headers = headers or {}
+
+class FakeStreamResponse:
+    last = None
+
+    def __init__(self, *args, **kwargs):
+        self.writes = []
+        FakeStreamResponse.last = self
+
+    async def prepare(self, request):
+        return None
+
+    async def write(self, data):
+        self.writes.append(bytes(data).decode("utf-8"))
+
+    async def drain(self):
+        return None
+
+async def main():
+    bridge.manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
+    session = bridge.manager.create_session(cwd="E:/tmp/ga", title="sse live")
+    turn_id = bridge.manager.make_turn_id(session.id, 1)
+    queue = asyncio.Queue()
+    await queue.put({
+        "seq": 99,
+        "type": "answer.delta",
+        "turn_id": "ga|other-session|1",
+        "session_id": "other-session",
+        "data": {"delta": "leak"},
+    })
+    await queue.put({
+        "seq": 1,
+        "type": "turn.done",
+        "turn_id": turn_id,
+        "session_id": session.id,
+        "data": {"ok": True},
+    })
+
+    original_stream = bridge.web.StreamResponse
+    original_subscribe = bridge.event_hub.subscribe
+    original_unsubscribe = bridge.event_hub.unsubscribe
+    bridge.web.StreamResponse = FakeStreamResponse
+    bridge.event_hub.subscribe = lambda session_id, turn_id="": queue
+    bridge.event_hub.unsubscribe = lambda subscribed: None
+    try:
+        await asyncio.wait_for(
+            bridge.events_handler(FakeRequest(session.id, query={"turn_id": turn_id})),
+            timeout=1,
+        )
+    finally:
+        bridge.web.StreamResponse = original_stream
+        bridge.event_hub.subscribe = original_subscribe
+        bridge.event_hub.unsubscribe = original_unsubscribe
+
+    output = "".join(FakeStreamResponse.last.writes)
+    assert "leak" not in output
+    assert "id: 1" in output
+    assert '"session_id": "' + session.id + '"' in output
+
+asyncio.run(main())
+`;
+
+  try {
+    execFileSync("python", ["-c", script], { stdio: "pipe" });
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("HeroUI bridge SSE cursor parsing treats invalid values as zero", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-bridge-"));
+  const dbPath = join(tempDir, "sessions.sqlite3");
+  const script = `
+import asyncio
+import importlib.util
+import sys
+from pathlib import Path
+
+bridge_path = Path(${JSON.stringify(bridgePath)})
+spec = importlib.util.spec_from_file_location("heroui_bridge_under_test_sse_cursor", bridge_path)
+bridge = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bridge
+spec.loader.exec_module(bridge)
+
+class FakeRequest:
+    def __init__(self, sid, turn_id):
+        self.match_info = {"sid": sid}
+        self.query = {"after_event": "not-a-number", "turn_id": turn_id}
+        self.headers = {"Last-Event-ID": "also-bad"}
+
+class FakeStreamResponse:
+    last = None
+
+    def __init__(self, *args, **kwargs):
+        self.writes = []
+        FakeStreamResponse.last = self
+
+    async def prepare(self, request):
+        return None
+
+    async def write(self, data):
+        self.writes.append(bytes(data).decode("utf-8"))
+
+    async def drain(self):
+        return None
+
+async def main():
+    bridge.manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
+    session = bridge.manager.create_session(cwd="E:/tmp/ga", title="sse cursor")
+    turn_id = bridge.manager.make_turn_id(session.id, 1)
+    bridge.manager.add_event(session, {
+        "type": "turn.done",
+        "turn_id": turn_id,
+        "session_id": session.id,
+        "data": {"ok": True},
+    })
+
+    original_stream = bridge.web.StreamResponse
+    bridge.web.StreamResponse = FakeStreamResponse
+    try:
+        await bridge.events_handler(FakeRequest(session.id, turn_id))
+    finally:
+        bridge.web.StreamResponse = original_stream
+
+    output = "".join(FakeStreamResponse.last.writes)
+    assert "id: 1" in output
+    assert "turn.done" in output
+
+asyncio.run(main())
+`;
+
+  try {
+    execFileSync("python", ["-c", script], { stdio: "pipe" });
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("HeroUI bridge messages endpoint treats malformed cursors as safe defaults", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-bridge-"));
+  const dbPath = join(tempDir, "sessions.sqlite3");
+  const script = `
+import asyncio
+import importlib.util
+import json
+import sys
+from pathlib import Path
+
+bridge_path = Path(${JSON.stringify(bridgePath)})
+spec = importlib.util.spec_from_file_location("heroui_bridge_under_test_messages_cursor", bridge_path)
+bridge = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bridge
+spec.loader.exec_module(bridge)
+
+class FakeRequest:
+    def __init__(self, sid):
+        self.match_info = {"sid": sid}
+        self.query = {"after": "bad", "limit": "bad", "after_event": "bad"}
+
+async def main():
+    bridge.manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
+    session = bridge.manager.create_session(cwd="E:/tmp/ga", title="messages cursor")
+    bridge.manager.add_message(session, "user", "hello", turn_id="ga|" + session.id + "|1")
+    bridge.manager.add_event(session, {
+        "type": "turn.done",
+        "turn_id": "ga|" + session.id + "|1",
+        "session_id": session.id,
+        "data": {"ok": True},
+    })
+
+    response = await bridge.messages_handler(FakeRequest(session.id))
+    payload = json.loads(response.text)
+    assert payload["messages"][0]["content"] == "hello"
+    assert payload["events"][0]["type"] == "turn.done"
+
+asyncio.run(main())
+`;
+
+  try {
+    execFileSync("python", ["-c", script], { stdio: "pipe" });
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("HeroUI bridge scoped event subscriptions do not let other sessions evict relevant events", () => {
+  const script = `
+import asyncio
+import importlib.util
+import sys
+from pathlib import Path
+
+bridge_path = Path(${JSON.stringify(bridgePath)})
+spec = importlib.util.spec_from_file_location("heroui_bridge_under_test_scoped_hub", bridge_path)
+bridge = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bridge
+spec.loader.exec_module(bridge)
+
+async def main():
+    hub = bridge.EventStreamHub()
+    queue = hub.subscribe("sess-target", "ga|sess-target|1")
+    for i in range(1100):
+        await hub._publish({
+            "seq": i + 1,
+            "type": "answer.delta",
+            "turn_id": "ga|sess-other|1",
+            "session_id": "sess-other",
+            "data": {"delta": "noise"},
+        })
+    await hub._publish({
+        "seq": 1,
+        "type": "turn.done",
+        "turn_id": "ga|sess-target|1",
+        "session_id": "sess-target",
+        "data": {"ok": True},
+    })
+
+    assert queue.qsize() == 1
+    event = queue.get_nowait()
+    assert event["session_id"] == "sess-target"
+    assert event["type"] == "turn.done"
+
+asyncio.run(main())
+`;
+
+  execFileSync("python", ["-c", script], { stdio: "pipe" });
 });
 
 test("HeroUI bridge switches model profile for idle sessions and blocks running sessions", () => {
@@ -274,18 +548,33 @@ assert manager.convert_agent_event(session, turn_id, response_id, {"type": "turn
 
 assert manager.convert_agent_event(session, turn_id, response_id, {"type": "llm.end", "turn": 1, "text": "最终回复正文", "has_tools": False}) is None
 
+delta = manager.convert_agent_event(session, turn_id, response_id, {"type": "llm.visible_delta", "turn": 1, "delta": "我先查一下。"})
+assert delta["type"] == "answer.delta"
+assert delta["data"]["delta"] == "我先查一下。"
+assert delta["data"]["response_id"] == response_id
+
 event = manager.convert_agent_event(
     session,
     turn_id,
     response_id,
-    {"type": "llm.end", "turn": 1, "text": "<summary>用户请求今日AI新闻，调用搜索获取</summary>", "has_tools": True, "elapsed_ms": 1234},
+    {
+        "type": "llm.end",
+        "turn": 1,
+        "text": "<summary>用户请求今日AI新闻，调用搜索获取</summary>我需要先搜索。",
+        "has_tools": True,
+        "elapsed_ms": 1234,
+        "summary": "用户请求今日AI新闻，调用搜索获取",
+        "thinking_summary": "用户请求今日AI新闻，调用搜索获取",
+    },
 )
 assert event["type"] == "timeline.step"
 assert event["data"]["title"] == "用户请求今日AI新闻，调用搜索获取"
 assert event["data"]["summary"] == "用户请求今日AI新闻，调用搜索获取"
-assert event["data"]["detail"] == "<summary>用户请求今日AI新闻，调用搜索获取</summary>"
+assert "摘要：用户请求今日AI新闻，调用搜索获取" in event["data"]["detail"]
+assert "模型输出：用户请求今日AI新闻，调用搜索获取我需要先搜索。" in event["data"]["detail"]
 assert event["data"]["elapsed_ms"] == 1234
 assert event["data"]["default_open"] is False
+assert event["data"]["retract_response_id"] == response_id
 
 tool = manager.convert_agent_event(session, turn_id, response_id, {"type": "tool.start", "turn": 1, "tool_name": "web_scan", "tool_kind": "search"})
 assert tool["data"]["title"] == "第1轮 调用了 web_scan"
@@ -371,6 +660,56 @@ manager.run_agent_turn(session, "ga|" + session.id + "|1", "prompt")
 
 assert session.messages[-1]["role"] == "assistant"
 assert session.messages[-1]["content"] == "clean final"
+`;
+
+  try {
+    execFileSync("python", ["-c", script], { stdio: "pipe" });
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("HeroUI bridge retracts streamed model drafts before tool-turn model cards", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-bridge-"));
+  const dbPath = join(tempDir, "sessions.sqlite3");
+  const script = `
+import importlib.util
+import queue
+import sys
+from pathlib import Path
+
+bridge_path = Path(${JSON.stringify(bridgePath)})
+spec = importlib.util.spec_from_file_location("heroui_bridge_under_test_retract", bridge_path)
+bridge = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bridge
+spec.loader.exec_module(bridge)
+
+class FakeAgent:
+    structured_events = True
+    inc_out = True
+
+    def put_task(self, prompt, images=None):
+        q = queue.Queue()
+        q.put({"event": {"type": "llm.visible_delta", "turn": 1, "delta": "我先查一下。"}})
+        q.put({"event": {"type": "llm.end", "turn": 1, "text": "我先查一下。", "has_tools": True, "summary": "需要调用工具", "thinking_summary": "需要调用工具"}})
+        q.put({"event": {"type": "agent.final", "turn": 1, "text": "最终回答"}})
+        q.put({"event": {"type": "agent.done", "turn": 1}})
+        q.put({"done": "raw log", "turn": 1, "outputs": []})
+        return q
+
+manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
+session = manager.create_session(cwd="E:/tmp/ga", title="retract")
+session.agent = FakeAgent()
+turn_id = "ga|" + session.id + "|1"
+manager.run_agent_turn(session, turn_id, "prompt")
+
+types = [event["type"] for event in session.events]
+assert types[:4] == ["answer.delta", "answer.retract", "timeline.step", "answer.final"], types
+step = next(event for event in session.events if event["type"] == "timeline.step")
+assert "retract_response_id" not in step["data"]
+assert step["data"]["title"] == "需要调用工具"
+assert step["data"]["default_open"] is False
+assert session.messages[-1]["content"] == "最终回答"
 `;
 
   try {

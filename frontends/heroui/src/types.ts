@@ -1,5 +1,6 @@
 export type StreamEventType =
   | "answer.delta"
+  | "answer.retract"
   | "answer.final"
   | "phase.update"
   | "timeline.step"

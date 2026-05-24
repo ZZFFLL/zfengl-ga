@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Optional
 try: from plugins.hooks import trigger as _hook
 except ImportError: _hook = lambda *a, **k: None
+from agent_streaming import ModelDisplayStreamFilter, extract_model_process_summary, sanitize_model_visible_text
 @dataclass
 class StepOutcome:
     data: Any
@@ -82,22 +83,62 @@ def agent_runner_loop(client, system_prompt, user_input, handler, tools_schema,
         _emit_event(event_sink, "llm.start", turn=turn)
         llm_started_at = time.time()
         response_gen = client.chat(messages=messages, tools=tools_schema)
+        stream_filter = ModelDisplayStreamFilter()
+        visible_model_chunks = []
         if verbose:
-            response = yield from response_gen
+            try:
+                while True:
+                    chunk = next(response_gen)
+                    clean_delta = stream_filter.feed(chunk)
+                    if clean_delta:
+                        visible_model_chunks.append(clean_delta)
+                        _emit_event(event_sink, "llm.visible_delta", turn=turn, delta=clean_delta)
+                    yield clean_delta if event_sink is not None else chunk
+            except StopIteration as e:
+                response = e.value
+            clean_tail = stream_filter.finish()
+            if clean_tail:
+                visible_model_chunks.append(clean_tail)
+                _emit_event(event_sink, "llm.visible_delta", turn=turn, delta=clean_tail)
             yield '\n\n'
         else:
-            response = exhaust(response_gen)
-            cleaned = _clean_content(response.content)
+            raw_chunks = []
+            try:
+                while True:
+                    chunk = next(response_gen)
+                    raw_chunks.append(str(chunk))
+                    clean_delta = stream_filter.feed(chunk)
+                    if clean_delta:
+                        visible_model_chunks.append(clean_delta)
+                        _emit_event(event_sink, "llm.visible_delta", turn=turn, delta=clean_delta)
+            except StopIteration as e:
+                response = e.value
+            clean_tail = stream_filter.finish()
+            if clean_tail:
+                visible_model_chunks.append(clean_tail)
+                _emit_event(event_sink, "llm.visible_delta", turn=turn, delta=clean_tail)
+            if event_sink is not None:
+                cleaned = sanitize_model_visible_text(getattr(response, "content", "")) or "".join(visible_model_chunks).strip()
+            else:
+                cleaned = _clean_content(getattr(response, "content", "") or "".join(raw_chunks))
             if cleaned: yield cleaned + '\n'
         llm_elapsed_ms = int((time.time() - llm_started_at) * 1000)
         _hook('llm_after', locals())
+        response_text = getattr(response, "content", "") or ""
+        final_text = sanitize_model_visible_text(response_text) if response_text else "".join(visible_model_chunks).strip()
+        if not final_text:
+            final_text = "".join(visible_model_chunks).strip()
+        thinking_text = getattr(response, "thinking", "") or ""
+        process_summary = extract_model_process_summary(response_text, thinking=thinking_text)
         _emit_event(
             event_sink,
             "llm.end",
             turn=turn,
-            text=getattr(response, "content", "") or "",
+            text=final_text,
             has_tools=bool(getattr(response, "tool_calls", None)),
             elapsed_ms=llm_elapsed_ms,
+            summary=process_summary,
+            thinking_summary=process_summary,
         )
 
         if not response.tool_calls: tool_calls = [{'tool_name': 'no_tool', 'args': {}}]
@@ -175,11 +216,11 @@ def agent_runner_loop(client, system_prompt, user_input, handler, tools_schema,
             
             if outcome.should_exit: 
                 exit_reason = {'result': 'EXITED', 'data': outcome.data}
-                _emit_event(event_sink, "agent.final", turn=turn, text=str(getattr(response, "content", "") or ""), exit_reason=exit_reason)
+                _emit_event(event_sink, "agent.final", turn=turn, text=final_text, exit_reason=exit_reason)
                 break
             if not outcome.next_prompt: 
                 exit_reason = {'result': 'CURRENT_TASK_DONE', 'data': outcome.data}
-                _emit_event(event_sink, "agent.final", turn=turn, text=str(getattr(response, "content", "") or ""), exit_reason=exit_reason)
+                _emit_event(event_sink, "agent.final", turn=turn, text=final_text, exit_reason=exit_reason)
                 break
             if outcome.next_prompt.startswith('未知工具'): client.last_tools = ''
             if outcome.data is not None and tool_name != 'no_tool': 

@@ -203,6 +203,73 @@ export function subscribeTurn(
   onEvent: (event: StreamEvent) => void,
   onError?: (error: Event) => void,
 ): EventSource {
+  if (typeof EventSource === "undefined") {
+    return subscribeTurnPolling(turnId, onEvent, onError);
+  }
+
+  const { sessionId } = parseTurnId(turnId);
+  const afterEvent = TURN_EVENT_CURSORS.get(turnId) ?? 0;
+  const params = new URLSearchParams({
+    after_event: String(afterEvent),
+    turn_id: turnId,
+  });
+  const source = new EventSource(apiUrl(`/session/${encodeURIComponent(sessionId)}/events?${params.toString()}`));
+  let closed = false;
+  let sawEvent = false;
+  let fallback: EventSource | null = null;
+
+  const close = () => {
+    closed = true;
+    TURN_EVENT_CURSORS.delete(turnId);
+    if (fallback) {
+      fallback.close();
+      return;
+    }
+    source.close();
+  };
+
+  source.onmessage = (message) => {
+    if (closed) {
+      return;
+    }
+    try {
+      const event = JSON.parse(message.data) as StreamEvent & { seq?: number };
+      sawEvent = true;
+      if (typeof event.seq === "number") {
+        TURN_EVENT_CURSORS.set(turnId, Math.max(TURN_EVENT_CURSORS.get(turnId) ?? 0, event.seq));
+      }
+      if (event.turn_id !== turnId) {
+        return;
+      }
+      onEvent(event);
+      if (event.type === "turn.done" || event.type === "turn.error") {
+        close();
+      }
+    } catch (error) {
+      onError?.(toEvent(error));
+      close();
+    }
+  };
+
+  source.onerror = (error) => {
+    if (closed) {
+      return;
+    }
+    if (!sawEvent) {
+      source.close();
+      fallback = subscribeTurnPolling(turnId, onEvent, onError);
+      return;
+    }
+  };
+
+  return { close } as EventSource;
+}
+
+function subscribeTurnPolling(
+  turnId: string,
+  onEvent: (event: StreamEvent) => void,
+  onError?: (error: Event) => void,
+): EventSource {
   const { sessionId, afterId } = parseTurnId(turnId);
   const state = {
     closed: false,

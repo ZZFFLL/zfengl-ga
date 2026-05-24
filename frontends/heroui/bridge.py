@@ -77,6 +77,15 @@ def _extract_summary_text(text: str) -> str:
     return lines[0]
 
 
+def _strip_summary_markup(text: str) -> str:
+    return re.sub(
+        r"<summary>\s*([\s\S]*?)\s*</summary>",
+        lambda match: " ".join(match.group(1).split()),
+        str(text or ""),
+        flags=re.IGNORECASE,
+    ).strip()
+
+
 def _round_label(turn_no: int) -> str:
     return f"第{turn_no}轮"
 
@@ -351,12 +360,15 @@ class AgentManager:
         stored["ts"] = float(stored.get("ts") or time.time())
         stored["turn_id"] = str(stored.get("turn_id") or "")
         stored["type"] = str(stored.get("type") or "")
+        stored["session_id"] = str(stored.get("session_id") or sess.id)
         sess.events.append(stored)
         sess.updated_at = time.time()
         if persist:
             with self._connect() as conn:
                 self._persist_event_row(conn, sess, stored)
                 conn.commit()
+            if sess.id not in self.deleted_session_ids:
+                event_hub.publish(stored)
         return stored
 
     def convert_agent_event(self, sess: Session, turn_id: str, response_id: str, raw: dict) -> Optional[dict]:
@@ -379,11 +391,31 @@ class AgentManager:
                 "session_id": sess.id,
                 "data": {"phase": "understanding", "label": "正在理解请求"},
             }
+        if event_type == "llm.visible_delta":
+            return {
+                "type": "answer.delta",
+                "turn_id": turn_id,
+                "session_id": sess.id,
+                "data": {
+                    "delta": str(raw.get("delta") or ""),
+                    "response_id": response_id,
+                    "created_at": created_at,
+                },
+            }
         if event_type == "llm.end":
             if not raw.get("has_tools"):
                 return None
             text = str(raw.get("text") or "")
-            summary = _extract_summary_text(text) or "模型输出"
+            summary = str(raw.get("summary") or "") or _extract_summary_text(text) or "模型输出"
+            thinking_summary = str(raw.get("thinking_summary") or summary)
+            visible_text = _strip_summary_markup(text)
+            detail_lines = []
+            if summary:
+                detail_lines.append(f"摘要：{summary}")
+            if thinking_summary and thinking_summary != summary:
+                detail_lines.append(f"过程：{thinking_summary}")
+            if visible_text and visible_text != summary:
+                detail_lines.append(f"模型输出：{visible_text}")
             return {
                 "type": "timeline.step",
                 "turn_id": turn_id,
@@ -396,10 +428,11 @@ class AgentManager:
                     "title": summary,
                     "status": "done",
                     "summary": summary,
-                    "detail": text,
+                    "detail": "\n\n".join(detail_lines),
                     "elapsed_ms": raw.get("elapsed_ms"),
                     "default_open": False,
                     "created_at": created_at,
+                    "retract_response_id": response_id,
                 },
             }
         if event_type == "tool.start":
@@ -692,6 +725,19 @@ class AgentManager:
                             converted = self.convert_agent_event(sess, turn_id, response_id, item["event"])
                             if converted:
                                 with self.lock:
+                                    if converted.get("type") == "timeline.step":
+                                        data = converted.get("data") or {}
+                                        retract_response_id = str(data.pop("retract_response_id", "") or "")
+                                        if retract_response_id:
+                                            self.add_event(
+                                                sess,
+                                                {
+                                                    "type": "answer.retract",
+                                                    "turn_id": turn_id,
+                                                    "session_id": sess.id,
+                                                    "data": {"response_id": retract_response_id},
+                                                },
+                                            )
                                     self.add_event(sess, converted)
                                     sess.updated_at = time.time()
                             continue
@@ -926,6 +972,44 @@ class WsHub:
 hub = WsHub()
 
 
+class EventStreamHub:
+    def __init__(self):
+        self.loop: Optional[asyncio.AbstractEventLoop] = None
+        self.subscribers: Dict[asyncio.Queue, tuple[str, str]] = {}
+
+    def subscribe(self, session_id: str, turn_id: str = "") -> asyncio.Queue:
+        queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
+        self.subscribers[queue] = (str(session_id or ""), str(turn_id or ""))
+        return queue
+
+    def unsubscribe(self, queue: asyncio.Queue) -> None:
+        self.subscribers.pop(queue, None)
+
+    def publish(self, event: dict) -> None:
+        if self.loop and self.loop.is_running():
+            asyncio.run_coroutine_threadsafe(self._publish(dict(event)), self.loop)
+
+    async def _publish(self, event: dict) -> None:
+        dead = set()
+        for queue, (session_id, turn_id) in list(self.subscribers.items()):
+            if str(event.get("session_id") or "") != session_id:
+                continue
+            if turn_id and event.get("turn_id") != turn_id:
+                continue
+            try:
+                if queue.full():
+                    with contextlib.suppress(asyncio.QueueEmpty):
+                        queue.get_nowait()
+                queue.put_nowait(event)
+            except Exception:
+                dead.add(queue)
+        for queue in dead:
+            self.unsubscribe(queue)
+
+
+event_hub = EventStreamHub()
+
+
 def emit_session_state(sess: Session, state_name: str):
     hub.emit({
         "type": "session-state",
@@ -984,6 +1068,32 @@ async def cors_middleware(request, handler):
 
 def json_ok(data: dict, status: int = 200):
     return web.json_response(data, status=status, headers=cors_headers(), dumps=lambda x: json.dumps(x, ensure_ascii=False, default=str))
+
+
+def sse_format_event(event: dict) -> bytes:
+    data = json.dumps(event, ensure_ascii=False, default=str)
+    return f'id: {event["seq"]}\nevent: message\ndata: {data}\n\n'.encode("utf-8")
+
+
+async def sse_write_event(response: web.StreamResponse, event: dict) -> None:
+    await response.write(sse_format_event(event))
+    with contextlib.suppress(Exception):
+        await response.drain()
+
+
+def parse_event_cursor(value: Any) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def parse_positive_int(value: Any, default: int) -> int:
+    try:
+        parsed = int(value or default)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
 
 
 async def read_json(request) -> dict:
@@ -1078,10 +1188,70 @@ async def prompt_handler(request):
 
 async def messages_handler(request):
     sid = request.match_info["sid"]
-    after = int(request.query.get("after") or request.query.get("afterId") or 0)
-    limit = int(request.query.get("limit") or 200)
-    after_event = int(request.query.get("after_event") or request.query.get("afterEvent") or 0)
+    after = parse_event_cursor(request.query.get("after") or request.query.get("afterId"))
+    limit = parse_positive_int(request.query.get("limit"), 200)
+    after_event = parse_event_cursor(request.query.get("after_event") or request.query.get("afterEvent"))
     return json_ok(manager.messages(sid, after=after, limit=limit, after_event=after_event))
+
+
+async def events_handler(request):
+    sid = request.match_info["sid"]
+    turn_id = str(request.query.get("turn_id") or "")
+    query_after = parse_event_cursor(request.query.get("after_event") or request.query.get("afterEvent"))
+    header_after = parse_event_cursor(request.headers.get("Last-Event-ID"))
+    after_event = max(query_after, header_after)
+    queue = event_hub.subscribe(sid, turn_id)
+    try:
+        with manager.lock:
+            sess = manager.sessions.get(sid)
+            if not sess:
+                raise web.HTTPNotFound(text=json.dumps({"error": f"session not found: {sid}"}, ensure_ascii=False), content_type="application/json")
+            replay_events = [
+                event
+                for event in sess.events
+                if int(event.get("seq", 0)) > after_event and (not turn_id or event.get("turn_id") == turn_id)
+            ]
+
+        response = web.StreamResponse(
+            status=200,
+            headers={
+                **cors_headers(),
+                "Content-Type": "text/event-stream",
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+        await response.prepare(request)
+
+        cursor = after_event
+        for event in replay_events:
+            cursor = max(cursor, int(event.get("seq", 0)))
+            await sse_write_event(response, event)
+            if turn_id and event.get("type") in {"turn.done", "turn.error"}:
+                return response
+
+        while True:
+            try:
+                event = await asyncio.wait_for(queue.get(), timeout=15)
+            except asyncio.TimeoutError:
+                await response.write(b": keep-alive\n\n")
+                continue
+            if str(event.get("session_id") or "") != sid:
+                continue
+            if turn_id and event.get("turn_id") != turn_id:
+                continue
+            event_seq = parse_event_cursor(event.get("seq"))
+            if event_seq <= cursor:
+                continue
+            cursor = event_seq
+            await sse_write_event(response, event)
+            if turn_id and event.get("type") in {"turn.done", "turn.error"}:
+                return response
+    except (asyncio.CancelledError, ConnectionResetError, BrokenPipeError):
+        raise
+    finally:
+        event_hub.unsubscribe(queue)
 
 
 async def cancel_handler(request):
@@ -1124,6 +1294,7 @@ def create_app():
     app.router.add_delete("/session/{sid}", delete_session_handler)
     app.router.add_post("/session/{sid}/prompt", prompt_handler)
     app.router.add_get("/session/{sid}/messages", messages_handler)
+    app.router.add_get("/session/{sid}/events", events_handler)
     app.router.add_post("/session/{sid}/cancel", cancel_handler)
     app.router.add_post("/path/open", path_open_handler)
 
@@ -1138,6 +1309,7 @@ def create_app():
 
     async def on_startup(app):
         hub.loop = asyncio.get_running_loop()
+        event_hub.loop = asyncio.get_running_loop()
 
     app.on_startup.append(on_startup)
     return app

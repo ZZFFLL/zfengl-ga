@@ -78,6 +78,17 @@ export function applyStreamEvent(state: TurnState, event: StreamEvent): TurnStat
         status: "streaming",
       };
     }
+    case "answer.retract": {
+      const responseId = readResponseId(event.data.response_id);
+      if (!responseId || responseId !== state.currentResponseId) {
+        return state;
+      }
+      return {
+        ...state,
+        currentResponseId: "",
+        answer: "",
+      };
+    }
     case "answer.final": {
       const finalAnswer = String(event.data.text ?? state.answer);
       if (!finalAnswer.trim()) {
