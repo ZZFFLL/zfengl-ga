@@ -7,10 +7,17 @@ import {
   ChevronDown,
   ChevronUp,
   CircleHelp,
+  Code2,
   Copy,
   Database,
+  FilePenLine,
+  FileSearch,
   FileText,
+  Globe,
   Loader2,
+  MessageCircleQuestion,
+  MessageSquareText,
+  MousePointerClick,
   Paperclip,
   Power,
   Puzzle,
@@ -389,11 +396,18 @@ function AssistantActions() {
 }
 
 function readStepIcon(step: ExecutionStep) {
-  if (step.status === "running") {
-    return <Loader2 size={14} />;
-  }
   if (step.status === "failed") {
     return <XCircle size={14} />;
+  }
+  const toolNameIcon = readToolNameIcon(step.tool_name);
+  if (toolNameIcon) {
+    return toolNameIcon;
+  }
+  if (step.kind === "phase") {
+    return <MessageSquareText size={14} />;
+  }
+  if (step.status === "running") {
+    return <Loader2 size={14} />;
   }
   if (step.kind === "thought") {
     return <Brain size={14} />;
@@ -429,6 +443,77 @@ function readStepIcon(step: ExecutionStep) {
     return <CheckCircle2 size={14} />;
   }
   return <Wrench size={14} />;
+}
+
+function readToolNameIcon(toolName?: string) {
+  const normalizedToolName = normalizeToolName(toolName);
+  if (!normalizedToolName) {
+    return null;
+  }
+  if (normalizedToolName.includes("ask_user") || normalizedToolName.includes("human") || normalizedToolName.includes("intervention")) {
+    return <MessageCircleQuestion size={14} />;
+  }
+  if (
+    normalizedToolName.includes("web_scan") ||
+    normalizedToolName.includes("search") ||
+    normalizedToolName.includes("google") ||
+    normalizedToolName.includes("bing")
+  ) {
+    return <Search size={14} />;
+  }
+  if (
+    normalizedToolName.includes("browser") ||
+    normalizedToolName.includes("web_action") ||
+    normalizedToolName.includes("web_execute") ||
+    normalizedToolName.includes("navigate") ||
+    normalizedToolName.includes("page")
+  ) {
+    return <Globe size={14} />;
+  }
+  if (
+    normalizedToolName.includes("click") ||
+    normalizedToolName.includes("select") ||
+    normalizedToolName.includes("input") ||
+    normalizedToolName.includes("type")
+  ) {
+    return <MousePointerClick size={14} />;
+  }
+  if (normalizedToolName.includes("file_read") || normalizedToolName.includes("read_file") || normalizedToolName.includes("open_file")) {
+    return <FileSearch size={14} />;
+  }
+  if (
+    normalizedToolName.includes("file_write") ||
+    normalizedToolName.includes("write_file") ||
+    normalizedToolName.includes("edit_file") ||
+    normalizedToolName.includes("patch")
+  ) {
+    return <FilePenLine size={14} />;
+  }
+  if (
+    normalizedToolName.includes("python") ||
+    normalizedToolName.includes("code") ||
+    normalizedToolName.includes("execute") ||
+    normalizedToolName.includes("eval")
+  ) {
+    return <Code2 size={14} />;
+  }
+  if (normalizedToolName.includes("shell") || normalizedToolName.includes("command") || normalizedToolName.includes("terminal")) {
+    return <Terminal size={14} />;
+  }
+  if (normalizedToolName.includes("skill")) {
+    return <Puzzle size={14} />;
+  }
+  if (normalizedToolName.includes("tape") || normalizedToolName.includes("memory") || normalizedToolName.includes("database")) {
+    return <Database size={14} />;
+  }
+  if (normalizedToolName.includes("agent")) {
+    return <Bot size={14} />;
+  }
+  return null;
+}
+
+function normalizeToolName(toolName?: string) {
+  return toolName?.trim().toLowerCase().replace(/[\s-]+/g, "_") ?? "";
 }
 
 function readStepHeadline(step: ExecutionStep) {
