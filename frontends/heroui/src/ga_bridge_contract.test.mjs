@@ -267,14 +267,61 @@ spec.loader.exec_module(bridge)
 manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
 session = manager.create_session(cwd="E:/tmp/ga", title="delete race")
 manager.add_message(session, "user", "stale prompt", turn_id="turn-1", source="user")
+manager.add_event(session, {"type": "timeline.step", "turn_id": "turn-1", "data": {"id": "step-1"}})
 manager.delete_session(session.id)
 
 # Simulate a stale background turn still holding the old Session object.
 manager.add_message(session, "assistant", "late answer", turn_id="turn-1", responseId="resp-1")
+manager.add_event(session, {"type": "turn.done", "turn_id": "turn-1", "data": {"ok": True}})
 manager._persist_session(session)
 
 reloaded = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
 assert session.id not in reloaded.sessions
+
+import sqlite3
+with sqlite3.connect(${JSON.stringify(dbPath)}) as conn:
+    assert conn.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 0
+`;
+
+  try {
+    execFileSync("python", ["-c", script], { stdio: "pipe" });
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("HeroUI bridge stores structured final text instead of raw verbose output", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-bridge-"));
+  const dbPath = join(tempDir, "sessions.sqlite3");
+  const script = `
+import importlib.util
+import queue
+import sys
+from pathlib import Path
+
+bridge_path = Path(${JSON.stringify(bridgePath)})
+spec = importlib.util.spec_from_file_location("heroui_bridge_under_test_structured_final", bridge_path)
+bridge = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bridge
+spec.loader.exec_module(bridge)
+
+class FakeAgent:
+    structured_events = True
+    inc_out = True
+
+    def put_task(self, prompt, images=None):
+        q = queue.Queue()
+        q.put({"event": {"type": "agent.final", "turn": 1, "text": "clean final"}})
+        q.put({"done": "**LLM Running**\\nraw tool log\\nclean final", "turn": 1, "outputs": ["raw tool log"]})
+        return q
+
+manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
+session = manager.create_session(cwd="E:/tmp/ga", title="structured final")
+session.agent = FakeAgent()
+manager.run_agent_turn(session, "ga|" + session.id + "|1", "prompt")
+
+assert session.messages[-1]["role"] == "assistant"
+assert session.messages[-1]["content"] == "clean final"
 `;
 
   try {

@@ -108,7 +108,9 @@ def test_agent_runner_loop_emits_ordered_structured_events():
 
     assert tool_start["tool_name"] == "code_run"
     assert tool_start["args"] == {"type": "python", "code": "print('ok')"}
+    assert tool_delta["tool_kind"] == "command"
     assert tool_delta["delta"] == "[stdout]\nok\n"
+    assert tool_end["tool_kind"] == "command"
     assert tool_end["status"] == "done"
     assert tool_end["result"] == "ok"
     assert final_event["text"] == "Done."

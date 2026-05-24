@@ -1,7 +1,9 @@
 import type { ExecutionStep, ImageAttachment, MessageRecord, SessionRecord, SessionTranscript, StreamEvent } from "./types";
 import { parseGenericAgentOutputSteps } from "./ga_output_parser";
 
-const API_BASE = normalizeBase(import.meta.env.VITE_GA_HEROUI_API_TARGET ?? "");
+const API_BASE = normalizeBase(
+  ((import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env?.VITE_GA_HEROUI_API_TARGET) ?? "",
+);
 
 export type BridgeStatus = {
   ok?: boolean;
@@ -93,6 +95,7 @@ type BridgeMessages = {
 };
 
 const TURN_POLL_INTERVAL_MS = 700;
+const TURN_EVENT_CURSORS = new Map<string, number>();
 
 export async function listSessions(): Promise<SessionRecord[]> {
   const response = await fetch(apiUrl("/sessions"));
@@ -172,9 +175,13 @@ export async function createTurn(sessionId: string, content: string, images: Ima
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ prompt: content, images }),
   });
-  const payload = await readJson<{ seq?: number; userMessageId?: number }>(response);
+  const payload = await readJson<{ seq?: number; userMessageId?: number; eventSeq?: number }>(response);
   const seq = typeof payload.seq === "number" ? payload.seq : typeof payload.userMessageId === "number" ? payload.userMessageId : 0;
-  return `ga|${encodeURIComponent(sessionId)}|${seq}`;
+  const turnId = `ga|${encodeURIComponent(sessionId)}|${seq}`;
+  if (typeof payload.eventSeq === "number") {
+    TURN_EVENT_CURSORS.set(turnId, payload.eventSeq);
+  }
+  return turnId;
 }
 
 export async function cancelSession(sessionId: string): Promise<void> {
@@ -200,9 +207,11 @@ export function subscribeTurn(
   const state = {
     closed: false,
     lastMessageId: afterId,
-    lastEventSeq: 0,
+    lastEventSeq: TURN_EVENT_CURSORS.get(turnId) ?? 0,
     lastPartial: "",
     emittedFinal: false,
+    sawStructuredEvents: false,
+    sawStructuredTimeline: false,
     sawRunning: false,
   };
 
@@ -215,8 +224,19 @@ export function subscribeTurn(
         apiUrl(`/session/${encodeURIComponent(sessionId)}/messages?after=${state.lastMessageId}&after_event=${state.lastEventSeq}&limit=200`),
       );
       const payload = await readJson<BridgeMessages>(response);
+      const payloadEvents = payload.events ?? [];
+      for (const event of payloadEvents) {
+        if (typeof event.seq === "number") {
+          state.lastEventSeq = Math.max(state.lastEventSeq, event.seq);
+        }
+      }
+      const relevantEvents = payloadEvents.filter((event) => event.turn_id === turnId);
+      const hasStructuredEvents = relevantEvents.length > 0;
+      state.sawStructuredEvents = state.sawStructuredEvents || hasStructuredEvents;
+      state.sawStructuredTimeline = state.sawStructuredTimeline || relevantEvents.some((event) => event.type === "timeline.step");
+      const hasStructuredFinal = relevantEvents.some((event) => event.type === "answer.final");
       const partial = String(payload.partial?.content ?? "");
-      if (partial && partial !== state.lastPartial) {
+      if (!state.sawStructuredEvents && partial && partial !== state.lastPartial) {
         const delta = partial.startsWith(state.lastPartial) ? partial.slice(state.lastPartial.length) : partial;
         state.lastPartial = partial;
         state.sawRunning = true;
@@ -236,18 +256,13 @@ export function subscribeTurn(
         }
       }
 
-      for (const event of payload.events ?? []) {
-        if (typeof event.seq === "number") {
-          state.lastEventSeq = Math.max(state.lastEventSeq, event.seq);
-        }
+      for (const event of relevantEvents) {
         if (event.type === "answer.final") {
           state.emittedFinal = true;
         }
         onEvent(event);
       }
 
-      const hasStructuredTimeline = (payload.events ?? []).some((event) => event.type === "timeline.step");
-      const hasStructuredFinal = (payload.events ?? []).some((event) => event.type === "answer.final");
       for (const message of payload.messages ?? []) {
         const messageId = Number(message.id) || 0;
         if (messageId <= state.lastMessageId) {
@@ -273,7 +288,7 @@ export function subscribeTurn(
             },
           });
         }
-        if (!hasStructuredTimeline) {
+        if (!state.sawStructuredTimeline) {
           emitBridgeOutputs(message, turnId, sessionId, responseId, createdAt, onEvent);
         }
       }
@@ -281,7 +296,7 @@ export function subscribeTurn(
       const status = String(payload.status ?? "");
       if (status === "running") {
         state.sawRunning = true;
-        if (!state.lastPartial) {
+        if (!state.lastPartial && !state.sawStructuredEvents) {
           onEvent({
             type: "phase.update",
             turn_id: turnId,
@@ -326,6 +341,7 @@ export function subscribeTurn(
 
   const close = () => {
     state.closed = true;
+    TURN_EVENT_CURSORS.delete(turnId);
   };
 
   void poll();

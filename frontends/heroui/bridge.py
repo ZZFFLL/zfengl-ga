@@ -623,6 +623,7 @@ class AgentManager:
                 with contextlib.suppress(Exception):
                     sess.agent.abort()
         with self._connect() as conn:
+            conn.execute("DELETE FROM events WHERE session_id = ?", (sid,))
             conn.execute("DELETE FROM messages WHERE session_id = ?", (sid,))
             conn.execute("DELETE FROM sessions WHERE id = ?", (sid,))
             conn.commit()
@@ -647,6 +648,7 @@ class AgentManager:
             sess.status = "running"
             sess.cancel_requested = False
             sess.last_error = ""
+            event_seq = sess.event_seq
             self._persist_session_and_message(sess, user_msg)
             sess.partial = {
                 "id": sess.msg_seq + 1,
@@ -665,13 +667,14 @@ class AgentManager:
             t.start()
             seq = sess.msg_seq
         emit_session_state(sess, "running")
-        return {"ok": True, "sessionId": sid, "accepted": True, "userMessageId": user_msg["id"], "seq": seq}
+        return {"ok": True, "sessionId": sid, "accepted": True, "userMessageId": user_msg["id"], "seq": seq, "eventSeq": event_seq}
 
     def run_agent_turn(self, sess: Session, turn_id: str, prompt: str, images: Optional[list] = None):
         full = ""
         ga_turn = 0
         turn_outputs: List[str] = []
         response_id = self.make_response_id(turn_id, 1)
+        structured_final_text = ""
         try:
             if sess.agent is None:
                 sess.agent = self.make_agent(sess)
@@ -689,6 +692,8 @@ class AgentManager:
                         continue
                     if isinstance(item, dict):
                         if isinstance(item.get("event"), dict):
+                            if item["event"].get("type") == "agent.final":
+                                structured_final_text = str(item["event"].get("text") or "")
                             converted = self.convert_agent_event(sess, turn_id, response_id, item["event"])
                             if converted:
                                 with self.lock:
@@ -704,12 +709,13 @@ class AgentManager:
                             pieces.append(text)
                             with self.lock:
                                 if sess.partial is not None:
-                                    sess.partial["content"] = "".join(pieces) if getattr(agent, "inc_out", False) else text
+                                    if not getattr(agent, "structured_events", False):
+                                        sess.partial["content"] = "".join(pieces) if getattr(agent, "inc_out", False) else text
+                                        sess.partial["outputs"] = list(turn_outputs)
                                     sess.partial["ts"] = time.time()
                                     sess.partial["turn_id"] = turn_id
                                     sess.partial["responseId"] = response_id
                                     sess.partial["gaTurn"] = ga_turn
-                                    sess.partial["outputs"] = list(turn_outputs)
                                     sess.updated_at = time.time()
                         if "done" in item:
                             full = str(item.get("done") or "")
@@ -745,10 +751,11 @@ class AgentManager:
                 # Strip trailing [Info] Final response to user. marker
                 import re as _re
                 full = _re.sub(r'\n*`{5}\n*\[Info\] Final response to user\.\n*`{5}\s*$', '', full)
+                assistant_content = structured_final_text.strip() if getattr(agent, "structured_events", False) and structured_final_text.strip() else full
                 self.add_message(
                     sess,
                     "assistant",
-                    full,
+                    assistant_content,
                     turn_id=turn_id,
                     responseId=response_id,
                     response_id=response_id,
