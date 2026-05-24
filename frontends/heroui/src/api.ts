@@ -259,8 +259,9 @@ export function subscribeTurn(
         }
         const responseId = message.responseId || message.response_id || `${turnId}:response:${messageId}`;
         const createdAt = toIsoTimestamp(message.ts);
+        const shouldEmitMessageFinal = !hasStructuredFinal && !state.emittedFinal;
         state.emittedFinal = true;
-        if (!hasStructuredFinal) {
+        if (shouldEmitMessageFinal) {
           onEvent({
             type: "answer.final",
             turn_id: turnId,
