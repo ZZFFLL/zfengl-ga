@@ -578,6 +578,10 @@ assert event["data"]["retract_response_id"] == response_id
 tool = manager.convert_agent_event(session, turn_id, response_id, {"type": "tool.start", "turn": 1, "tool_name": "web_scan", "tool_kind": "search"})
 assert tool["data"]["title"] == "第1轮 调用了 web_scan"
 assert tool["data"]["tool_label"] == "第1轮"
+assert "default_open" not in tool["data"]
+
+ask_user_start = manager.convert_agent_event(session, turn_id, response_id, {"type": "tool.start", "turn": 1, "index": 1, "tool_name": "ask_user", "tool_kind": "help", "args": {"question": "继续吗？"}})
+assert "default_open" not in ask_user_start["data"]
 
 tool_delta = manager.convert_agent_event(session, turn_id, response_id, {"type": "tool.delta", "turn": 2, "index": 0, "tool_name": "file_read", "tool_kind": "read", "delta": "[Action] Reading file\\n"})
 assert tool_delta["data"]["detail_delta"] == "[Action] Reading file\\n"
@@ -614,6 +618,50 @@ tool_failed = manager.convert_agent_event(session, turn_id, response_id, {
 assert tool_failed["data"]["status"] == "failed"
 assert tool_failed["data"]["detail"] == "[Status] failed\\n"
 assert tool_failed["data"]["error"] == "No content found"
+
+ask_user_done = manager.convert_agent_event(session, turn_id, response_id, {
+    "type": "tool.end",
+    "turn": 1,
+    "index": 1,
+    "tool_name": "ask_user",
+    "tool_kind": "help",
+    "status": "done",
+    "result": {
+        "status": "INTERRUPT",
+        "intent": "HUMAN_INTERVENTION",
+        "data": {
+            "question": "请问你想让我做什么？",
+            "candidates": ["继续演示工具", "换个话题", "执行实际任务"],
+        },
+    },
+    "output": "用户确认继续",
+    "elapsed_ms": 22,
+})
+assert ask_user_done["data"]["default_open"] is False
+assert ask_user_done["data"]["interaction"] == {
+    "status": "INTERRUPT",
+    "intent": "HUMAN_INTERVENTION",
+    "question": "请问你想让我做什么？",
+    "candidates": ["继续演示工具", "换个话题", "执行实际任务"],
+}
+
+ask_user_unparsed = manager.convert_agent_event(session, turn_id, response_id, {
+    "type": "tool.end",
+    "turn": 1,
+    "index": 2,
+    "tool_name": "ask_user",
+    "tool_kind": "help",
+    "status": "done",
+    "result": {
+        "status": "INTERRUPT",
+        "intent": "HUMAN_INTERVENTION",
+        "data": {"question": "继续吗？"},
+    },
+    "output": '{"status":"INTERRUPT","intent":"HUMAN_INTERVENTION"}',
+    "elapsed_ms": 22,
+})
+assert ask_user_unparsed["data"]["default_open"] is True
+assert "interaction" not in ask_user_unparsed["data"]
 `;
 
   try {
@@ -745,6 +793,56 @@ assert "retract_response_id" not in step["data"]
 assert step["data"]["title"] == "需要调用工具"
 assert step["data"]["default_open"] is False
 assert session.messages[-1]["content"] == "最终回答"
+`;
+
+  try {
+    execFileSync("python", ["-c", script], { stdio: "pipe" });
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("HeroUI bridge keeps ask_user interruption inside the expanded tool card", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-bridge-"));
+  const dbPath = join(tempDir, "sessions.sqlite3");
+  const script = `
+import importlib.util
+import queue
+import sys
+from pathlib import Path
+
+bridge_path = Path(${JSON.stringify(bridgePath)})
+spec = importlib.util.spec_from_file_location("heroui_bridge_under_test_ask_user_card", bridge_path)
+bridge = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bridge
+spec.loader.exec_module(bridge)
+
+class FakeAgent:
+    structured_events = True
+    inc_out = True
+
+    def put_task(self, prompt, images=None):
+        q = queue.Queue()
+        q.put({"event": {"type": "tool.start", "turn": 1, "index": 0, "tool_name": "ask_user", "tool_kind": "help", "args": {"question": "继续吗？", "candidates": ["继续", "停止"]}}})
+        q.put({"event": {"type": "tool.end", "turn": 1, "index": 0, "tool_name": "ask_user", "tool_kind": "help", "status": "done", "result": {"status": "INTERRUPT", "intent": "HUMAN_INTERVENTION"}, "output": '{"status":"INTERRUPT","intent":"HUMAN_INTERVENTION"}', "detail": "Waiting for your answer ...\\n"}})
+        q.put({"event": {"type": "agent.final", "turn": 1, "text": "不应该显示成正文"}})
+        q.put({"done": "LLM Running (Turn 1) ...\\nTool: ask_user args:\\nraw legacy output", "turn": 1, "outputs": ["raw legacy output"]})
+        return q
+
+manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
+session = manager.create_session(cwd="E:/tmp/ga", title="ask user")
+session.agent = FakeAgent()
+turn_id = "ga|" + session.id + "|1"
+manager.run_agent_turn(session, turn_id, "prompt")
+
+types = [event["type"] for event in session.events]
+assert "timeline.step" in types, types
+assert "turn.done" in types, types
+assert "answer.final" not in types, types
+step = [event for event in session.events if event["type"] == "timeline.step" and event["data"].get("tool_name") == "ask_user"][-1]
+assert step["data"]["tool_name"] == "ask_user"
+assert step["data"]["default_open"] is True
+assert not any(message["role"] == "assistant" for message in session.messages), session.messages
 `;
 
   try {

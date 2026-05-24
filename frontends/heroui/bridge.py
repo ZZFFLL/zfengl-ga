@@ -81,6 +81,30 @@ def _round_label(turn_no: int) -> str:
     return f"第{turn_no}轮"
 
 
+def _ask_user_interaction_payload(raw: dict) -> Optional[dict]:
+    result = raw.get("result")
+    if not isinstance(result, dict):
+        return None
+    intent = str(result.get("intent") or "")
+    status = str(result.get("status") or "")
+    if intent != "HUMAN_INTERVENTION":
+        return None
+    data = result.get("data")
+    payload = data if isinstance(data, dict) else {}
+    candidates = payload.get("candidates") or []
+    if not isinstance(candidates, list):
+        candidates = []
+    candidate_texts = [str(candidate) for candidate in candidates if str(candidate).strip()]
+    if not candidate_texts:
+        return None
+    return {
+        "status": status,
+        "intent": intent,
+        "question": str(payload.get("question") or ""),
+        "candidates": candidate_texts,
+    }
+
+
 for _s in (sys.stdout, sys.stderr):
     with contextlib.suppress(Exception):
         _s.reconfigure(encoding="utf-8", errors="replace")
@@ -420,24 +444,28 @@ class AgentManager:
                 },
             }
         if event_type == "tool.start":
+            data = {
+                "id": step_id,
+                "turn_id": turn_id,
+                "response_id": response_id,
+                "kind": tool_kind,
+                "title": tool_title,
+                "status": "running",
+                "summary": tool_title,
+                "detail": "",
+                "input": json.dumps(raw.get("args") or {}, ensure_ascii=False, indent=2),
+                "tool_name": tool_name,
+                "tool_label": round_label,
+                "created_at": created_at,
+            }
+            interaction = _ask_user_interaction_payload(raw)
+            if interaction is not None:
+                data["interaction"] = interaction
             return {
                 "type": "timeline.step",
                 "turn_id": turn_id,
                 "session_id": sess.id,
-                "data": {
-                    "id": step_id,
-                    "turn_id": turn_id,
-                    "response_id": response_id,
-                    "kind": tool_kind,
-                    "title": tool_title,
-                    "status": "running",
-                    "summary": tool_title,
-                    "detail": "",
-                    "input": json.dumps(raw.get("args") or {}, ensure_ascii=False, indent=2),
-                    "tool_name": tool_name,
-                    "tool_label": round_label,
-                    "created_at": created_at,
-                },
+                "data": data,
             }
         if event_type == "tool.delta":
             return {
@@ -464,26 +492,32 @@ class AgentManager:
             error = str(raw.get("error") or "")
             if status == "failed" and not error:
                 error = str(raw.get("result") or "")
+            data = {
+                "id": step_id,
+                "turn_id": turn_id,
+                "response_id": response_id,
+                "kind": tool_kind,
+                "title": tool_title,
+                "status": "failed" if status == "failed" else "done",
+                "summary": tool_title,
+                "detail": str(raw.get("detail") or ""),
+                "output": str(raw.get("output") or ""),
+                "error": error if status == "failed" else "",
+                "elapsed_ms": raw.get("elapsed_ms"),
+                "tool_name": tool_name,
+                "tool_label": round_label,
+                "created_at": created_at,
+            }
+            interaction = _ask_user_interaction_payload(raw)
+            if tool_name == "ask_user":
+                data["default_open"] = interaction is None
+            if interaction is not None:
+                data["interaction"] = interaction
             return {
                 "type": "timeline.step",
                 "turn_id": turn_id,
                 "session_id": sess.id,
-                "data": {
-                    "id": step_id,
-                    "turn_id": turn_id,
-                    "response_id": response_id,
-                    "kind": tool_kind,
-                    "title": tool_title,
-                    "status": "failed" if status == "failed" else "done",
-                    "summary": tool_title,
-                    "detail": str(raw.get("detail") or ""),
-                    "output": str(raw.get("output") or ""),
-                    "error": error if status == "failed" else "",
-                    "elapsed_ms": raw.get("elapsed_ms"),
-                    "tool_name": tool_name,
-                    "tool_label": round_label,
-                    "created_at": created_at,
-                },
+                "data": data,
             }
         if event_type == "turn.end":
             return None
@@ -693,6 +727,8 @@ class AgentManager:
         emitted_final_event = False
         emitted_terminal_event = False
         pending_terminal_event: Optional[dict] = None
+        saw_structured_output_event = False
+        saw_human_intervention = False
 
         def remember_stream_event(event_type: str) -> None:
             nonlocal emitted_final_event, emitted_terminal_event
@@ -771,9 +807,19 @@ class AgentManager:
                         continue
                     if isinstance(item, dict):
                         if isinstance(item.get("event"), dict):
-                            if item["event"].get("type") == "agent.final":
-                                structured_final_text = str(item["event"].get("text") or "")
-                            converted = self.convert_agent_event(sess, turn_id, response_id, item["event"])
+                            raw_event = item["event"]
+                            event_type = str(raw_event.get("type") or "")
+                            result = raw_event.get("result")
+                            if event_type == "tool.end" and (
+                                str(raw_event.get("tool_name") or "") == "ask_user"
+                                or (isinstance(result, dict) and result.get("intent") == "HUMAN_INTERVENTION")
+                            ):
+                                saw_human_intervention = True
+                            if event_type == "agent.final":
+                                if saw_human_intervention:
+                                    continue
+                                structured_final_text = str(raw_event.get("text") or "")
+                            converted = self.convert_agent_event(sess, turn_id, response_id, raw_event)
                             if converted:
                                 with self.lock:
                                     if converted.get("type") == "timeline.step":
@@ -789,6 +835,8 @@ class AgentManager:
                                                     "data": {"response_id": retract_response_id},
                                                 },
                                             )
+                                    if converted.get("type") in {"timeline.step", "answer.delta", "answer.final"}:
+                                        saw_structured_output_event = True
                                     add_stream_event(converted)
                                     sess.updated_at = time.time()
                             continue
@@ -844,20 +892,28 @@ class AgentManager:
                 # Strip trailing [Info] Final response to user. marker
                 import re as _re
                 full = _re.sub(r'\n*`{5}\n*\[Info\] Final response to user\.\n*`{5}\s*$', '', full)
-                assistant_content = structured_final_text.strip() if getattr(agent, "structured_events", False) and structured_final_text.strip() else full
+                if getattr(agent, "structured_events", False):
+                    if saw_human_intervention or (saw_structured_output_event and not structured_final_text.strip()):
+                        assistant_content = ""
+                    else:
+                        assistant_content = structured_final_text.strip() if structured_final_text.strip() else full
+                else:
+                    assistant_content = full
                 add_final_event_if_missing(assistant_content)
                 add_terminal_event_if_missing("turn.done", {"ok": True})
-                self.add_message(
-                    sess,
-                    "assistant",
-                    assistant_content,
-                    turn_id=turn_id,
-                    responseId=response_id,
-                    response_id=response_id,
-                    gaTurn=ga_turn,
-                    outputs=turn_outputs,
-                    source="assistant",
-                )
+                flush_pending_terminal_event()
+                if assistant_content.strip():
+                    self.add_message(
+                        sess,
+                        "assistant",
+                        assistant_content,
+                        turn_id=turn_id,
+                        responseId=response_id,
+                        response_id=response_id,
+                        gaTurn=ga_turn,
+                        outputs=turn_outputs,
+                        source="assistant",
+                    )
                 sess.status = "idle"
                 sess.last_error = ""
                 self._persist_session(sess)

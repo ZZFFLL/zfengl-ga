@@ -878,6 +878,73 @@ textarea {
   white-space: normal;
 }
 
+.ask-user-panel {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 12px;
+  border: 1px solid #dfe1e7;
+  border-radius: 12px;
+  background: #fff;
+  white-space: normal;
+}
+
+.ask-user-question {
+  color: #24252b;
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.ask-user-choice-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ask-user-choice {
+  max-width: 100%;
+  white-space: normal;
+}
+
+.composer-ask-user-panel {
+  width: var(--conversation-content-width);
+  margin: 0 auto;
+  box-shadow: 0 8px 24px rgba(16, 17, 19, 0.06);
+}
+
+.ask-user-panel--enter {
+  animation: ask-user-panel-in 180ms ease-out both;
+}
+
+.ask-user-panel--exit {
+  pointer-events: none;
+  animation: ask-user-panel-out 180ms ease-in both;
+}
+
+@keyframes ask-user-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes ask-user-panel-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
 .tool-detail-section {
   display: grid;
   gap: 5px;

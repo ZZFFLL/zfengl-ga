@@ -5,6 +5,7 @@ import {
   appendFinalAssistantMessage,
   buildTurnRounds,
   createInitialTurnState,
+  findLatestHumanInteractionPrompt,
   mergeCompletedTurnIntoHistory,
   buildThreadItems,
 } from "./state.ts";
@@ -279,6 +280,129 @@ test("timeline.step hides round start/end phases and preserves model output defa
   assert.equal(state.steps[0].detail, "我需要先调用搜索工具。");
   assert.equal(state.steps[0].elapsed_ms, 987);
   assert.equal(state.steps[0].default_open, false);
+});
+
+test("timeline.step preserves ask_user interaction payload for option rendering", () => {
+  const state = applyStreamEvent(createInitialTurnState("turn-1"), {
+    ...baseEvent,
+    type: "timeline.step",
+    data: {
+      id: "turn-1:tool:ask-user",
+      response_id: "turn-1:response:1",
+      kind: "help",
+      title: "第1轮 调用了 ask_user",
+      status: "done",
+      summary: "第1轮 调用了 ask_user",
+      detail: "Waiting for your answer ...",
+      tool_name: "ask_user",
+      tool_label: "第1轮",
+      default_open: true,
+      interaction: {
+        status: "INTERRUPT",
+        intent: "HUMAN_INTERVENTION",
+        question: "请问你想让我做什么？",
+        candidates: ["继续演示工具", "换个话题", "执行实际任务"],
+      },
+    },
+  });
+
+  assert.deepEqual(state.steps[0].interaction, {
+    status: "INTERRUPT",
+    intent: "HUMAN_INTERVENTION",
+    question: "请问你想让我做什么？",
+    candidates: ["继续演示工具", "换个话题", "执行实际任务"],
+  });
+});
+
+test("latest ask_user interaction becomes disabled after any later user reply", () => {
+  const askUserStep = {
+    id: "turn-1:tool:ask-user",
+    turn_id: "turn-1",
+    response_id: "turn-1:response:1",
+    kind: "help",
+    title: "第1轮 调用了 ask_user",
+    status: "done",
+    summary: "第1轮 调用了 ask_user",
+    detail: "Waiting for your answer ...",
+    tool_name: "ask_user",
+    tool_label: "第1轮",
+    created_at: "2026-05-24T09:00:01.000Z",
+    default_open: true,
+    interaction: {
+      status: "INTERRUPT",
+      intent: "HUMAN_INTERVENTION",
+      question: "请问你想让我做什么？",
+      candidates: ["继续演示工具", "换个话题", "执行实际任务"],
+    },
+  };
+  const messages = [
+    {
+      role: "user",
+      content: "演示一下",
+      turn_id: "turn-1",
+      created_at: "2026-05-24T09:00:00.000Z",
+    },
+  ];
+
+  const activePrompt = findLatestHumanInteractionPrompt(messages, [askUserStep], null);
+  assert.equal(activePrompt?.stepId, "turn-1:tool:ask-user");
+  assert.equal(activePrompt?.disabled, false);
+
+  const disabledPrompt = findLatestHumanInteractionPrompt(
+    [
+      ...messages,
+      {
+        role: "user",
+        content: "继续演示工具",
+        turn_id: "turn-2",
+        created_at: "2026-05-24T09:00:02.000Z",
+      },
+    ],
+    [askUserStep],
+    null,
+  );
+  assert.equal(disabledPrompt?.stepId, "turn-1:tool:ask-user");
+  assert.equal(disabledPrompt?.disabled, true);
+});
+
+test("ask_user interaction without options does not produce a prompt panel", () => {
+  const state = applyStreamEvent(createInitialTurnState("turn-1"), {
+    ...baseEvent,
+    type: "timeline.step",
+    data: {
+      id: "turn-1:tool:ask-user",
+      response_id: "turn-1:response:1",
+      kind: "help",
+      title: "第1轮 调用了 ask_user",
+      status: "done",
+      summary: "第1轮 调用了 ask_user",
+      detail: "Waiting for your answer ...",
+      tool_name: "ask_user",
+      tool_label: "第1轮",
+      default_open: true,
+      interaction: {
+        status: "INTERRUPT",
+        intent: "HUMAN_INTERVENTION",
+        question: "请问你想让我做什么？",
+        candidates: [],
+      },
+    },
+  });
+
+  const prompt = findLatestHumanInteractionPrompt(
+    [
+      {
+        role: "user",
+        content: "演示一下",
+        turn_id: "turn-1",
+        created_at: "2026-05-24T09:00:00.000Z",
+      },
+    ],
+    state.steps,
+    null,
+  );
+  assert.equal(prompt, null);
+  assert.equal(state.steps[0].default_open, true);
 });
 
 test("turn.error records the error and turn.done preserves error status", () => {

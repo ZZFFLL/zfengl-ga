@@ -22,10 +22,14 @@ import { ConversationRail } from "./components/ConversationRail";
 import {
   applyStreamEvent,
   createInitialTurnState,
+  findLatestHumanInteractionPrompt,
   mergeCompletedTurnIntoHistory,
+  type HumanInteractionPrompt,
   type TurnState,
 } from "./state";
 import type { ArtifactRecord, ExecutionStep, ImageAttachment, MessageRecord, SessionRecord } from "./types";
+
+const PROMPT_PANEL_ANIMATION_MS = 180;
 
 export function App() {
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
@@ -408,6 +412,7 @@ export function App() {
   const activeModelProfile = modelProfiles.find((profile) => profile.active);
   const activeModelName = formatModelName(activeModelProfile);
   const modelLabel = activeModelName !== "未检测到生效模型" ? activeModelName : modelProfiles.length > 0 ? `${modelProfiles.length} 个模型配置` : "本地模型";
+  const humanInteractionPrompt = findLatestHumanInteractionPrompt(messages, timeline, activeTurn);
   return (
     <main className={`chat-workbench-shell ${sidebarCollapsed ? "is-sidebar-collapsed" : ""}`}>
       <ConversationRail
@@ -519,6 +524,7 @@ export function App() {
               </Button>
             </div>
           </div>
+          <HumanInteractionPromptPanel humanInteractionPrompt={humanInteractionPrompt} onAskUserChoice={(choice) => void handleSubmit(choice)} />
           <Composer
             disabled={activeTurn?.status === "streaming"}
             onCancel={handleCancelTurn}
@@ -562,6 +568,101 @@ export function App() {
     setIsLoadingMessages(false);
     return session;
   }
+}
+
+function HumanInteractionPromptPanel({
+  humanInteractionPrompt: prompt,
+  onAskUserChoice,
+}: {
+  humanInteractionPrompt: HumanInteractionPrompt | null;
+  onAskUserChoice: (choice: string) => void;
+}) {
+  const [promptState, setPromptState] = useState<{
+    prompt: HumanInteractionPrompt;
+    stage: "entering" | "visible" | "exiting";
+  } | null>(null);
+  const animationTimerRef = useRef<number | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+  const activePrompt = prompt && !prompt.disabled ? prompt : null;
+
+  useEffect(() => {
+    if (animationTimerRef.current !== null) {
+      window.clearTimeout(animationTimerRef.current);
+      animationTimerRef.current = null;
+    }
+    if (animationFrameRef.current !== null) {
+      window.cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+
+    if (activePrompt) {
+      setPromptState({ prompt: activePrompt, stage: "entering" });
+      animationFrameRef.current = window.requestAnimationFrame(() => {
+        setPromptState((current) =>
+          current?.prompt.stepId === activePrompt.stepId ? { ...current, stage: "visible" } : current,
+        );
+        animationFrameRef.current = null;
+      });
+      return;
+    }
+
+    setPromptState((current) => (current ? { ...current, stage: "exiting" } : null));
+    animationTimerRef.current = window.setTimeout(() => {
+      setPromptState(null);
+      animationTimerRef.current = null;
+    }, PROMPT_PANEL_ANIMATION_MS);
+  }, [activePrompt?.stepId, activePrompt?.interaction.question, activePrompt?.interaction.candidates.join("\u0000")]);
+
+  useEffect(
+    () => () => {
+      if (animationTimerRef.current !== null) {
+        window.clearTimeout(animationTimerRef.current);
+      }
+      if (animationFrameRef.current !== null) {
+        window.cancelAnimationFrame(animationFrameRef.current);
+      }
+    },
+    [],
+  );
+
+  if (!promptState) {
+    return null;
+  }
+  const candidates = promptState.prompt.interaction.candidates.filter((candidate) => candidate.trim());
+  if (candidates.length === 0) {
+    return null;
+  }
+  const panelClassName = [
+    "ask-user-panel",
+    "composer-ask-user-panel",
+    promptState.stage === "entering" ? "ask-user-panel--enter" : "",
+    promptState.stage === "exiting" ? "ask-user-panel--exit" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return (
+    <div
+      aria-hidden={promptState.stage === "exiting" ? true : undefined}
+      aria-label="ask_user 待选回复"
+      className={panelClassName}
+    >
+      {promptState.prompt.interaction.question ? <div className="ask-user-question">{promptState.prompt.interaction.question}</div> : null}
+      <div className="ask-user-choice-list" aria-label="可选回复">
+        {candidates.map((candidate) => (
+          <Button
+            className="ask-user-choice"
+            isDisabled={promptState.stage === "exiting"}
+            key={candidate}
+            onPress={() => onAskUserChoice(candidate)}
+            size="sm"
+            variant="secondary"
+          >
+            {candidate}
+          </Button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function ModelProfileSwitch({

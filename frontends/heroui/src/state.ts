@@ -2,6 +2,7 @@ import type {
   ArtifactRecord,
   ExecutionStep,
   FollowupSuggestion,
+  HumanInteraction,
   MessageRecord,
   StreamEvent,
   ToolCard,
@@ -22,6 +23,13 @@ export type TurnState = {
   tools: ToolCard[];
   status: "idle" | "streaming" | "done" | "error";
   error: string;
+};
+
+export type HumanInteractionPrompt = {
+  stepId: string;
+  turnId: string;
+  interaction: HumanInteraction;
+  disabled: boolean;
 };
 
 export type ThreadItem =
@@ -197,6 +205,24 @@ export function mergeCompletedTurnIntoHistory(
   };
 }
 
+export function findLatestHumanInteractionPrompt(
+  messages: MessageRecord[],
+  timeline: ExecutionStep[],
+  activeTurn: TurnState | null,
+): HumanInteractionPrompt | null {
+  const steps = [...timeline, ...(activeTurn?.steps ?? [])].filter(isHumanInteractionStep);
+  const latest = steps[steps.length - 1];
+  if (!latest || !latest.interaction) {
+    return null;
+  }
+  return {
+    stepId: latest.id,
+    turnId: latest.turn_id || "",
+    interaction: latest.interaction,
+    disabled: hasLaterUserReply(messages, latest),
+  };
+}
+
 export function buildThreadItems(
   messages: MessageRecord[],
   timeline: ExecutionStep[],
@@ -339,6 +365,57 @@ export function buildTurnRounds(
   return rounds;
 }
 
+function isHumanInteractionStep(step: ExecutionStep): boolean {
+  return (
+    step.tool_name === "ask_user" &&
+    Boolean(step.interaction) &&
+    Boolean(step.interaction?.candidates.some((candidate) => candidate.trim()))
+  );
+}
+
+function hasLaterUserReply(messages: MessageRecord[], step: ExecutionStep): boolean {
+  const stepTurnId = step.turn_id || "";
+  const stepTime = readTimestamp(step.created_at);
+  const hasTimestampMatch =
+    stepTime !== null &&
+    messages.some((message) => {
+      if (message.role !== "user" || (stepTurnId && message.turn_id === stepTurnId)) {
+        return false;
+      }
+      const messageTime = readTimestamp(message.created_at);
+      return messageTime !== null && messageTime > stepTime;
+    });
+  if (hasTimestampMatch) {
+    return true;
+  }
+
+  if (!stepTurnId) {
+    return false;
+  }
+  const sameTurnUserIndex = findLastIndex(messages, (message) => message.role === "user" && message.turn_id === stepTurnId);
+  if (sameTurnUserIndex < 0) {
+    return false;
+  }
+  return messages.slice(sameTurnUserIndex + 1).some((message) => message.role === "user");
+}
+
+function findLastIndex<T>(items: T[], predicate: (item: T) => boolean): number {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    if (predicate(items[index])) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function readTimestamp(value?: string): number | null {
+  if (!value) {
+    return null;
+  }
+  const timestamp = Date.parse(value);
+  return Number.isNaN(timestamp) ? null : timestamp;
+}
+
 function buildRoundItems(
   messages: MessageRecord[],
   steps: ExecutionStep[],
@@ -446,6 +523,7 @@ function reduceTimelineStep(state: TurnState, event: StreamEvent): TurnState {
     tool_label: typeof event.data.tool_label === "string" ? event.data.tool_label : current?.tool_label,
     created_at: typeof event.data.created_at === "string" ? event.data.created_at : current?.created_at,
     default_open: typeof event.data.default_open === "boolean" ? event.data.default_open : current?.default_open,
+    interaction: readInteraction(event.data.interaction) ?? current?.interaction,
   };
   if (isHiddenPhaseStep(step)) {
     return {
@@ -586,6 +664,23 @@ function readStepKind(value: unknown): ExecutionStep["kind"] {
     return value;
   }
   return "tool";
+}
+
+function readInteraction(value: unknown): ExecutionStep["interaction"] {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const interaction = value as Record<string, unknown>;
+  const question = typeof interaction.question === "string" ? interaction.question : "";
+  const candidates = Array.isArray(interaction.candidates)
+    ? interaction.candidates.filter((candidate): candidate is string => typeof candidate === "string")
+    : [];
+  const status = typeof interaction.status === "string" ? interaction.status : "";
+  const intent = typeof interaction.intent === "string" ? interaction.intent : "";
+  if (!question && candidates.length === 0 && !status && !intent) {
+    return undefined;
+  }
+  return { question, candidates, status, intent };
 }
 
 function readArtifactKind(value: unknown): ArtifactRecord["kind"] {

@@ -72,6 +72,14 @@ export type ExecutionStep = {
   tool_label?: string;
   created_at?: string;
   default_open?: boolean;
+  interaction?: HumanInteraction;
+};
+
+export type HumanInteraction = {
+  status: string;
+  intent: "HUMAN_INTERVENTION" | string;
+  question: string;
+  candidates: string[];
 };
 
 export type ArtifactRecord = {

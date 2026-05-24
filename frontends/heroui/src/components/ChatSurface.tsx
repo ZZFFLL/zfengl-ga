@@ -203,7 +203,13 @@ function TurnHistory({
   );
 }
 
-function TurnRoundView({ round, showSeparator = false }: { round: TurnRound; showSeparator?: boolean }) {
+function TurnRoundView({
+  round,
+  showSeparator = false,
+}: {
+  round: TurnRound;
+  showSeparator?: boolean;
+}) {
   return (
     <section className="turn-round" aria-label="模型回复轮次">
       {showSeparator ? <div className="turn-round-separator" aria-hidden="true" /> : null}
@@ -268,7 +274,13 @@ function ActiveTurnTimeline({ activeTurn }: { activeTurn: TurnState }) {
   );
 }
 
-function TimelineView({ steps, artifacts }: { steps: ExecutionStep[]; artifacts: ArtifactRecord[] }) {
+function TimelineView({
+  steps,
+  artifacts,
+}: {
+  steps: ExecutionStep[];
+  artifacts: ArtifactRecord[];
+}) {
   return (
     <div className="execution-timeline" aria-label="执行过程时间线">
       {steps.map((step) => (
