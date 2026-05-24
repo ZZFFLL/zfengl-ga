@@ -130,3 +130,11 @@ def test_agent_runner_loop_without_event_sink_keeps_legacy_chunks_only():
 
     assert any(isinstance(chunk, dict) and chunk.get("turn") == 1 for chunk in chunks)
     assert not any(isinstance(chunk, dict) and chunk.get("type") == "tool.start" for chunk in chunks)
+
+
+def test_generic_agent_structured_events_default_disabled():
+    from agentmain import GenericAgent
+
+    agent = GenericAgent.__new__(GenericAgent)
+
+    assert not getattr(agent, "structured_events", False)

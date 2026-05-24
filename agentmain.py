@@ -53,6 +53,7 @@ class GenericAgent:
         self.task_queue = queue.Queue() 
         self.is_running = False; self.stop_sig = False; self.llm_no = 0;  
         self.inc_out = False; self.verbose = True; self.show_mode = 'text'
+        self.structured_events = False
         self.peer_hint = True
         self.log_path = os.path.join(script_dir, f'temp/model_responses/model_responses_{int(time.time()*1e6)%1000000:06d}.txt')
         self.load_llm_sessions()
@@ -148,6 +149,10 @@ class GenericAgent:
                 if ps > 0: handler.working['key_info'] += f'\n[SYSTEM] 此为 {ps} 个对话前设置的key_info，若已在新任务，先更新或清除工作记忆。\n'
             self.handler = handler  # although new handler, the **full** history is in llmclient, so it is full history!
             self.llmclient.log_path = self.log_path
+            event_sink = None
+            if self.structured_events:
+                def event_sink(event):
+                    display_queue.put({'event': event, 'source': source})
             gen = agent_runner_loop(
                 self.llmclient,
                 sys_prompt,
@@ -157,6 +162,7 @@ class GenericAgent:
                 max_turns=NORMAL_RUNNER_MAX_TURNS,
                 verbose=self.verbose,
                 yield_info=True,
+                event_sink=event_sink,
             )
             try:
                 full_resp = ""; last_pos = 0; curr_turn = 0; turn_resps = []
