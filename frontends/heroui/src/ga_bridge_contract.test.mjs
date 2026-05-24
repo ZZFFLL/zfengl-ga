@@ -30,6 +30,12 @@ test("HeroUI frontend has a dedicated GenericAgent bridge copy", () => {
   assert.match(bridge, /get_llm_name\(client, model=True\)/);
   assert.match(bridge, /selected_llm_no/);
   assert.match(bridge, /def switch_model_profile/);
+  assert.match(bridge, /events: List\[dict\] = field\(default_factory=list\)/);
+  assert.match(bridge, /event_seq: int = 0/);
+  assert.match(bridge, /CREATE TABLE IF NOT EXISTS events/);
+  assert.match(bridge, /def add_event/);
+  assert.match(bridge, /def convert_agent_event/);
+  assert.match(bridge, /agent\.structured_events = True/);
   assert.match(bridge, /def _persist_session_and_message/);
   assert.match(bridge, /persist=False/);
   assert.doesNotMatch(bridge, /self\._persist_message\(sess, user_msg\)/);
@@ -51,6 +57,8 @@ test("HeroUI api adapter speaks the GA bridge polling contract", () => {
   assert.match(api, /emitBridgeOutputs/);
   assert.match(api, /type: "timeline\.step"/);
   assert.match(api, /parseGenericAgentOutputSteps/);
+  assert.match(api, /after_event=/);
+  assert.match(api, /payload\.events/);
   assert.doesNotMatch(api, /tool_name: "GenericAgent\.outputs"/);
   assert.match(api, /turn_id: message\.turn_id/);
   assert.match(api, /response_id: message\.responseId/);

@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import asyncio, contextlib, importlib, json, os, sqlite3, sys
 import threading, time, traceback, uuid
+from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
@@ -54,6 +55,15 @@ def find_default_ga_root() -> Path:
 DEFAULT_GA_ROOT = find_default_ga_root()
 DEFAULT_HEROUI_DB_PATH = APP_DIR / ".data" / "sessions.sqlite3"
 
+
+def to_iso_timestamp(value: Any) -> str:
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        seconds = time.time()
+    return datetime.fromtimestamp(seconds, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+
+
 for _s in (sys.stdout, sys.stderr):
     with contextlib.suppress(Exception):
         _s.reconfigure(encoding="utf-8", errors="replace")
@@ -71,7 +81,9 @@ class Session:
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
     messages: List[dict] = field(default_factory=list)
+    events: List[dict] = field(default_factory=list)
     msg_seq: int = 0
+    event_seq: int = 0
     partial: Optional[dict] = None
     status: str = "idle"  # idle|running|error|cancelled
     agent: Any = None
@@ -145,6 +157,20 @@ class AgentManager:
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS events (
+                    session_id TEXT NOT NULL,
+                    seq INTEGER NOT NULL,
+                    turn_id TEXT NOT NULL,
+                    type TEXT NOT NULL,
+                    ts REAL NOT NULL,
+                    payload TEXT NOT NULL,
+                    PRIMARY KEY (session_id, seq),
+                    FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
+                )
+                """
+            )
             conn.commit()
 
     def _load_sessions(self) -> None:
@@ -183,6 +209,25 @@ class AgentManager:
                         with contextlib.suppress(Exception):
                             msg.update(json.loads(payload))
                     sess.messages.append(msg)
+                event_rows = conn.execute(
+                    "SELECT session_id, seq, turn_id, type, ts, payload FROM events ORDER BY session_id ASC, seq ASC"
+                ).fetchall()
+                for row in event_rows:
+                    sess = sessions.get(row["session_id"])
+                    if not sess:
+                        continue
+                    event = {
+                        "seq": int(row["seq"]),
+                        "turn_id": row["turn_id"],
+                        "type": row["type"],
+                        "ts": float(row["ts"]),
+                    }
+                    payload = str(row["payload"] or "")
+                    if payload:
+                        with contextlib.suppress(Exception):
+                            event.update(json.loads(payload))
+                    sess.events.append(event)
+                    sess.event_seq = max(sess.event_seq, int(row["seq"]))
         with self.lock:
             self.sessions = sessions
             self.active_session_id = next(reversed(sessions), None) if sessions else None
@@ -249,6 +294,30 @@ class AgentManager:
             ),
         )
 
+    def _persist_event_row(self, conn: sqlite3.Connection, sess: Session, event: dict) -> None:
+        if sess.id in self.deleted_session_ids:
+            return
+        payload = {k: v for k, v in event.items() if k not in {"seq", "turn_id", "type", "ts"}}
+        conn.execute(
+            """
+            INSERT INTO events (session_id, seq, turn_id, type, ts, payload)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(session_id, seq) DO UPDATE SET
+                turn_id=excluded.turn_id,
+                type=excluded.type,
+                ts=excluded.ts,
+                payload=excluded.payload
+            """,
+            (
+                sess.id,
+                int(event["seq"]),
+                str(event["turn_id"]),
+                str(event["type"]),
+                float(event["ts"]),
+                json.dumps(payload, ensure_ascii=False, default=str),
+            ),
+        )
+
     def _persist_session_and_message(self, sess: Session, msg: Optional[dict] = None) -> None:
         if sess.id in self.deleted_session_ids:
             return
@@ -257,6 +326,171 @@ class AgentManager:
             if msg is not None:
                 self._persist_message_row(conn, sess, msg)
             conn.commit()
+
+    def add_event(self, sess: Session, event: dict, persist: bool = True) -> dict:
+        sess.event_seq += 1
+        stored = dict(event)
+        stored["seq"] = sess.event_seq
+        stored["ts"] = float(stored.get("ts") or time.time())
+        stored["turn_id"] = str(stored.get("turn_id") or "")
+        stored["type"] = str(stored.get("type") or "")
+        sess.events.append(stored)
+        sess.updated_at = time.time()
+        if persist:
+            with self._connect() as conn:
+                self._persist_event_row(conn, sess, stored)
+                conn.commit()
+        return stored
+
+    def convert_agent_event(self, sess: Session, turn_id: str, response_id: str, raw: dict) -> Optional[dict]:
+        event_type = str(raw.get("type") or "")
+        ga_turn = int(raw.get("turn") or 0)
+        created_at = to_iso_timestamp(raw.get("ts") or time.time())
+        tool_name = str(raw.get("tool_name") or "tool")
+        tool_kind = str(raw.get("tool_kind") or "tool")
+        index = int(raw.get("index") or 0) + 1
+        step_id = f"{response_id}:tool:{ga_turn}:{index}"
+
+        if event_type == "turn.start":
+            return {
+                "type": "timeline.step",
+                "turn_id": turn_id,
+                "session_id": sess.id,
+                "data": {
+                    "id": f"{response_id}:phase:{ga_turn}:start",
+                    "turn_id": turn_id,
+                    "response_id": response_id,
+                    "kind": "phase",
+                    "title": f"第 {ga_turn} 轮开始",
+                    "status": "done",
+                    "summary": "开始处理本轮",
+                    "detail": "",
+                    "created_at": created_at,
+                },
+            }
+        if event_type == "llm.start":
+            return {
+                "type": "phase.update",
+                "turn_id": turn_id,
+                "session_id": sess.id,
+                "data": {"phase": "understanding", "label": "正在理解请求"},
+            }
+        if event_type == "llm.end":
+            return {
+                "type": "timeline.step",
+                "turn_id": turn_id,
+                "session_id": sess.id,
+                "data": {
+                    "id": f"{response_id}:phase:{ga_turn}:llm",
+                    "turn_id": turn_id,
+                    "response_id": response_id,
+                    "kind": "phase",
+                    "title": "模型输出完成",
+                    "status": "done",
+                    "summary": "模型已返回本轮内容",
+                    "detail": "",
+                    "created_at": created_at,
+                },
+            }
+        if event_type == "tool.start":
+            return {
+                "type": "timeline.step",
+                "turn_id": turn_id,
+                "session_id": sess.id,
+                "data": {
+                    "id": step_id,
+                    "turn_id": turn_id,
+                    "response_id": response_id,
+                    "kind": tool_kind,
+                    "title": f"调用 {tool_name}",
+                    "status": "running",
+                    "summary": f"正在执行 {tool_name}",
+                    "detail": "",
+                    "input": json.dumps(raw.get("args") or {}, ensure_ascii=False, indent=2),
+                    "tool_name": tool_name,
+                    "tool_label": f"GA Turn {ga_turn}" if ga_turn else "GA 工具调用",
+                    "created_at": created_at,
+                },
+            }
+        if event_type == "tool.delta":
+            return {
+                "type": "timeline.step",
+                "turn_id": turn_id,
+                "session_id": sess.id,
+                "data": {
+                    "id": step_id,
+                    "turn_id": turn_id,
+                    "response_id": response_id,
+                    "kind": tool_kind,
+                    "title": f"调用 {tool_name}",
+                    "status": "running",
+                    "summary": f"正在执行 {tool_name}",
+                    "detail": "",
+                    "output_delta": str(raw.get("delta") or ""),
+                    "tool_name": tool_name,
+                    "tool_label": f"GA Turn {ga_turn}" if ga_turn else "GA 工具调用",
+                    "created_at": created_at,
+                },
+            }
+        if event_type == "tool.end":
+            status = str(raw.get("status") or "done")
+            return {
+                "type": "timeline.step",
+                "turn_id": turn_id,
+                "session_id": sess.id,
+                "data": {
+                    "id": step_id,
+                    "turn_id": turn_id,
+                    "response_id": response_id,
+                    "kind": tool_kind,
+                    "title": f"调用 {tool_name}",
+                    "status": "failed" if status == "failed" else "done",
+                    "summary": "执行失败" if status == "failed" else "执行完成",
+                    "detail": "",
+                    "output": str(raw.get("output") or ""),
+                    "error": str(raw.get("result") or "") if status == "failed" else "",
+                    "elapsed_ms": raw.get("elapsed_ms"),
+                    "tool_name": tool_name,
+                    "tool_label": f"GA Turn {ga_turn}" if ga_turn else "GA 工具调用",
+                    "created_at": created_at,
+                },
+            }
+        if event_type == "turn.end":
+            return {
+                "type": "timeline.step",
+                "turn_id": turn_id,
+                "session_id": sess.id,
+                "data": {
+                    "id": f"{response_id}:phase:{ga_turn}:end",
+                    "turn_id": turn_id,
+                    "response_id": response_id,
+                    "kind": "phase",
+                    "title": f"第 {ga_turn} 轮结束",
+                    "status": "done",
+                    "summary": "本轮已完成，等待下一轮",
+                    "detail": "",
+                    "created_at": created_at,
+                },
+            }
+        if event_type == "agent.final":
+            return {
+                "type": "answer.final",
+                "turn_id": turn_id,
+                "session_id": sess.id,
+                "data": {
+                    "text": str(raw.get("text") or ""),
+                    "response_id": response_id,
+                    "created_at": created_at,
+                },
+            }
+        if event_type == "agent.done":
+            return {
+                "type": "turn.done",
+                "turn_id": turn_id,
+                "session_id": sess.id,
+                "data": {"ok": True},
+            }
+        return None
 
     def make_agent(self, sess: Session):
         root = self.ensure_ga_import_path()
@@ -270,6 +504,7 @@ class AgentManager:
                 agent.next_llm(self.selected_llm_no)
             agent.inc_out = True
             agent.verbose = True
+            agent.structured_events = True
             threading.Thread(target=agent.run, daemon=True, name=f"GA-{sess.id}").start()
             return agent
         finally:
@@ -337,9 +572,11 @@ class AgentManager:
             "updatedAt": sess.updated_at,
             "lastError": sess.last_error,
             "msgSeq": sess.msg_seq,
+            "eventSeq": sess.event_seq,
         }
         if include_messages:
             out["messages"] = list(sess.messages)
+            out["events"] = list(sess.events)
             out["partial"] = dict(sess.partial) if sess.partial else None
         return out
 
@@ -451,6 +688,13 @@ class AgentManager:
                     except _queue.Empty:
                         continue
                     if isinstance(item, dict):
+                        if isinstance(item.get("event"), dict):
+                            converted = self.convert_agent_event(sess, turn_id, response_id, item["event"])
+                            if converted:
+                                with self.lock:
+                                    self.add_event(sess, converted)
+                                    sess.updated_at = time.time()
+                            continue
                         if isinstance(item.get("turn"), int):
                             ga_turn = int(item.get("turn") or 0)
                         if isinstance(item.get("outputs"), list):
@@ -537,7 +781,7 @@ class AgentManager:
             print(tb, file=sys.stderr)
             emit_session_state(sess, "error")
 
-    def messages(self, sid: str, after: int = 0, limit: int = 200) -> dict:
+    def messages(self, sid: str, after: int = 0, limit: int = 200, after_event: int = 0) -> dict:
         with self.lock:
             sess = self.sessions.get(sid)
             if not sess:
@@ -545,10 +789,13 @@ class AgentManager:
             msgs = [m for m in sess.messages if int(m.get("id", 0)) > after]
             if limit > 0:
                 msgs = msgs[-limit:]
+            events = [e for e in sess.events if int(e.get("seq", 0)) > after_event]
             return {
                 "sessionId": sid,
                 "status": sess.status,
                 "messages": msgs,
+                "events": events,
+                "eventSeq": sess.event_seq,
                 "partial": dict(sess.partial) if sess.partial else None,
                 "msgSeq": sess.msg_seq,
                 "updatedAt": sess.updated_at,
@@ -804,7 +1051,14 @@ async def new_session_handler(request):
 async def get_session_handler(request):
     sid = request.match_info["sid"]
     sess = manager.get_session(sid)
-    return json_ok({"sessionId": sid, "session": manager.snapshot(sess), "messages": list(sess.messages), "partial": sess.partial})
+    return json_ok({
+        "sessionId": sid,
+        "session": manager.snapshot(sess),
+        "messages": list(sess.messages),
+        "events": list(sess.events),
+        "eventSeq": sess.event_seq,
+        "partial": sess.partial,
+    })
 
 
 async def delete_session_handler(request):
@@ -824,7 +1078,8 @@ async def messages_handler(request):
     sid = request.match_info["sid"]
     after = int(request.query.get("after") or request.query.get("afterId") or 0)
     limit = int(request.query.get("limit") or 200)
-    return json_ok(manager.messages(sid, after=after, limit=limit))
+    after_event = int(request.query.get("after_event") or request.query.get("afterEvent") or 0)
+    return json_ok(manager.messages(sid, after=after, limit=limit, after_event=after_event))
 
 
 async def cancel_handler(request):

@@ -64,10 +64,17 @@ type BridgeMessage = {
   source?: string;
 };
 
+type BridgeTimelineEvent = StreamEvent & {
+  seq?: number;
+  ts?: number;
+};
+
 type BridgeSessionDetail = {
   sessionId?: string;
   session?: BridgeSession;
   messages?: BridgeMessage[];
+  events?: BridgeTimelineEvent[];
+  eventSeq?: number;
   partial?: { content?: string } | null;
   status?: string;
   lastError?: string;
@@ -77,6 +84,8 @@ type BridgeMessages = {
   sessionId?: string;
   status?: string;
   messages?: BridgeMessage[];
+  events?: BridgeTimelineEvent[];
+  eventSeq?: number;
   partial?: { content?: string } | null;
   msgSeq?: number;
   updatedAt?: number | string;
@@ -152,7 +161,7 @@ export async function listTranscript(sessionId: string): Promise<SessionTranscri
   const messages = (payload.messages ?? []).map(mapMessageRecord);
   return {
     messages,
-    timeline: mapOutputsToTimeline(messages),
+    timeline: mapEventsToTimeline(payload.events ?? [], messages),
     artifacts: [],
   };
 }
@@ -191,6 +200,7 @@ export function subscribeTurn(
   const state = {
     closed: false,
     lastMessageId: afterId,
+    lastEventSeq: 0,
     lastPartial: "",
     emittedFinal: false,
     sawRunning: false,
@@ -201,7 +211,9 @@ export function subscribeTurn(
       return;
     }
     try {
-      const response = await fetch(apiUrl(`/session/${encodeURIComponent(sessionId)}/messages?after=${state.lastMessageId}&limit=200`));
+      const response = await fetch(
+        apiUrl(`/session/${encodeURIComponent(sessionId)}/messages?after=${state.lastMessageId}&after_event=${state.lastEventSeq}&limit=200`),
+      );
       const payload = await readJson<BridgeMessages>(response);
       const partial = String(payload.partial?.content ?? "");
       if (partial && partial !== state.lastPartial) {
@@ -224,6 +236,18 @@ export function subscribeTurn(
         }
       }
 
+      for (const event of payload.events ?? []) {
+        if (typeof event.seq === "number") {
+          state.lastEventSeq = Math.max(state.lastEventSeq, event.seq);
+        }
+        if (event.type === "answer.final") {
+          state.emittedFinal = true;
+        }
+        onEvent(event);
+      }
+
+      const hasStructuredTimeline = (payload.events ?? []).some((event) => event.type === "timeline.step");
+      const hasStructuredFinal = (payload.events ?? []).some((event) => event.type === "answer.final");
       for (const message of payload.messages ?? []) {
         const messageId = Number(message.id) || 0;
         if (messageId <= state.lastMessageId) {
@@ -236,17 +260,21 @@ export function subscribeTurn(
         const responseId = message.responseId || message.response_id || `${turnId}:response:${messageId}`;
         const createdAt = toIsoTimestamp(message.ts);
         state.emittedFinal = true;
-        onEvent({
-          type: "answer.final",
-          turn_id: turnId,
-          session_id: sessionId,
-          data: {
-            text: String(message.content ?? ""),
-            response_id: responseId,
-            created_at: createdAt,
-          },
-        });
-        emitBridgeOutputs(message, turnId, sessionId, responseId, createdAt, onEvent);
+        if (!hasStructuredFinal) {
+          onEvent({
+            type: "answer.final",
+            turn_id: turnId,
+            session_id: sessionId,
+            data: {
+              text: String(message.content ?? ""),
+              response_id: responseId,
+              created_at: createdAt,
+            },
+          });
+        }
+        if (!hasStructuredTimeline) {
+          emitBridgeOutputs(message, turnId, sessionId, responseId, createdAt, onEvent);
+        }
       }
 
       const status = String(payload.status ?? "");
@@ -345,6 +373,66 @@ function mapMessageRecord(message: BridgeMessage): MessageRecord {
     outputs: message.outputs,
     source: message.source,
   };
+}
+
+function mapEventsToTimeline(events: BridgeTimelineEvent[], messages: MessageRecord[]): ExecutionStep[] {
+  const steps: ExecutionStep[] = [];
+  for (const event of events) {
+    if (event.type !== "timeline.step") {
+      continue;
+    }
+    const data = event.data;
+    const id = String(data.id ?? "");
+    if (!id) {
+      continue;
+    }
+    const current = steps.find((step) => step.id === id);
+    const outputDelta = typeof data.output_delta === "string" ? data.output_delta : "";
+    const step: ExecutionStep = {
+      id,
+      turn_id: typeof data.turn_id === "string" ? data.turn_id : undefined,
+      response_id: typeof data.response_id === "string" ? data.response_id : undefined,
+      kind: readStepKindFromData(data.kind),
+      title: String(data.title ?? "执行步骤"),
+      status: data.status === "failed" ? "failed" : data.status === "running" ? "running" : "done",
+      summary: String(data.summary ?? current?.summary ?? ""),
+      detail: String(data.detail ?? current?.detail ?? ""),
+      input: typeof data.input === "string" ? data.input : current?.input,
+      output: typeof data.output === "string" ? data.output : outputDelta ? `${current?.output ?? ""}${outputDelta}` : current?.output,
+      error: typeof data.error === "string" ? data.error : current?.error,
+      elapsed_ms: typeof data.elapsed_ms === "number" ? data.elapsed_ms : current?.elapsed_ms,
+      tool_name: typeof data.tool_name === "string" ? data.tool_name : current?.tool_name,
+      tool_label: typeof data.tool_label === "string" ? data.tool_label : current?.tool_label,
+      created_at: typeof data.created_at === "string" ? data.created_at : current?.created_at,
+    };
+    const index = steps.findIndex((currentStep) => currentStep.id === id);
+    if (index >= 0) {
+      steps[index] = step;
+    } else {
+      steps.push(step);
+    }
+  }
+  return steps.length > 0 ? steps : mapOutputsToTimeline(messages);
+}
+
+function readStepKindFromData(kind: unknown): ExecutionStep["kind"] {
+  const value = String(kind ?? "tool");
+  const allowed: ExecutionStep["kind"][] = [
+    "thought",
+    "search",
+    "read",
+    "file",
+    "command",
+    "skill",
+    "tape",
+    "agent",
+    "help",
+    "control",
+    "tool",
+    "phase",
+    "complete",
+  ];
+  return allowed.includes(value as ExecutionStep["kind"]) ? (value as ExecutionStep["kind"]) : "tool";
 }
 
 function mapOutputsToTimeline(messages: MessageRecord[]): ExecutionStep[] {
