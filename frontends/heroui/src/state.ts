@@ -405,21 +405,29 @@ function reduceToolEvent(state: TurnState, event: StreamEvent): TurnState {
 }
 
 function reduceTimelineStep(state: TurnState, event: StreamEvent): TurnState {
+  const stepId = String(event.data.id ?? `${state.turnId}:step:${state.steps.length + 1}`);
+  const current = state.steps.find((item) => item.id === stepId);
+  const outputDelta = typeof event.data.output_delta === "string" ? event.data.output_delta : "";
   const step: ExecutionStep = {
-    id: String(event.data.id ?? `${state.turnId}:step:${state.steps.length + 1}`),
+    id: stepId,
     turn_id: typeof event.data.turn_id === "string" ? event.data.turn_id : state.turnId,
     kind: readStepKind(event.data.kind),
     title: String(event.data.title ?? "执行步骤"),
     status: readStepStatus(event.data.status),
-    summary: String(event.data.summary ?? ""),
-    detail: String(event.data.detail ?? ""),
-    input: typeof event.data.input === "string" ? event.data.input : undefined,
-    output: typeof event.data.output === "string" ? event.data.output : undefined,
-    error: typeof event.data.error === "string" ? event.data.error : undefined,
-    elapsed_ms: typeof event.data.elapsed_ms === "number" ? event.data.elapsed_ms : undefined,
-    tool_name: typeof event.data.tool_name === "string" ? event.data.tool_name : undefined,
-    tool_label: typeof event.data.tool_label === "string" ? event.data.tool_label : undefined,
-    created_at: typeof event.data.created_at === "string" ? event.data.created_at : undefined,
+    summary: String(event.data.summary ?? current?.summary ?? ""),
+    detail: String(event.data.detail ?? current?.detail ?? ""),
+    input: typeof event.data.input === "string" ? event.data.input : current?.input,
+    output:
+      typeof event.data.output === "string"
+        ? event.data.output
+        : outputDelta
+          ? `${current?.output ?? ""}${outputDelta}`
+          : current?.output,
+    error: typeof event.data.error === "string" ? event.data.error : current?.error,
+    elapsed_ms: typeof event.data.elapsed_ms === "number" ? event.data.elapsed_ms : current?.elapsed_ms,
+    tool_name: typeof event.data.tool_name === "string" ? event.data.tool_name : current?.tool_name,
+    tool_label: typeof event.data.tool_label === "string" ? event.data.tool_label : current?.tool_label,
+    created_at: typeof event.data.created_at === "string" ? event.data.created_at : current?.created_at,
   };
   const responseId = readResponseId(event.data.response_id) || state.currentResponseId;
   if (responseId) {

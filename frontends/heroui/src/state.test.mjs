@@ -157,6 +157,55 @@ test("timeline.step preserves Bub tool display metadata", () => {
   assert.equal(state.steps[0].tool_label, "搜索记忆");
 });
 
+test("timeline.step output_delta appends to an existing tool card", () => {
+  let state = createInitialTurnState("turn-1");
+  state = applyStreamEvent(state, {
+    ...baseEvent,
+    type: "timeline.step",
+    data: {
+      id: "turn-1:tool:1",
+      response_id: "turn-1:response:1",
+      kind: "command",
+      title: "调用 code_run",
+      status: "running",
+      summary: "正在执行 code_run",
+      detail: "",
+      input: "{}",
+    },
+  });
+  state = applyStreamEvent(state, {
+    ...baseEvent,
+    type: "timeline.step",
+    data: {
+      id: "turn-1:tool:1",
+      response_id: "turn-1:response:1",
+      kind: "command",
+      title: "调用 code_run",
+      status: "running",
+      summary: "正在执行 code_run",
+      detail: "",
+      output_delta: "line 1\n",
+    },
+  });
+  state = applyStreamEvent(state, {
+    ...baseEvent,
+    type: "timeline.step",
+    data: {
+      id: "turn-1:tool:1",
+      response_id: "turn-1:response:1",
+      kind: "command",
+      title: "调用 code_run",
+      status: "done",
+      summary: "执行完成",
+      detail: "",
+      output_delta: "line 2\n",
+    },
+  });
+
+  assert.equal(state.steps[0].output, "line 1\nline 2\n");
+  assert.equal(state.steps[0].status, "done");
+});
+
 test("turn.error records the error and turn.done preserves error status", () => {
   let state = createInitialTurnState("turn-1");
   state = applyStreamEvent(state, {
