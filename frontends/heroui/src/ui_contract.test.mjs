@@ -234,6 +234,8 @@ test("webui keeps the screenshot-style chat layout contract", () => {
   assert.match(styles, /\.timeline-step-trigger-main/);
   assert.match(styles, /\.timeline-step-trigger-meta/);
   assert.match(styles, /\.timeline-step-trigger\s*{[^}]*white-space: normal/s);
+  assert.match(styles, /\.timeline-step-trigger\s*{[^}]*align-items: center/s);
+  assert.doesNotMatch(styles, /\.timeline-step-trigger\s*{[^}]*align-items: flex-start/s);
   assert.match(styles, /\.timeline-step-title\s*{[^}]*word-break: break-word/s);
   assert.match(components, /buildToolDetailSections/);
   assert.match(components, /readStepHeadline/);

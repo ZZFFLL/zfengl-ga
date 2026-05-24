@@ -776,7 +776,7 @@ textarea {
 
 .timeline-step-trigger {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   width: 100%;
@@ -809,7 +809,6 @@ textarea {
   align-items: center;
   gap: 6px;
   margin-left: auto;
-  padding-top: 1px;
 }
 
 .timeline-step-title {
