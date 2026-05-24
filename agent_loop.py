@@ -80,6 +80,7 @@ def agent_runner_loop(client, system_prompt, user_input, handler, tools_schema,
         _hook('turn_before', locals())
         _hook('llm_before', locals())
         _emit_event(event_sink, "llm.start", turn=turn)
+        llm_started_at = time.time()
         response_gen = client.chat(messages=messages, tools=tools_schema)
         if verbose:
             response = yield from response_gen
@@ -88,6 +89,7 @@ def agent_runner_loop(client, system_prompt, user_input, handler, tools_schema,
             response = exhaust(response_gen)
             cleaned = _clean_content(response.content)
             if cleaned: yield cleaned + '\n'
+        llm_elapsed_ms = int((time.time() - llm_started_at) * 1000)
         _hook('llm_after', locals())
         _emit_event(
             event_sink,
@@ -95,6 +97,7 @@ def agent_runner_loop(client, system_prompt, user_input, handler, tools_schema,
             turn=turn,
             text=getattr(response, "content", "") or "",
             has_tools=bool(getattr(response, "tool_calls", None)),
+            elapsed_ms=llm_elapsed_ms,
         )
 
         if not response.tool_calls: tool_calls = [{'tool_name': 'no_tool', 'args': {}}]

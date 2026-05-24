@@ -104,8 +104,11 @@ def test_agent_runner_loop_emits_ordered_structured_events():
     tool_start = events[event_types.index("tool.start")]
     tool_delta = events[event_types.index("tool.delta")]
     tool_end = events[event_types.index("tool.end")]
+    llm_end = events[event_types.index("llm.end")]
     final_event = events[event_types.index("agent.final")]
 
+    assert isinstance(llm_end["elapsed_ms"], int)
+    assert llm_end["elapsed_ms"] >= 0
     assert tool_start["tool_name"] == "code_run"
     assert tool_start["args"] == {"type": "python", "code": "print('ok')"}
     assert tool_delta["tool_kind"] == "command"

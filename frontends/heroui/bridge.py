@@ -27,7 +27,7 @@ WS API:
 """
 from __future__ import annotations
 
-import asyncio, contextlib, importlib, json, os, sqlite3, sys
+import asyncio, contextlib, importlib, json, os, re, sqlite3, sys
 import threading, time, traceback, uuid
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
@@ -62,6 +62,23 @@ def to_iso_timestamp(value: Any) -> str:
     except (TypeError, ValueError):
         seconds = time.time()
     return datetime.fromtimestamp(seconds, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _extract_summary_text(text: str) -> str:
+    raw = (text or "").strip()
+    if not raw:
+        return ""
+    match = re.search(r"<summary>\s*([\s\S]*?)\s*</summary>", raw, flags=re.IGNORECASE)
+    if match:
+        return " ".join(match.group(1).split())
+    lines = [line.strip() for line in raw.splitlines() if line.strip()]
+    if not lines:
+        return ""
+    return lines[0]
+
+
+def _round_label(turn_no: int) -> str:
+    return f"第{turn_no}轮"
 
 
 for _s in (sys.stdout, sys.stderr):
@@ -350,6 +367,8 @@ class AgentManager:
         tool_kind = str(raw.get("tool_kind") or "tool")
         index = int(raw.get("index") or 0) + 1
         step_id = f"{response_id}:tool:{ga_turn}:{index}"
+        round_label = _round_label(ga_turn) if ga_turn else "GA"
+        tool_title = f"{round_label} 调用了 {tool_name}"
 
         if event_type == "turn.start":
             return None
@@ -361,6 +380,10 @@ class AgentManager:
                 "data": {"phase": "understanding", "label": "正在理解请求"},
             }
         if event_type == "llm.end":
+            if not raw.get("has_tools"):
+                return None
+            text = str(raw.get("text") or "")
+            summary = _extract_summary_text(text) or "模型输出"
             return {
                 "type": "timeline.step",
                 "turn_id": turn_id,
@@ -370,11 +393,12 @@ class AgentManager:
                     "turn_id": turn_id,
                     "response_id": response_id,
                     "kind": "phase",
-                    "title": "模型输出完成",
+                    "title": summary,
                     "status": "done",
-                    "summary": "模型已返回本轮内容",
-                    "detail": str(raw.get("text") or ""),
-                    "default_open": True,
+                    "summary": summary,
+                    "detail": text,
+                    "elapsed_ms": raw.get("elapsed_ms"),
+                    "default_open": False,
                     "created_at": created_at,
                 },
             }
@@ -388,13 +412,13 @@ class AgentManager:
                     "turn_id": turn_id,
                     "response_id": response_id,
                     "kind": tool_kind,
-                    "title": f"调用 {tool_name}",
+                    "title": tool_title,
                     "status": "running",
-                    "summary": f"正在执行 {tool_name}",
+                    "summary": tool_title,
                     "detail": "",
                     "input": json.dumps(raw.get("args") or {}, ensure_ascii=False, indent=2),
                     "tool_name": tool_name,
-                    "tool_label": f"GA Turn {ga_turn}" if ga_turn else "GA 工具调用",
+                    "tool_label": round_label,
                     "created_at": created_at,
                 },
             }
@@ -408,13 +432,13 @@ class AgentManager:
                     "turn_id": turn_id,
                     "response_id": response_id,
                     "kind": tool_kind,
-                    "title": f"调用 {tool_name}",
+                    "title": tool_title,
                     "status": "running",
-                    "summary": f"正在执行 {tool_name}",
+                    "summary": tool_title,
                     "detail": "",
                     "output_delta": str(raw.get("delta") or ""),
                     "tool_name": tool_name,
-                    "tool_label": f"GA Turn {ga_turn}" if ga_turn else "GA 工具调用",
+                    "tool_label": round_label,
                     "created_at": created_at,
                 },
             }
@@ -429,15 +453,15 @@ class AgentManager:
                     "turn_id": turn_id,
                     "response_id": response_id,
                     "kind": tool_kind,
-                    "title": f"调用 {tool_name}",
+                    "title": tool_title,
                     "status": "failed" if status == "failed" else "done",
-                    "summary": "执行失败" if status == "failed" else "执行完成",
+                    "summary": tool_title,
                     "detail": "",
                     "output": str(raw.get("output") or ""),
                     "error": str(raw.get("result") or "") if status == "failed" else "",
                     "elapsed_ms": raw.get("elapsed_ms"),
                     "tool_name": tool_name,
-                    "tool_label": f"GA Turn {ga_turn}" if ga_turn else "GA 工具调用",
+                    "tool_label": round_label,
                     "created_at": created_at,
                 },
             }

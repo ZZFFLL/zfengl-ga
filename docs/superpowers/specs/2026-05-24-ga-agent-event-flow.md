@@ -19,6 +19,7 @@ This document is the source-backed handoff for HeroUI frontend adaptation. It de
    - Code: `frontends/heroui/src/api.ts::createTurn` and `subscribeTurn`
    - `createTurn()` stores the returned `eventSeq` in a per-turn cursor.
    - `subscribeTurn()` polls `/session/{sid}/messages?after={message_id}&after_event={event_seq}`.
+   - HeroUI currently uses HTTP polling for structured events. It does not use native browser SSE/EventSource transport for token delivery.
 
 3. The bridge sends the prompt to GenericAgent.
    - Code: `frontends/heroui/bridge.py::AgentManager.run_agent_turn`
@@ -67,7 +68,7 @@ These events are emitted by `agent_loop.py` before bridge conversion.
 |---|---|---|
 | `turn.start` | At the start of each GA loop turn | `turn` |
 | `llm.start` | Immediately before `client.chat(...)` | `turn` |
-| `llm.end` | After model response is received | `turn`, `text`, `has_tools` |
+| `llm.end` | After model response is received | `turn`, `text`, `has_tools`, `elapsed_ms` |
 | `tool.start` | Before a real tool dispatch | `turn`, `index`, `total`, `tool_call_id`, `tool_name`, `tool_kind`, `args` |
 | `tool.delta` | For each yielded tool output chunk | `turn`, `index`, `tool_call_id`, `tool_name`, `tool_kind`, `delta` |
 | `tool.end` | After tool dispatch completes | `turn`, `index`, `tool_call_id`, `tool_name`, `tool_kind`, `status`, `result`, `output`, `elapsed_ms` |
@@ -85,7 +86,7 @@ The bridge converts internal events into frontend `StreamEvent` records.
 |---|---|---|
 | `turn.start` | not exposed as a card | Internal turn boundary |
 | `llm.start` | `phase.update` | Active status label |
-| `llm.end` | `timeline.step` with `kind: "phase"` | Model output card with `detail` and `default_open: true` |
+| `llm.end` | `timeline.step` with `kind: "phase"` when `has_tools` is true | Model output card with extracted summary title, `detail`, `elapsed_ms`, and `default_open: false` |
 | `tool.start` | `timeline.step` | Create running tool card with structured `input` |
 | `tool.delta` | `timeline.step` | Append `output_delta` to existing tool card |
 | `tool.end` | `timeline.step` | Mark tool card done/failed, set `output`, `error`, `elapsed_ms` |
@@ -107,16 +108,16 @@ Required frontend fields for tool cards:
   "turn_id": "ga|sess|1",
   "response_id": "ga|sess|1:response:1",
   "kind": "command",
-  "title": "调用 code_run",
+  "title": "第2轮 调用了 code_run",
   "status": "running",
-  "summary": "正在执行 code_run",
+  "summary": "第2轮 调用了 code_run",
   "input": "{ ... }",
   "output_delta": "stream chunk",
   "output": "final output",
   "error": "",
   "elapsed_ms": 123,
   "tool_name": "code_run",
-  "tool_label": "GA Turn 2",
+  "tool_label": "第2轮",
   "created_at": "2026-05-24T00:00:00.000Z"
 }
 ```
@@ -137,6 +138,7 @@ Structured HeroUI mode must not treat legacy verbose output as primary UI data.
 - During structured runs, bridge does not update `partial.content` with raw `next` chunks.
 - During structured runs, final assistant message content is taken from `agent.final.text` when available.
 - Frontend suppresses `partial.content` streaming when structured events are present for the active turn.
+- Tool and phase progress remain near-real-time through structured event polling, but final assistant prose is delivered once through `answer.final`; token-level assistant streaming is not active in structured HeroUI mode.
 - Legacy `outputs[]` parsing remains only for old sessions or non-structured responses.
 
 ## Persistence and Delete Semantics
@@ -172,7 +174,8 @@ Structured HeroUI mode must not treat legacy verbose output as primary UI data.
 - Do not parse `message.outputs` if structured `timeline.step` events exist for that response/session.
 - Tool card content should prefer `input`, `output_delta` / `output`, `error`, and `elapsed_ms`.
 - Round start/end phase cards are hidden; old persisted `第 N 轮开始/结束` phase events are ignored by the frontend.
-- `模型输出完成` cards carry the raw model output in `detail` and default to expanded display via `default_open: true`.
+- Non-final model-output cards carry the raw model output in `detail`, use `<summary>...</summary>` or the first output line as the card title, include `elapsed_ms`, and stay collapsed by default via `default_open: false`.
+- Final no-tool model output is not emitted as a card; `agent.final` remains the only source for the normal assistant response body.
 
 ## Remaining Runtime Validation
 

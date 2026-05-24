@@ -289,13 +289,13 @@ function TimelineView({ steps, artifacts }: { steps: ExecutionStep[]; artifacts:
 }
 
 function TimelineStepCard({ step }: { step: ExecutionStep }) {
-  const [isExpanded, setIsExpanded] = useState(Boolean(step.default_open));
+  const [isExpanded, setIsExpanded] = useState(Boolean(step.default_open && !isModelSummaryStep(step)));
   const icon = readStepIcon(step);
-  const statusLabel = readStepStatusLabel(step.status);
+  const title = readStepHeadline(step);
+  const statusLabel = readStepStatusLabel(step);
   const detailSections = step.kind === "thought" ? [] : buildToolDetailSections(step);
   const hasDetail = detailSections.length > 0 || Boolean(step.detail.trim());
   const elapsedLabel = readElapsedLabel(step.elapsed_ms);
-  const showToolLabel = Boolean(step.tool_label && !step.title.includes(step.tool_label));
 
   return (
     <div className={`timeline-step timeline-step--${step.kind} timeline-step--${step.status}`}>
@@ -305,14 +305,16 @@ function TimelineStepCard({ step }: { step: ExecutionStep }) {
       <Disclosure className="timeline-step-card" isExpanded={isExpanded} onExpandedChange={setIsExpanded}>
         <Disclosure.Heading>
           <Button className="timeline-step-trigger" slot="trigger" variant="tertiary">
-            <span className="timeline-step-title">{step.title}</span>
-            {showToolLabel ? <span className="timeline-tool-label">{step.tool_label}</span> : null}
-            {step.tool_name ? <code className="timeline-tool-name">{step.tool_name}</code> : null}
-            <Chip className="timeline-step-chip" size="sm" variant="secondary">
-              <Chip.Label>{statusLabel}</Chip.Label>
-            </Chip>
-            {elapsedLabel ? <span className="timeline-step-duration">{elapsedLabel}</span> : null}
-            {hasDetail ? <Disclosure.Indicator /> : null}
+            <span className="timeline-step-trigger-main">
+              <span className="timeline-step-title">{title}</span>
+            </span>
+            <span className="timeline-step-trigger-meta">
+              <Chip className="timeline-step-chip" size="sm" variant="secondary">
+                <Chip.Label>{statusLabel}</Chip.Label>
+              </Chip>
+              {elapsedLabel ? <span className="timeline-step-duration">{elapsedLabel}</span> : null}
+              {hasDetail ? <Disclosure.Indicator /> : null}
+            </span>
           </Button>
         </Disclosure.Heading>
         {hasDetail ? (
@@ -414,14 +416,26 @@ function readStepIcon(step: ExecutionStep) {
   return <Wrench size={14} />;
 }
 
-function readStepStatusLabel(status: ExecutionStep["status"]) {
-  if (status === "running") {
+function readStepHeadline(step: ExecutionStep) {
+  const title = readNonEmptyText(step.title);
+  if (isModelSummaryStep(step)) {
+    return readSummaryFromModelDetail(step.detail) || readNonEmptyText(step.summary) || title || "模型输出";
+  }
+  return title || readNonEmptyText(step.summary) || "执行步骤";
+}
+
+function isModelSummaryStep(step: ExecutionStep) {
+  return step.kind === "phase" && (Boolean(step.default_open) || readNonEmptyText(step.title) !== "模型输出完成");
+}
+
+function readStepStatusLabel(step: ExecutionStep) {
+  if (step.status === "running") {
     return "进行中";
   }
-  if (status === "failed") {
-    return "失败";
+  if (step.status === "failed") {
+    return readNonEmptyText(step.error) ? "异常" : "失败";
   }
-  return "已完成";
+  return "成功";
 }
 
 function displayArtifactPath(path: string) {
@@ -487,9 +501,21 @@ function readNonEmptyText(value?: string) {
   return text ? text : "";
 }
 
+function readSummaryFromModelDetail(detail?: string) {
+  const text = readNonEmptyText(detail);
+  if (!text) {
+    return "";
+  }
+  const match = text.match(/<summary>\s*([\s\S]*?)\s*<\/summary>/i);
+  return match ? match[1].trim().replace(/\s+/g, " ") : "";
+}
+
 function readElapsedLabel(elapsedMs?: number) {
   if (typeof elapsedMs !== "number" || elapsedMs < 0) {
     return "";
   }
-  return elapsedMs >= 1000 ? `${(elapsedMs / 1000).toFixed(1)}s` : `${elapsedMs}ms`;
+  if (elapsedMs >= 60000) {
+    return `${(elapsedMs / 60000).toFixed(1)}m`;
+  }
+  return elapsedMs < 100 ? "<0.1s" : `${(elapsedMs / 1000).toFixed(1)}s`;
 }

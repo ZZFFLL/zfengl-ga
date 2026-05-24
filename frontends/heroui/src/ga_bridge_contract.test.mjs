@@ -272,11 +272,24 @@ response_id = manager.make_response_id(turn_id, 1)
 assert manager.convert_agent_event(session, turn_id, response_id, {"type": "turn.start", "turn": 1}) is None
 assert manager.convert_agent_event(session, turn_id, response_id, {"type": "turn.end", "turn": 1}) is None
 
-event = manager.convert_agent_event(session, turn_id, response_id, {"type": "llm.end", "turn": 1, "text": "模型输出正文"})
+assert manager.convert_agent_event(session, turn_id, response_id, {"type": "llm.end", "turn": 1, "text": "最终回复正文", "has_tools": False}) is None
+
+event = manager.convert_agent_event(
+    session,
+    turn_id,
+    response_id,
+    {"type": "llm.end", "turn": 1, "text": "<summary>用户请求今日AI新闻，调用搜索获取</summary>", "has_tools": True, "elapsed_ms": 1234},
+)
 assert event["type"] == "timeline.step"
-assert event["data"]["title"] == "模型输出完成"
-assert event["data"]["detail"] == "模型输出正文"
-assert event["data"]["default_open"] is True
+assert event["data"]["title"] == "用户请求今日AI新闻，调用搜索获取"
+assert event["data"]["summary"] == "用户请求今日AI新闻，调用搜索获取"
+assert event["data"]["detail"] == "<summary>用户请求今日AI新闻，调用搜索获取</summary>"
+assert event["data"]["elapsed_ms"] == 1234
+assert event["data"]["default_open"] is False
+
+tool = manager.convert_agent_event(session, turn_id, response_id, {"type": "tool.start", "turn": 1, "tool_name": "web_scan", "tool_kind": "search"})
+assert tool["data"]["title"] == "第1轮 调用了 web_scan"
+assert tool["data"]["tool_label"] == "第1轮"
 `;
 
   try {

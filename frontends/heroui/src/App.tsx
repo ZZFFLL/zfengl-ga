@@ -488,10 +488,10 @@ export function App() {
         {appError ? <div className="app-error">{appError}</div> : null}
         <ChatSurface
           activeTurn={activeTurn}
-          artifacts={activeTurn ? [] : artifacts}
+          artifacts={artifacts}
           isLoadingMessages={isLoadingMessages}
           messages={messages}
-          timeline={activeTurn ? [] : timeline}
+          timeline={timeline}
         />
         <div className="composer-stack">
           <div className="model-hot-reload-bar" aria-label="热加载配置与生效模型">

@@ -227,10 +227,11 @@ test("timeline.step hides round start/end phases and preserves model output defa
       id: "turn-1:response:1:phase:1:llm",
       response_id: "turn-1:response:1",
       kind: "phase",
-      title: "模型输出完成",
+      title: "用户请求今日AI新闻，调用搜索获取",
       status: "done",
       detail: "我需要先调用搜索工具。",
-      default_open: true,
+      elapsed_ms: 987,
+      default_open: false,
     },
   });
   state = applyStreamEvent(state, {
@@ -246,9 +247,10 @@ test("timeline.step hides round start/end phases and preserves model output defa
     },
   });
 
-  assert.deepEqual(state.steps.map((step) => step.title), ["模型输出完成"]);
+  assert.deepEqual(state.steps.map((step) => step.title), ["用户请求今日AI新闻，调用搜索获取"]);
   assert.equal(state.steps[0].detail, "我需要先调用搜索工具。");
-  assert.equal(state.steps[0].default_open, true);
+  assert.equal(state.steps[0].elapsed_ms, 987);
+  assert.equal(state.steps[0].default_open, false);
 });
 
 test("turn.error records the error and turn.done preserves error status", () => {
