@@ -269,6 +269,7 @@ textarea {
 }
 
 .conversation-header {
+  position: relative;
   display: grid;
   grid-template-columns: 32px minmax(0, 1fr) auto;
   gap: 16px;
@@ -313,6 +314,148 @@ textarea {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 6px;
+}
+
+.bridge-diagnostics-button {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  border-radius: 999px;
+}
+
+.bridge-diagnostics-panel {
+  position: absolute;
+  z-index: 20;
+  top: 56px;
+  right: 24px;
+  display: grid;
+  width: min(560px, calc(100vw - 320px));
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #dedfe6;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 24px 70px rgba(16, 17, 19, 0.16);
+  backdrop-filter: blur(16px);
+  transform-origin: top right;
+  animation: bridge-panel-in 160ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.bridge-diagnostics-panel--closing {
+  pointer-events: none;
+  animation: bridge-panel-out 140ms ease-in both;
+}
+
+.bridge-diagnostics-panel > div {
+  display: grid;
+  gap: 4px;
+}
+
+.bridge-diagnostics-panel strong {
+  color: #60626b;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.bridge-diagnostics-panel code {
+  overflow: hidden;
+  color: #202126;
+  font-family: "Cascadia Code", "JetBrains Mono", monospace;
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bridge-diagnostics-panel span {
+  color: #202126;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.bridge-diagnostics-summary {
+  padding-bottom: 10px;
+  border-bottom: 1px solid #ececf1;
+}
+
+.bridge-diagnostics-summary span {
+  color: #60626b;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 16px;
+}
+
+.bridge-config-details {
+  display: grid;
+  gap: 10px;
+}
+
+.bridge-config-details > strong {
+  color: #30323a;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.bridge-config-grid {
+  display: grid;
+  gap: 0;
+  border-top: 1px solid #ececf1;
+}
+
+.bridge-config-item {
+  display: grid;
+  grid-template-columns: 92px minmax(112px, 150px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 9px 0;
+  border-bottom: 1px solid #ececf1;
+}
+
+.bridge-config-item span {
+  color: #6b6d75;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 19px;
+}
+
+.bridge-config-item b {
+  color: #202126;
+  font-size: 13px;
+  line-height: 19px;
+  overflow-wrap: anywhere;
+}
+
+.bridge-config-item code {
+  color: #32343b;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.bridge-profile-list,
+.bridge-diagnostics-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.bridge-diagnostics-actions {
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+}
+
+.bridge-diagnostics-panel > .bridge-diagnostics-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.bridge-diagnostics-actions .bridge-open-button {
+  height: 30px;
+  min-height: 30px;
+  padding-inline: 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  line-height: 18px;
 }
 
 .header-actions .button {
@@ -907,6 +1050,76 @@ textarea {
   margin: 0 auto 16px;
 }
 
+.composer-stack {
+  display: grid;
+  gap: 8px;
+}
+
+.model-hot-reload-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: min(714px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 9px 12px;
+  border: 1px solid #e1e3ea;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 8px 24px rgba(16, 17, 19, 0.06);
+}
+
+.model-hot-reload-copy {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+.model-hot-reload-copy span,
+.model-hot-reload-actions span {
+  color: #777982;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.model-hot-reload-copy strong {
+  overflow: hidden;
+  color: #1f2025;
+  font-size: 13px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-hot-reload-copy code {
+  overflow: hidden;
+  max-width: 260px;
+  padding: 2px 6px;
+  border-radius: 8px;
+  background: #f0f1f4;
+  color: #5d6069;
+  font-family: "Cascadia Code", "JetBrains Mono", monospace;
+  font-size: 11px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-hot-reload-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.model-hot-reload-button {
+  height: 30px;
+  min-height: 30px;
+  border-radius: 999px;
+  font-size: 13px;
+}
+
 .composer-card {
   position: relative;
   padding: 0;
@@ -971,6 +1184,10 @@ textarea {
   gap: 9px;
 }
 
+.composer-file-input {
+  display: none;
+}
+
 .composer-icon-button {
   height: 32px;
   min-height: 32px;
@@ -999,6 +1216,39 @@ textarea {
 
 .send-button:hover:not([aria-disabled="true"]) {
   background: var(--accent-strong);
+}
+
+.send-button--stop {
+  background: #e43d30;
+}
+
+.composer-attachment-list {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.composer-attachment-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 180px;
+  padding: 3px 4px 3px 8px;
+  border-radius: 999px;
+  background: #f0f1f4;
+  color: #383a42;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.composer-attachment-pill .button,
+.composer-attachment-remove {
+  width: 18px;
+  min-width: 18px;
+  height: 18px;
+  min-height: 18px;
 }
 
 .composer-disclaimer {
@@ -1032,6 +1282,28 @@ textarea {
 @keyframes tool-spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes bridge-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes bridge-panel-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
   }
 }
 
@@ -1152,6 +1424,12 @@ textarea {
     justify-content: flex-start;
   }
 
+  .bridge-diagnostics-panel {
+    right: 16px;
+    left: 16px;
+    width: auto;
+  }
+
   .conversation-title h1 {
     font-size: 19px;
   }
@@ -1203,5 +1481,16 @@ textarea {
   .composer-dock {
     width: calc(100% - 24px);
     margin-bottom: 12px;
+  }
+
+  .model-hot-reload-bar {
+    width: calc(100% - 24px);
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .model-hot-reload-actions {
+    width: 100%;
+    justify-content: space-between;
   }
 }

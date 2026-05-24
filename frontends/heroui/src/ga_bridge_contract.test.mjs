@@ -26,6 +26,8 @@ test("HeroUI frontend has a dedicated GenericAgent bridge copy", () => {
   assert.match(bridge, /"responseId"/);
   assert.match(bridge, /"gaTurn"/);
   assert.match(bridge, /"outputs"/);
+  assert.match(bridge, /"model"/);
+  assert.match(bridge, /get_llm_name\(client, model=True\)/);
   assert.match(bridge, /def _persist_session_and_message/);
   assert.match(bridge, /persist=False/);
   assert.doesNotMatch(bridge, /self\._persist_message\(sess, user_msg\)/);
@@ -43,6 +45,10 @@ test("HeroUI api adapter speaks the GA bridge polling contract", () => {
   assert.match(api, /window\.setTimeout\(poll/);
   assert.match(api, /answer\.delta/);
   assert.match(api, /answer\.final/);
+  assert.match(api, /emitBridgeOutputs/);
+  assert.match(api, /type: "timeline\.step"/);
+  assert.match(api, /tool_name: "GenericAgent\.outputs"/);
+  assert.match(api, /tool_label: typeof message\.gaTurn === "number" \? `GA Turn \$\{message\.gaTurn\}` : "GA 输出"/);
   assert.match(api, /turn_id: message\.turn_id/);
   assert.match(api, /response_id: message\.responseId/);
   assert.match(api, /response_id: message\.responseId \|\| message\.response_id/);

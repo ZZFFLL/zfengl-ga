@@ -277,6 +277,20 @@ class AgentManager:
         try:
             agentmain = importlib.import_module("agentmain")
             agent = agentmain.GenericAgent()
+            if hasattr(agent, "load_llm_sessions"):
+                agent.load_llm_sessions()
+            clients = getattr(agent, "llmclients", [])
+            active_no = getattr(agent, "llm_no", None)
+            if clients and hasattr(agent, "get_llm_name"):
+                return [
+                    {
+                        "id": i,
+                        "name": agent.get_llm_name(client),
+                        "model": agent.get_llm_name(client, model=True),
+                        "active": i == active_no,
+                    }
+                    for i, client in enumerate(clients)
+                ]
             if hasattr(agent, "list_llms"):
                 return [{"id": i, "name": name, "active": active} for i, name, active in agent.list_llms()]
         except Exception as e:

@@ -35,6 +35,12 @@ export type MessageRecord = {
   source?: string;
 };
 
+export type ImageAttachment = {
+  id: string;
+  name: string;
+  dataUrl: string;
+};
+
 export type ExecutionStep = {
   id: string;
   turn_id?: string;

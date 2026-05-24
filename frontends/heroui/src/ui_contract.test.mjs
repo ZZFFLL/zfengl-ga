@@ -51,11 +51,61 @@ test("webui uses HeroUI components for the agent workbench shell", () => {
   assert.match(source, /responses/);
   assert.match(source, /GA Bridge/);
   assert.match(source, /持久化/);
+  assert.match(source, /Bridge 诊断/);
+  assert.match(source, /Info/);
+  assert.match(app, /bridgeDiagnosticsPanelRef/);
+  assert.match(app, /bridgeDiagnosticsButtonRef/);
+  assert.match(app, /isBridgeDiagnosticsClosing/);
+  assert.match(app, /pointerdown/);
+  assert.match(app, /closeBridgeDiagnostics/);
+  assert.doesNotMatch(source, /Settings2/);
+  assert.match(source, /打开 mykey/);
+  assert.match(source, /GA 根目录/);
+  assert.match(source, /Bridge 配置/);
+  assert.match(source, /BridgeConfigDetails/);
+  assert.match(source, /配置项详情/);
+  assert.match(source, /生效模型/);
+  assert.match(source, /配置来源/);
+  assert.match(source, /mykey\.py/);
+  assert.match(source, /热加载配置/);
+  assert.match(source, /handleReloadBridgeMetadata/);
+  assert.match(source, /model-hot-reload-bar/);
+  assert.match(source, /HTTP 接口/);
+  assert.match(source, /事件通道/);
+  assert.match(source, /可用 Profile/);
+  assert.doesNotMatch(source, /WebSocket 事件/);
+  assert.doesNotMatch(source, /Profile 数量/);
+  assert.doesNotMatch(source, /原始 config/);
+  assert.doesNotMatch(source, /会话数量/);
+  assert.doesNotMatch(source, /mykeyPath \?\? "未连接"/);
+  assert.doesNotMatch(source, /暂无配置项/);
+  assert.match(api, /getBridgeConfig/);
+  assert.match(api, /\/config/);
+  assert.match(source, /openBridgePath/);
   assert.match(source, /modelProfiles/);
+  assert.doesNotMatch(source, /当前模型配置/);
+  assert.doesNotMatch(source, /模型\/Profile 面板/);
+  assert.doesNotMatch(source, /model-profile-panel/);
+  assert.doesNotMatch(source, /当前 active profile/);
+  assert.doesNotMatch(source, /profile-switch/);
+  assert.doesNotMatch(source, /switchModelProfile|selectModelProfile|setSelectedProfileId|onProfileSelect/);
   assert.match(source, /新会话/);
   assert.match(source, /deleteSessions/);
+  assert.match(api, /cancelSession/);
+  assert.match(api, /openBridgePath/);
+  assert.match(api, /\/path\/open/);
+  assert.match(api, /\/cancel/);
   assert.match(api, /\/model-profiles/);
+  assert.match(api, /model\?: string/);
   assert.match(api, /\/status/);
+  assert.match(api, /mapOutputsToTimeline/);
+  assert.match(api, /emitBridgeOutputs/);
+  assert.match(api, /type: "timeline\.step"/);
+  assert.match(api, /GenericAgent\.outputs/);
+  assert.match(api, /images/);
+  assert.match(source, /selectedImages/);
+  assert.match(source, /image\/\*/);
+  assert.match(source, /停止生成/);
   assert.match(source, /复制回答/);
   assert.match(source, /重新生成回答/);
   assert.match(source, /正在加载会话/);
@@ -77,7 +127,7 @@ test("webui uses HeroUI components for the agent workbench shell", () => {
   assert.match(app, /getBridgeStatus/);
   assert.match(app, /listModelProfiles/);
   assert.match(app, /const existing = await listSessions\(\)/);
-  assert.match(app, /void refreshBridgeMetadata\(\)/);
+  assert.match(app, /void refreshBridgeMetadata\(\{ silent: true \}\)/);
   assert.match(app, /\{sessions\.length\} 会话/);
   assert.doesNotMatch(app, /Promise\.all\(\[\s*listSessions\(\),\s*getBridgeStatus\(\),\s*listModelProfiles\(\)\s*\]\)/s);
   assert.doesNotMatch(app, /bridgeStatus\?\.sessionCount \?\? sessions\.length/);
@@ -144,10 +194,49 @@ test("webui keeps the screenshot-style chat layout contract", () => {
   assert.match(styles, /\.timeline-step-duration/);
   assert.match(styles, /\.timeline-step--tape/);
   assert.match(styles, /\.timeline-step--agent/);
+  assert.match(styles, /\.bridge-diagnostics-panel/);
+  assert.match(styles, /\.bridge-diagnostics-panel--closing/);
+  assert.match(styles, /animation: bridge-panel-in/);
+  assert.match(styles, /animation: bridge-panel-out/);
+  assert.match(styles, /\.bridge-config-details/);
+  assert.match(styles, /\.bridge-config-grid/);
+  assert.match(styles, /\.bridge-config-item/);
+  assert.match(styles, /\.bridge-diagnostics-summary/);
+  assert.match(styles, /\.bridge-diagnostics-actions\s*{[^}]*justify-content: flex-end/s);
+  assert.match(styles, /\.bridge-diagnostics-panel > \.bridge-diagnostics-actions\s*{[^}]*display: flex/s);
+  assert.match(styles, /\.model-hot-reload-bar/);
+  assert.match(styles, /\.model-hot-reload-button/);
+  assert.doesNotMatch(styles, /\.model-profile-panel/);
+  assert.match(styles, /@keyframes bridge-panel-in/);
+  assert.match(styles, /@keyframes bridge-panel-out/);
+  assert.match(styles, /\.composer-attachment-list/);
   assert.match(styles, /\.recent-item\s*{[^}]*font-size: 14px/s);
   assert.doesNotMatch(styles, /\.turn-complete/);
   assert.doesNotMatch(styles, /\.share-button/);
   assert.doesNotMatch(styles, /\.model-button/);
+});
+
+test("Composer exposes image attachments and a streaming cancel action", () => {
+  const composer = readFileSync(new URL("components/Composer.tsx", import.meta.url), "utf8");
+
+  assert.match(composer, /import type \{ ImageAttachment \} from "\.\.\/types"/);
+  assert.match(composer, /onSubmit: \(content: string, images: ImageAttachment\[\]\) => void/);
+  assert.match(composer, /onCancel: \(\) => void/);
+  assert.match(composer, /accept="image\/\*"/);
+  assert.match(composer, /readAsDataURL/);
+  assert.match(composer, /停止生成/);
+});
+
+test("model metadata is not duplicated inside bridge diagnostics", () => {
+  const diagnosticsStart = app.indexOf("showBridgeDiagnostics");
+  const diagnosticsEnd = app.indexOf("</header>", diagnosticsStart);
+  const diagnosticsSource = app.slice(diagnosticsStart, diagnosticsEnd);
+  const composerDockSource = app.slice(app.indexOf("<ChatSurface", diagnosticsEnd), app.indexOf("</section>", diagnosticsEnd));
+
+  assert.match(diagnosticsSource, /<BridgeConfigDetails/);
+  assert.match(composerDockSource, /model-hot-reload-bar/);
+  assert.doesNotMatch(diagnosticsSource, /<ModelProfilePanel/);
+  assert.doesNotMatch(composerDockSource, /<ModelProfilePanel/);
 });
 
 test("deleting inactive sessions does not interrupt the active turn stream", () => {
@@ -158,4 +247,14 @@ test("deleting inactive sessions does not interrupt the active turn stream", () 
   assert.ok(deleteSource.indexOf("const activeWasDeleted") < deleteSource.indexOf("closeActiveSource"));
   assert.match(deleteSource, /if \(activeWasDeleted\) \{[\s\S]*closeActiveSource\(activeSourceRef\.current\)/);
   assert.match(deleteSource, /setActiveTurn\(\(current\) => \(activeWasDeleted \? null : current\)\)/);
+});
+
+test("selecting the already active session does not reset the transcript into loading", () => {
+  const selectStart = app.indexOf("function handleSelectSession");
+  const selectEnd = app.indexOf("async function handleSubmit", selectStart);
+  const selectSource = app.slice(selectStart, selectEnd);
+
+  assert.match(selectSource, /if \(sessionId === activeSessionId\) \{/);
+  assert.ok(selectSource.indexOf("if (sessionId === activeSessionId)") < selectSource.indexOf("setIsLoadingMessages(true)"));
+  assert.ok(selectSource.indexOf("if (sessionId === activeSessionId)") < selectSource.indexOf("setMessages([])"));
 });

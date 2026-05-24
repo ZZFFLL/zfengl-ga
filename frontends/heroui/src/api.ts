@@ -1,4 +1,4 @@
-import type { MessageRecord, SessionRecord, SessionTranscript, StreamEvent } from "./types";
+import type { ExecutionStep, ImageAttachment, MessageRecord, SessionRecord, SessionTranscript, StreamEvent } from "./types";
 
 const API_BASE = normalizeBase(import.meta.env.VITE_GA_HEROUI_API_TARGET ?? "");
 
@@ -16,10 +16,23 @@ export type BridgeStatus = {
   };
 };
 
+export type BridgeConfig = {
+  gaRoot?: string;
+  mykeyPath?: string;
+  config?: Record<string, unknown>;
+};
+
 export type ModelProfile = {
   id: string;
   name: string;
+  model?: string;
   active: boolean;
+};
+
+export type PathOpenRequest = {
+  kind?: "mykey";
+  path?: string;
+  target?: string;
 };
 
 type BridgeSession = {
@@ -81,6 +94,11 @@ export async function getBridgeStatus(): Promise<BridgeStatus> {
   return readJson<BridgeStatusResponse>(response);
 }
 
+export async function getBridgeConfig(): Promise<BridgeConfig> {
+  const response = await fetch(apiUrl("/config"));
+  return readJson<BridgeConfig>(response);
+}
+
 export async function listModelProfiles(): Promise<ModelProfile[]> {
   const response = await fetch(apiUrl("/model-profiles"));
   const payload = await readJson<BridgeProfilesResponse>(response);
@@ -119,22 +137,37 @@ export async function listMessages(sessionId: string): Promise<MessageRecord[]> 
 export async function listTranscript(sessionId: string): Promise<SessionTranscript> {
   const response = await fetch(apiUrl(`/session/${encodeURIComponent(sessionId)}`));
   const payload = await readJson<BridgeSessionDetail>(response);
+  const messages = (payload.messages ?? []).map(mapMessageRecord);
   return {
-    messages: (payload.messages ?? []).map(mapMessageRecord),
-    timeline: [],
+    messages,
+    timeline: mapOutputsToTimeline(messages),
     artifacts: [],
   };
 }
 
-export async function createTurn(sessionId: string, content: string): Promise<string> {
+export async function createTurn(sessionId: string, content: string, images: ImageAttachment[] = []): Promise<string> {
   const response = await fetch(apiUrl(`/session/${encodeURIComponent(sessionId)}/prompt`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt: content }),
+    body: JSON.stringify({ prompt: content, images }),
   });
   const payload = await readJson<{ seq?: number; userMessageId?: number }>(response);
   const seq = typeof payload.seq === "number" ? payload.seq : typeof payload.userMessageId === "number" ? payload.userMessageId : 0;
   return `ga|${encodeURIComponent(sessionId)}|${seq}`;
+}
+
+export async function cancelSession(sessionId: string): Promise<void> {
+  const response = await fetch(apiUrl(`/session/${encodeURIComponent(sessionId)}/cancel`), { method: "POST" });
+  await readJson(response);
+}
+
+export async function openBridgePath(request: PathOpenRequest): Promise<void> {
+  const response = await fetch(apiUrl("/path/open"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  await readJson(response);
 }
 
 export function subscribeTurn(
@@ -188,6 +221,8 @@ export function subscribeTurn(
         if (message.role !== "assistant") {
           continue;
         }
+        const responseId = message.responseId || message.response_id || `${turnId}:response:${messageId}`;
+        const createdAt = toIsoTimestamp(message.ts);
         state.emittedFinal = true;
         onEvent({
           type: "answer.final",
@@ -195,10 +230,11 @@ export function subscribeTurn(
           session_id: sessionId,
           data: {
             text: String(message.content ?? ""),
-            response_id: message.responseId || message.response_id || `${turnId}:response:${messageId}`,
-            created_at: toIsoTimestamp(message.ts),
+            response_id: responseId,
+            created_at: createdAt,
           },
         });
+        emitBridgeOutputs(message, turnId, sessionId, responseId, createdAt, onEvent);
       }
 
       const status = String(payload.status ?? "");
@@ -297,6 +333,71 @@ function mapMessageRecord(message: BridgeMessage): MessageRecord {
     outputs: message.outputs,
     source: message.source,
   };
+}
+
+function mapOutputsToTimeline(messages: MessageRecord[]): ExecutionStep[] {
+  return messages.flatMap((message) => {
+    if (!message.outputs?.length) {
+      return [];
+    }
+    const responseId = message.response_id || `${message.turn_id || message.created_at}:response`;
+    return message.outputs.map((output, index): ExecutionStep => ({
+      id: `${responseId}:output:${index + 1}`,
+      turn_id: message.turn_id,
+      response_id: message.response_id,
+      kind: "agent",
+      title: `GA 输出 ${index + 1}`,
+      status: "done",
+      summary: summarizeOutput(output),
+      detail: output,
+      tool_name: "GenericAgent.outputs",
+      tool_label: typeof message.ga_turn === "number" ? `GA Turn ${message.ga_turn}` : "GA 输出",
+      output,
+      created_at: message.created_at,
+    }));
+  });
+}
+
+function emitBridgeOutputs(
+  message: BridgeMessage,
+  turnId: string,
+  sessionId: string,
+  responseId: string,
+  createdAt: string,
+  onEvent: (event: StreamEvent) => void,
+) {
+  if (!message.outputs?.length) {
+    return;
+  }
+  message.outputs.forEach((output, index) => {
+    onEvent({
+      type: "timeline.step",
+      turn_id: turnId,
+      session_id: sessionId,
+      data: {
+        id: `${responseId}:output:${index + 1}`,
+        turn_id: turnId,
+        response_id: responseId,
+        kind: "agent",
+        title: `GA 输出 ${index + 1}`,
+        status: "done",
+        summary: summarizeOutput(output),
+        detail: output,
+        tool_name: "GenericAgent.outputs",
+        tool_label: typeof message.gaTurn === "number" ? `GA Turn ${message.gaTurn}` : "GA 输出",
+        output,
+        created_at: createdAt,
+      },
+    });
+  });
+}
+
+function summarizeOutput(output: string): string {
+  const firstLine = output.split(/\r?\n/).find((line) => line.trim());
+  if (!firstLine) {
+    return "GenericAgent 输出";
+  }
+  return firstLine.length > 80 ? `${firstLine.slice(0, 77)}...` : firstLine;
 }
 
 async function readJson<T>(response: Response): Promise<T> {
