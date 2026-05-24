@@ -107,8 +107,12 @@ test("webui uses HeroUI components for the agent workbench shell", () => {
   assert.match(api, /model\?: string/);
   assert.match(api, /\/status/);
   assert.match(api, /mapOutputsToTimeline/);
+  assert.match(api, /mapEventsToTimeline/);
   assert.match(api, /emitBridgeOutputs/);
   assert.match(api, /parseGenericAgentOutputSteps/);
+  assert.match(api, /after_event=/);
+  assert.match(api, /payload\.events/);
+  assert.match(api, /return steps\.length > 0 \? steps : mapOutputsToTimeline\(messages\)/);
   assert.doesNotMatch(api, /isFinalResponseOutput/);
   assert.doesNotMatch(api, /filter\(\(output\) => !isFinalResponseOutput\(output\)\)/);
   assert.doesNotMatch(api, /Final response to user/);
