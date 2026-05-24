@@ -310,3 +310,14 @@ test("selecting the already active session does not reset the transcript into lo
   assert.ok(selectSource.indexOf("if (sessionId === activeSessionId)") < selectSource.indexOf("setIsLoadingMessages(true)"));
   assert.ok(selectSource.indexOf("if (sessionId === activeSessionId)") < selectSource.indexOf("setMessages([])"));
 });
+
+test("active turn phase is not rendered as an assistant fallback message", () => {
+  const activeTurnStart = components.indexOf("function ActiveTurnTimeline");
+  const activeTurnEnd = components.indexOf("function TimelineView", activeTurnStart);
+  const activeTurnSource = components.slice(activeTurnStart, activeTurnEnd);
+
+  assert.match(activeTurnSource, /className="turn-phase"/);
+  assert.doesNotMatch(activeTurnSource, /showFallbackBubble/);
+  assert.doesNotMatch(activeTurnSource, /<MessageBubble content=\{activeTurn\.phase\?\.label/);
+  assert.doesNotMatch(activeTurnSource, /<AssistantActions \/>/);
+});

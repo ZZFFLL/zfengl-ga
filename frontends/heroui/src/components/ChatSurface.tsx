@@ -246,7 +246,6 @@ function ActiveTurnTimeline({ activeTurn }: { activeTurn: TurnState }) {
     });
   }
   const rounds = buildTurnRounds(activeMessages, activeTurn.steps, activeTurn.artifacts);
-  const showFallbackBubble = activeTurn.responses.length === 0 && !activeTurn.answer.trim() && activeTurn.steps.length === 0;
 
   return (
     <div className="turn-timeline" aria-label="本轮执行过程">
@@ -254,12 +253,6 @@ function ActiveTurnTimeline({ activeTurn }: { activeTurn: TurnState }) {
       {rounds.map((round, index) => (
         <TurnRoundView key={round.id} round={round} showSeparator={index > 0} />
       ))}
-      {showFallbackBubble ? (
-        <article className="message-row message-row--assistant is-streaming">
-          <MessageBubble content={activeTurn.phase?.label || "正在思考..."} />
-          <AssistantActions />
-        </article>
-      ) : null}
     </div>
   );
 }
