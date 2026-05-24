@@ -70,6 +70,7 @@ export type ExecutionStep = {
   tool_name?: string;
   tool_label?: string;
   created_at?: string;
+  default_open?: boolean;
 };
 
 export type ArtifactRecord = {

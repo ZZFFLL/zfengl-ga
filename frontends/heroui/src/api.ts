@@ -421,7 +421,11 @@ function mapEventsToTimeline(events: BridgeTimelineEvent[], messages: MessageRec
       tool_name: typeof data.tool_name === "string" ? data.tool_name : current?.tool_name,
       tool_label: typeof data.tool_label === "string" ? data.tool_label : current?.tool_label,
       created_at: typeof data.created_at === "string" ? data.created_at : current?.created_at,
+      default_open: typeof data.default_open === "boolean" ? data.default_open : current?.default_open,
     };
+    if (isHiddenPhaseStep(step)) {
+      continue;
+    }
     const index = steps.findIndex((currentStep) => currentStep.id === id);
     if (index >= 0) {
       steps[index] = step;
@@ -430,6 +434,13 @@ function mapEventsToTimeline(events: BridgeTimelineEvent[], messages: MessageRec
     }
   }
   return steps.length > 0 ? steps : mapOutputsToTimeline(messages);
+}
+
+function isHiddenPhaseStep(step: ExecutionStep): boolean {
+  if (step.kind !== "phase") {
+    return false;
+  }
+  return /:phase:\d+:(start|end)$/.test(step.id) || /^第 \d+ 轮(开始|结束)$/.test(step.title);
 }
 
 function readStepKindFromData(kind: unknown): ExecutionStep["kind"] {

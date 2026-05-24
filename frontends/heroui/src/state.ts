@@ -428,7 +428,14 @@ function reduceTimelineStep(state: TurnState, event: StreamEvent): TurnState {
     tool_name: typeof event.data.tool_name === "string" ? event.data.tool_name : current?.tool_name,
     tool_label: typeof event.data.tool_label === "string" ? event.data.tool_label : current?.tool_label,
     created_at: typeof event.data.created_at === "string" ? event.data.created_at : current?.created_at,
+    default_open: typeof event.data.default_open === "boolean" ? event.data.default_open : current?.default_open,
   };
+  if (isHiddenPhaseStep(step)) {
+    return {
+      ...state,
+      steps: state.steps.filter((item) => item.id !== step.id),
+    };
+  }
   const responseId = readResponseId(event.data.response_id) || state.currentResponseId;
   if (responseId) {
     step.response_id = responseId;
@@ -487,6 +494,13 @@ function upsertStep(steps: ExecutionStep[], step: ExecutionStep): ExecutionStep[
   return steps.some((current) => current.id === step.id)
     ? steps.map((current) => (current.id === step.id ? step : current))
     : [...steps, step];
+}
+
+function isHiddenPhaseStep(step: ExecutionStep): boolean {
+  if (step.kind !== "phase") {
+    return false;
+  }
+  return /:phase:\d+:(start|end)$/.test(step.id) || /^第 \d+ 轮(开始|结束)$/.test(step.title);
 }
 
 function closeRunningSteps(steps: ExecutionStep[], status: "done" | "failed"): ExecutionStep[] {

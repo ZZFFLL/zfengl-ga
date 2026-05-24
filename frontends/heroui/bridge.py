@@ -352,22 +352,7 @@ class AgentManager:
         step_id = f"{response_id}:tool:{ga_turn}:{index}"
 
         if event_type == "turn.start":
-            return {
-                "type": "timeline.step",
-                "turn_id": turn_id,
-                "session_id": sess.id,
-                "data": {
-                    "id": f"{response_id}:phase:{ga_turn}:start",
-                    "turn_id": turn_id,
-                    "response_id": response_id,
-                    "kind": "phase",
-                    "title": f"第 {ga_turn} 轮开始",
-                    "status": "done",
-                    "summary": "开始处理本轮",
-                    "detail": "",
-                    "created_at": created_at,
-                },
-            }
+            return None
         if event_type == "llm.start":
             return {
                 "type": "phase.update",
@@ -388,7 +373,8 @@ class AgentManager:
                     "title": "模型输出完成",
                     "status": "done",
                     "summary": "模型已返回本轮内容",
-                    "detail": "",
+                    "detail": str(raw.get("text") or ""),
+                    "default_open": True,
                     "created_at": created_at,
                 },
             }
@@ -456,22 +442,7 @@ class AgentManager:
                 },
             }
         if event_type == "turn.end":
-            return {
-                "type": "timeline.step",
-                "turn_id": turn_id,
-                "session_id": sess.id,
-                "data": {
-                    "id": f"{response_id}:phase:{ga_turn}:end",
-                    "turn_id": turn_id,
-                    "response_id": response_id,
-                    "kind": "phase",
-                    "title": f"第 {ga_turn} 轮结束",
-                    "status": "done",
-                    "summary": "本轮已完成，等待下一轮",
-                    "detail": "",
-                    "created_at": created_at,
-                },
-            }
+            return None
         if event_type == "agent.final":
             return {
                 "type": "answer.final",

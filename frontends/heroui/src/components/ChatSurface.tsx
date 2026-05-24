@@ -21,7 +21,7 @@ import {
   Wrench,
   XCircle,
 } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { buildThreadItems, buildTurnRounds, type TurnRound, type TurnState } from "../state";
@@ -289,6 +289,7 @@ function TimelineView({ steps, artifacts }: { steps: ExecutionStep[]; artifacts:
 }
 
 function TimelineStepCard({ step }: { step: ExecutionStep }) {
+  const [isExpanded, setIsExpanded] = useState(Boolean(step.default_open));
   const icon = readStepIcon(step);
   const statusLabel = readStepStatusLabel(step.status);
   const detailSections = step.kind === "thought" ? [] : buildToolDetailSections(step);
@@ -301,7 +302,7 @@ function TimelineStepCard({ step }: { step: ExecutionStep }) {
       <div className="timeline-dot" aria-hidden="true">
         {icon}
       </div>
-      <Disclosure className="timeline-step-card">
+      <Disclosure className="timeline-step-card" isExpanded={isExpanded} onExpandedChange={setIsExpanded}>
         <Disclosure.Heading>
           <Button className="timeline-step-trigger" slot="trigger" variant="tertiary">
             <span className="timeline-step-title">{step.title}</span>
@@ -432,6 +433,7 @@ function buildToolDetailSections(step: ExecutionStep): ToolDetailSection[] {
   const input = readNonEmptyText(step.input);
   const output = readNonEmptyText(step.output);
   const error = readNonEmptyText(step.error);
+  const detail = readNonEmptyText(step.detail);
 
   if (input) {
     sections.push({ kind: "input", label: "入参", content: input });
@@ -445,13 +447,15 @@ function buildToolDetailSections(step: ExecutionStep): ToolDetailSection[] {
   if (sections.length > 0) {
     return sections;
   }
+  if (step.kind === "phase" && step.default_open && detail) {
+    return [{ kind: "output", label: "模型输出", content: detail }];
+  }
 
   const parsedSections = splitToolDetail(step.detail);
   if (parsedSections.length > 0) {
     return parsedSections;
   }
 
-  const detail = readNonEmptyText(step.detail);
   return detail ? [{ kind: "detail", label: "详情", content: detail }] : [];
 }
 

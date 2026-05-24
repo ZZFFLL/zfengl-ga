@@ -43,6 +43,7 @@ test("webui uses HeroUI components for the agent workbench shell", () => {
   assert.match(source, /input/);
   assert.match(source, /output/);
   assert.match(source, /error/);
+  assert.match(source, /default_open/);
   assert.match(source, /elapsed_ms/);
   assert.match(source, /timeline-step-duration/);
   assert.match(source, /\/session\/new/);
@@ -225,6 +226,7 @@ test("webui keeps the screenshot-style chat layout contract", () => {
   assert.match(components, /buildToolDetailSections/);
   assert.match(components, /label: "入参"/);
   assert.match(components, /label: "结果"/);
+  assert.match(components, /label: "模型输出"/);
   assert.match(components, /className=\{`tool-detail-section tool-detail-section--\$\{section\.kind\}`\}/);
   assert.match(styles, /\.tool-detail-section\s*{[^}]*border: 1px solid #e0e1e7/s);
   assert.match(styles, /\.tool-detail-section pre\s*{[^}]*overflow-wrap: anywhere/s);

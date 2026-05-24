@@ -83,13 +83,13 @@ The bridge converts internal events into frontend `StreamEvent` records.
 
 | Internal event | Frontend event | UI role |
 |---|---|---|
-| `turn.start` | `timeline.step` with `kind: "phase"` | Optional phase card |
+| `turn.start` | not exposed as a card | Internal turn boundary |
 | `llm.start` | `phase.update` | Active status label |
-| `llm.end` | `timeline.step` with `kind: "phase"` | Optional phase card |
+| `llm.end` | `timeline.step` with `kind: "phase"` | Model output card with `detail` and `default_open: true` |
 | `tool.start` | `timeline.step` | Create running tool card with structured `input` |
 | `tool.delta` | `timeline.step` | Append `output_delta` to existing tool card |
 | `tool.end` | `timeline.step` | Mark tool card done/failed, set `output`, `error`, `elapsed_ms` |
-| `turn.end` | `timeline.step` with `kind: "phase"` | Optional phase card |
+| `turn.end` | not exposed as a card | Internal turn boundary |
 | `agent.final` | `answer.final` | Normal assistant response |
 | `agent.done` | `turn.done` | Close active turn |
 
@@ -171,6 +171,8 @@ Structured HeroUI mode must not treat legacy verbose output as primary UI data.
 - Treat `answer.final` as the assistant response source of truth.
 - Do not parse `message.outputs` if structured `timeline.step` events exist for that response/session.
 - Tool card content should prefer `input`, `output_delta` / `output`, `error`, and `elapsed_ms`.
+- Round start/end phase cards are hidden; old persisted `第 N 轮开始/结束` phase events are ignored by the frontend.
+- `模型输出完成` cards carry the raw model output in `detail` and default to expanded display via `default_open: true`.
 
 ## Remaining Runtime Validation
 

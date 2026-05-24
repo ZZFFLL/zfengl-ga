@@ -206,6 +206,51 @@ test("timeline.step output_delta appends to an existing tool card", () => {
   assert.equal(state.steps[0].status, "done");
 });
 
+test("timeline.step hides round start/end phases and preserves model output default open state", () => {
+  let state = createInitialTurnState("turn-1");
+  state = applyStreamEvent(state, {
+    ...baseEvent,
+    type: "timeline.step",
+    data: {
+      id: "turn-1:response:1:phase:1:start",
+      response_id: "turn-1:response:1",
+      kind: "phase",
+      title: "第 1 轮开始",
+      status: "done",
+      detail: "",
+    },
+  });
+  state = applyStreamEvent(state, {
+    ...baseEvent,
+    type: "timeline.step",
+    data: {
+      id: "turn-1:response:1:phase:1:llm",
+      response_id: "turn-1:response:1",
+      kind: "phase",
+      title: "模型输出完成",
+      status: "done",
+      detail: "我需要先调用搜索工具。",
+      default_open: true,
+    },
+  });
+  state = applyStreamEvent(state, {
+    ...baseEvent,
+    type: "timeline.step",
+    data: {
+      id: "turn-1:response:1:phase:1:end",
+      response_id: "turn-1:response:1",
+      kind: "phase",
+      title: "第 1 轮结束",
+      status: "done",
+      detail: "",
+    },
+  });
+
+  assert.deepEqual(state.steps.map((step) => step.title), ["模型输出完成"]);
+  assert.equal(state.steps[0].detail, "我需要先调用搜索工具。");
+  assert.equal(state.steps[0].default_open, true);
+});
+
 test("turn.error records the error and turn.done preserves error status", () => {
   let state = createInitialTurnState("turn-1");
   state = applyStreamEvent(state, {

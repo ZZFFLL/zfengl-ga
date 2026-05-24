@@ -250,6 +250,42 @@ asyncio.run(main())
   }
 });
 
+test("HeroUI bridge suppresses turn boundary phases and exposes model output content", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-bridge-"));
+  const dbPath = join(tempDir, "sessions.sqlite3");
+  const script = `
+import importlib.util
+import sys
+from pathlib import Path
+
+bridge_path = Path(${JSON.stringify(bridgePath)})
+spec = importlib.util.spec_from_file_location("heroui_bridge_under_test_events", bridge_path)
+bridge = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bridge
+spec.loader.exec_module(bridge)
+
+manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
+session = manager.create_session(cwd="E:/tmp/ga", title="event mapping")
+turn_id = manager.make_turn_id(session.id, 1)
+response_id = manager.make_response_id(turn_id, 1)
+
+assert manager.convert_agent_event(session, turn_id, response_id, {"type": "turn.start", "turn": 1}) is None
+assert manager.convert_agent_event(session, turn_id, response_id, {"type": "turn.end", "turn": 1}) is None
+
+event = manager.convert_agent_event(session, turn_id, response_id, {"type": "llm.end", "turn": 1, "text": "模型输出正文"})
+assert event["type"] == "timeline.step"
+assert event["data"]["title"] == "模型输出完成"
+assert event["data"]["detail"] == "模型输出正文"
+assert event["data"]["default_open"] is True
+`;
+
+  try {
+    execFileSync("python", ["-c", script], { stdio: "pipe" });
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
 test("HeroUI bridge does not resurrect deleted sessions from stale worker writes", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-bridge-"));
   const dbPath = join(tempDir, "sessions.sqlite3");
