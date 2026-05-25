@@ -54,6 +54,9 @@ export function ConversationRail({
         <div className="profile-copy">
           <strong>GenericAgent 工作台</strong>
           <span>{modelLabel}</span>
+          <div className="session-count-badge" aria-label="会话数">
+            {sessions.length} 会话
+          </div>
         </div>
       </div>
 

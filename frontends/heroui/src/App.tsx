@@ -422,15 +422,9 @@ export function App() {
             <span>{activeTurn?.status === "streaming" ? "正在流式输出" : "已就绪"}</span>
           </div>
           <div className="header-actions">
-            <div className="bridge-meta-strip" aria-label="GA Bridge 状态">
+            <div className="bridge-meta-strip" aria-label="HeroBridge 状态">
               <Chip color={bridgeStatus?.ready ? "success" : "warning"} size="sm" variant="soft">
-                <Chip.Label>GA Bridge</Chip.Label>
-              </Chip>
-              <Chip color="accent" size="sm" variant="soft">
-                <Chip.Label>持久化</Chip.Label>
-              </Chip>
-              <Chip size="sm" variant="secondary">
-                <Chip.Label>{sessions.length} 会话</Chip.Label>
+                <Chip.Label title={bridgeStatus?.ready ? "已连接" : "连接中"}>HeroBridge</Chip.Label>
               </Chip>
             </div>
             <Button

@@ -51,8 +51,8 @@ test("webui uses HeroUI components for the agent workbench shell", () => {
   assert.match(source, /answer\.delta/);
   assert.match(source, /answer\.final/);
   assert.match(source, /responses/);
-  assert.match(source, /GA Bridge/);
-  assert.match(source, /持久化/);
+  assert.match(source, /HeroBridge/);
+  assert.match(source, /已连接/);
   assert.match(source, /Bridge 诊断/);
   assert.match(source, /Info/);
   assert.match(app, /bridgeDiagnosticsPanelRef/);
@@ -141,7 +141,8 @@ test("webui uses HeroUI components for the agent workbench shell", () => {
   assert.match(app, /listModelProfiles/);
   assert.match(app, /const existing = await listSessions\(\)/);
   assert.match(app, /void refreshBridgeMetadata\(\{ silent: true \}\)/);
-  assert.match(app, /\{sessions\.length\} 会话/);
+  assert.match(components, /session-count-badge/);
+  assert.match(components, /会话数/);
   assert.match(app, /artifacts=\{artifacts\}/);
   assert.match(app, /timeline=\{timeline\}/);
   assert.doesNotMatch(app, /timeline=\{activeTurn \? \[\] : timeline\}/);
@@ -181,6 +182,7 @@ test("webui keeps the screenshot-style chat layout contract", () => {
   assert.match(styles, /\.conversation-scroll/);
   assert.match(styles, /\.message-row--user/);
   assert.match(styles, /\.composer-card/);
+  assert.match(styles, /\.session-count-badge/);
   assert.match(styles, /\.recent-item/);
   assert.match(styles, /\.batch-delete-bar/);
   assert.match(styles, /width: 100%/);
