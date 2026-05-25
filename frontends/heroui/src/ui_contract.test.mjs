@@ -69,9 +69,6 @@ test("webui uses HeroUI components for the agent workbench shell", () => {
   assert.match(source, /生效模型/);
   assert.match(source, /配置来源/);
   assert.match(source, /mykey\.py/);
-  assert.match(source, /热加载配置/);
-  assert.match(source, /handleReloadBridgeMetadata/);
-  assert.match(source, /model-hot-reload-bar/);
   assert.match(source, /HTTP 接口/);
   assert.match(source, /事件通道/);
   assert.match(source, /可用 Profile/);
@@ -85,15 +82,12 @@ test("webui uses HeroUI components for the agent workbench shell", () => {
   assert.match(api, /\/config/);
   assert.match(source, /openBridgePath/);
   assert.match(source, /modelProfiles/);
-  assert.match(source, /ModelProfileSwitch/);
   assert.match(source, /selectedProfileId/);
   assert.match(source, /handleSwitchModelProfile/);
   assert.match(source, /切换生效模型/);
-  assert.match(source, /<strong title=\{activeModelName\}>\{activeModelName\}<\/strong>/);
   assert.doesNotMatch(source, /<code title=\{activeProfileName\}>\{activeProfileName\}<\/code>/);
   assert.match(api, /switchModelProfile/);
   assert.match(api, /\/model-profile/);
-  assert.match(styles, /\.model-hot-reload-bar\s*{[^}]*grid-template-columns: minmax\(0, 38%\) minmax\(0, 62%\)/s);
   assert.match(styles, /white-space: nowrap/);
   assert.doesNotMatch(source, /<Label>切换生效模型<\/Label>/);
   assert.doesNotMatch(source, /当前模型配置/);
@@ -206,21 +200,18 @@ test("webui keeps the screenshot-style chat layout contract", () => {
   assert.match(styles, /--conversation-content-width: 68%/);
   assert.match(styles, /\.conversation-thread\s*{[^}]*width: var\(--conversation-content-width\)/s);
   assert.match(styles, /\.composer-dock\s*{[^}]*width: var\(--conversation-content-width\)/s);
-  assert.match(styles, /\.model-hot-reload-bar\s*{[^}]*width: var\(--conversation-content-width\)/s);
-  assert.match(styles, /\.model-hot-reload-bar\s*{[^}]*grid-template-columns: minmax\(0, 38%\) minmax\(0, 62%\)/s);
-  assert.match(styles, /\.model-hot-reload-copy\s*{[^}]*grid-template-columns: max-content minmax\(0, 1fr\)/s);
-  assert.match(styles, /\.model-hot-reload-actions\s*{[^}]*grid-template-columns: minmax\(0, 1fr\) max-content max-content/s);
   assert.match(styles, /\.profile-switch\s*{[^}]*width: 100%/s);
   assert.match(styles, /\.conversation-thread\s*{[^}]*min-width: 0/s);
   assert.match(styles, /\.turn-round\s*{[^}]*min-width: 0/s);
   assert.match(styles, /\.execution-timeline\s*{[^}]*min-width: 0/s);
   assert.match(styles, /\.timeline-step-card\s*{[^}]*max-width: 100%/s);
   assert.doesNotMatch(styles, /714px/);
-  assert.doesNotMatch(styles, /\.model-hot-reload-copy\s*{[^}]*150px/s);
-  assert.doesNotMatch(styles, /\.model-hot-reload-copy code\s*{[^}]*max-width: 260px/s);
   assert.doesNotMatch(styles, /\.profile-switch\s*{[^}]*min-width: 16rem/s);
   assert.doesNotMatch(styles, /\.profile-switch\s*{[^}]*width: 34%/s);
   assert.match(styles, /\.composer-input\s*{[^}]*min-height: 112px/s);
+  assert.match(styles, /\.composer-actions-row/);
+  assert.match(styles, /\.composer-model-switch/);
+  assert.match(styles, /\.composer-model-option/);
   assert.match(styles, /\.message-bubble\s*{[^}]*font-size: 16px/s);
   assert.match(styles, /\.message-bubble :where\(pre\)/);
   assert.match(styles, /\.conversation-loading/);
@@ -295,8 +286,6 @@ test("webui keeps the screenshot-style chat layout contract", () => {
   assert.match(styles, /\.bridge-diagnostics-summary/);
   assert.match(styles, /\.bridge-diagnostics-actions\s*{[^}]*justify-content: flex-end/s);
   assert.match(styles, /\.bridge-diagnostics-panel > \.bridge-diagnostics-actions\s*{[^}]*display: flex/s);
-  assert.match(styles, /\.model-hot-reload-bar/);
-  assert.match(styles, /\.model-hot-reload-button/);
   assert.doesNotMatch(styles, /\.model-profile-panel/);
   assert.match(styles, /@keyframes bridge-panel-in/);
   assert.match(styles, /@keyframes bridge-panel-out/);
@@ -312,20 +301,29 @@ test("Composer exposes image attachments and a streaming cancel action", () => {
 
   assert.match(composer, /import type \{ ImageAttachment \} from "\.\.\/types"/);
   assert.match(composer, /onSubmit: \(content: string, images: ImageAttachment\[\]\) => void/);
+  assert.match(composer, /modelProfiles: ModelProfile\[\]/);
+  assert.match(composer, /selectedProfileId: string/);
+  assert.match(composer, /onModelProfileSelect: \(profileId: string\) => void/);
   assert.match(composer, /onCancel: \(\) => void/);
   assert.match(composer, /accept="image\/\*"/);
   assert.match(composer, /readAsDataURL/);
   assert.match(composer, /停止生成/);
+  assert.match(composer, /切换生效模型/);
+  assert.match(composer, /composer-actions-row/);
+  assert.match(composer, /composer-model-switch/);
+  assert.match(composer, /selectedProfile \? formatProfileOption\(selectedProfile\) : "选择模型"/);
 });
 
-test("model metadata is not duplicated inside bridge diagnostics", () => {
+test("model switch stays inside the composer instead of duplicating a separate dock bar", () => {
   const diagnosticsStart = app.indexOf("showBridgeDiagnostics");
   const diagnosticsEnd = app.indexOf("</header>", diagnosticsStart);
   const diagnosticsSource = app.slice(diagnosticsStart, diagnosticsEnd);
   const composerDockSource = app.slice(app.indexOf("<ChatSurface", diagnosticsEnd), app.indexOf("</section>", diagnosticsEnd));
 
   assert.match(diagnosticsSource, /<BridgeConfigDetails/);
-  assert.match(composerDockSource, /model-hot-reload-bar/);
+  assert.match(composerDockSource, /selectedProfileId=\{selectedProfileId\}/);
+  assert.match(composerDockSource, /onModelProfileSelect=\{handleSwitchModelProfile\}/);
+  assert.doesNotMatch(composerDockSource, /model-hot-reload-bar/);
   assert.doesNotMatch(diagnosticsSource, /<ModelProfilePanel/);
   assert.doesNotMatch(composerDockSource, /<ModelProfilePanel/);
 });

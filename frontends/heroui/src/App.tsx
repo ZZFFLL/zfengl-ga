@@ -1,5 +1,5 @@
-import { Button, Chip, ListBox, Select, type Key } from "@heroui/react";
-import { FileCode, FolderOpen, Info, Menu, RefreshCcw, Search } from "lucide-react";
+import { Button, Chip } from "@heroui/react";
+import { FileCode, FolderOpen, Info, Menu, Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
   cancelSession,
@@ -46,9 +46,7 @@ export function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showBridgeDiagnostics, setShowBridgeDiagnostics] = useState(false);
   const [isBridgeDiagnosticsClosing, setIsBridgeDiagnosticsClosing] = useState(false);
-  const [isReloadingBridgeMetadata, setIsReloadingBridgeMetadata] = useState(false);
   const [isSwitchingModelProfile, setIsSwitchingModelProfile] = useState(false);
-  const [bridgeMetadataReloadedAt, setBridgeMetadataReloadedAt] = useState("");
   const activeSourceRef = useRef<EventSource | null>(null);
   const activeSessionRef = useRef("");
   const activeTurnRef = useRef("");
@@ -192,7 +190,6 @@ export function App() {
       setBridgeStatus(status);
       setModelProfiles(profiles);
       setSelectedProfileId(getActiveProfileId(profiles));
-      setBridgeMetadataReloadedAt(formatMetadataReloadTime(new Date()));
       if (!silent) {
         setAppError("");
       }
@@ -203,20 +200,6 @@ export function App() {
     }
   }
 
-  async function handleReloadBridgeMetadata() {
-    if (isReloadingBridgeMetadata) {
-      return;
-    }
-    setIsReloadingBridgeMetadata(true);
-    try {
-      await refreshBridgeMetadata();
-    } catch (error) {
-      setAppError(readError(error));
-    } finally {
-      setIsReloadingBridgeMetadata(false);
-    }
-  }
-
   async function handleSwitchModelProfile(profileId: string) {
     if (!profileId || profileId === selectedProfileId || isSwitchingModelProfile) {
       return;
@@ -224,9 +207,9 @@ export function App() {
     setIsSwitchingModelProfile(true);
     try {
       const profiles = await switchModelProfile(profileId, activeSessionId || undefined);
+      // 切模型后以后端返回的最新 profile 列表为准，避免前端本地状态漂移。
       setModelProfiles(profiles);
       setSelectedProfileId(getActiveProfileId(profiles) || profileId);
-      setBridgeMetadataReloadedAt(formatMetadataReloadTime(new Date()));
       setAppError("");
     } catch (error) {
       setAppError(readError(error));
@@ -499,36 +482,14 @@ export function App() {
           timeline={timeline}
         />
         <div className="composer-stack">
-          <div className="model-hot-reload-bar" aria-label="热加载配置与生效模型">
-            <div className="model-hot-reload-copy">
-              <span>生效模型</span>
-              <strong title={activeModelName}>{activeModelName}</strong>
-            </div>
-            <div className="model-hot-reload-actions">
-              <ModelProfileSwitch
-                disabled={activeTurn?.status === "streaming" || isSwitchingModelProfile}
-                profiles={modelProfiles}
-                selectedProfileId={selectedProfileId}
-                onProfileSelect={handleSwitchModelProfile}
-              />
-              <span>{bridgeMetadataReloadedAt ? `已热加载 ${bridgeMetadataReloadedAt}` : "读取 GA mykey 配置"}</span>
-              <Button
-                className="model-hot-reload-button"
-                isDisabled={isReloadingBridgeMetadata}
-                onPress={handleReloadBridgeMetadata}
-                size="sm"
-                variant="secondary"
-              >
-                <RefreshCcw size={14} />
-                {isReloadingBridgeMetadata ? "热加载中" : "热加载配置"}
-              </Button>
-            </div>
-          </div>
           <HumanInteractionPromptPanel humanInteractionPrompt={humanInteractionPrompt} onAskUserChoice={(choice) => void handleSubmit(choice)} />
           <Composer
             disabled={activeTurn?.status === "streaming"}
+            modelProfiles={modelProfiles}
             onCancel={handleCancelTurn}
+            onModelProfileSelect={handleSwitchModelProfile}
             onSubmit={handleSubmit}
+            selectedProfileId={selectedProfileId}
           />
         </div>
       </section>
@@ -665,52 +626,6 @@ function HumanInteractionPromptPanel({
   );
 }
 
-function ModelProfileSwitch({
-  disabled,
-  onProfileSelect,
-  profiles,
-  selectedProfileId,
-}: {
-  disabled: boolean;
-  onProfileSelect: (profileId: string) => void;
-  profiles: ModelProfile[];
-  selectedProfileId: string;
-}) {
-  function handleChange(value: Key | Key[] | null) {
-    const next = Array.isArray(value) ? value[0] : value;
-    if (next !== null && next !== undefined) {
-      onProfileSelect(String(next));
-    }
-  }
-
-  return (
-    <Select
-      aria-label="切换生效模型"
-      className="profile-switch"
-      isDisabled={disabled || profiles.length === 0}
-      onChange={handleChange}
-      placeholder="选择模型"
-      value={selectedProfileId || null}
-      variant="secondary"
-    >
-      <Select.Trigger>
-        <Select.Value />
-        <Select.Indicator />
-      </Select.Trigger>
-      <Select.Popover>
-        <ListBox>
-          {profiles.map((profile) => (
-            <ListBox.Item id={String(profile.id)} key={profile.id} textValue={formatProfileOption(profile)}>
-              {formatProfileOption(profile)}
-              <ListBox.ItemIndicator />
-            </ListBox.Item>
-          ))}
-        </ListBox>
-      </Select.Popover>
-    </Select>
-  );
-}
-
 function readError(error: unknown): string {
   return error instanceof Error ? error.message : "发生了未知错误";
 }
@@ -757,15 +672,6 @@ function formatChineseTitle(title: string): string {
     return "新会话";
   }
   return title;
-}
-
-function formatMetadataReloadTime(date: Date): string {
-  return date.toLocaleTimeString("zh-CN", {
-    hour12: false,
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
 }
 
 function formatModelName(profile: ModelProfile | undefined): string {
