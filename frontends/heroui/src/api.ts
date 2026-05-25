@@ -152,6 +152,19 @@ export async function deleteSessions(sessionIds: string[]): Promise<SessionRecor
   return listSessions();
 }
 
+export async function regenerateSessionTitle(sessionId: string): Promise<SessionRecord> {
+  const response = await fetch(apiUrl(`/session/${encodeURIComponent(sessionId)}/title/regenerate`), {
+    method: "POST",
+  });
+  const payload = await readJson<{ sessionId?: string; title?: string }>(response);
+  return {
+    id: String(payload.sessionId ?? sessionId),
+    title: String(payload.title ?? "新会话"),
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+}
+
 export async function listMessages(sessionId: string): Promise<MessageRecord[]> {
   const response = await fetch(apiUrl(`/session/${encodeURIComponent(sessionId)}/messages`));
   const payload = await readJson<BridgeMessages>(response);

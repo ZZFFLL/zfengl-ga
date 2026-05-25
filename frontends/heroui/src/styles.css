@@ -224,6 +224,13 @@ textarea {
   align-items: stretch;
 }
 
+.recent-item-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px;
+}
+
 .recent-item {
   justify-self: stretch;
   font-size: 14px;
@@ -238,6 +245,20 @@ textarea {
 .recent-item.is-active {
   background: #eaeaed;
   color: #050506;
+}
+
+.recent-item-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.recent-item-menu-button {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  color: #7a7c84;
 }
 
 .recent-empty {

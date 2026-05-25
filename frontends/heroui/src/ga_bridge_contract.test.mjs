@@ -30,6 +30,7 @@ test("HeroUI frontend has a dedicated GenericAgent bridge copy", () => {
   assert.match(bridge, /get_llm_name\(client, model=True\)/);
   assert.match(bridge, /selected_llm_no/);
   assert.match(bridge, /def switch_model_profile/);
+  assert.match(bridge, /def regenerate_session_title/);
   assert.match(bridge, /events: List\[dict\] = field\(default_factory=list\)/);
   assert.match(bridge, /event_seq: int = 0/);
   assert.match(bridge, /CREATE TABLE IF NOT EXISTS events/);
@@ -42,6 +43,7 @@ test("HeroUI frontend has a dedicated GenericAgent bridge copy", () => {
   assert.match(bridge, /app\.router\.add_post\("\/session\/new", new_session_handler\)/);
   assert.match(bridge, /app\.router\.add_get\("\/session\/\{sid\}\/messages", messages_handler\)/);
   assert.match(bridge, /app\.router\.add_post\("\/model-profile", switch_model_profile_handler\)/);
+  assert.match(bridge, /app\.router\.add_post\("\/session\/\{sid\}\/title\/regenerate", regenerate_session_title_handler\)/);
 });
 
 test("HeroUI api adapter speaks the GA bridge polling contract", () => {
@@ -67,6 +69,8 @@ test("HeroUI api adapter speaks the GA bridge polling contract", () => {
   assert.match(api, /response_id: message\.responseId \|\| message\.response_id/);
   assert.match(api, /switchModelProfile/);
   assert.match(api, /\/model-profile/);
+  assert.match(api, /regenerateSessionTitle/);
+  assert.match(api, /\/title\/regenerate/);
   assert.doesNotMatch(api, /\/api\/turns\/\$\{encodeURIComponent\(turnId\)\}\/events/);
 });
 
@@ -464,6 +468,91 @@ assert restored[0].messages[1]["responseId"] == "resp-1"
 assert restored[0].messages[1]["response_id"] == "resp-1"
 assert restored[0].messages[1]["gaTurn"] == 3
 assert restored[0].messages[1]["outputs"] == ["thinking", "done"]
+`;
+
+  try {
+    execFileSync("python", ["-c", script], { stdio: "pipe" });
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("HeroUI bridge derives the title from the first user message when the session is still untitled", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-bridge-"));
+  const dbPath = join(tempDir, "sessions.sqlite3");
+  const script = `
+import importlib.util
+import sys
+from pathlib import Path
+
+bridge_path = Path(${JSON.stringify(bridgePath)})
+spec = importlib.util.spec_from_file_location("heroui_bridge_under_test_title", bridge_path)
+bridge = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bridge
+spec.loader.exec_module(bridge)
+
+manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
+session = manager.create_session(cwd="E:/tmp/ga", title="新会话")
+manager.add_message(session, "user", "请帮我整理一下今天的开发任务和优先级\\n顺便给出建议", turn_id="turn-1", source="user")
+
+assert session.title == "请帮我整理一下今天的开发任务和优先级 顺便给出建议"[:40]
+
+manager.add_message(session, "user", "第二条消息不应覆盖标题", turn_id="turn-2", source="user")
+assert session.title == "请帮我整理一下今天的开发任务和优先级 顺便给出建议"[:40]
+`;
+
+  try {
+    execFileSync("python", ["-c", script], { stdio: "pipe" });
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("HeroUI bridge regenerates a session title from the latest user turns", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-bridge-"));
+  const dbPath = join(tempDir, "sessions.sqlite3");
+  const script = `
+import importlib.util
+import sys
+import types
+from pathlib import Path
+
+bridge_path = Path(${JSON.stringify(bridgePath)})
+spec = importlib.util.spec_from_file_location("heroui_bridge_under_test_regen_title", bridge_path)
+bridge = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bridge
+spec.loader.exec_module(bridge)
+
+captured = {}
+
+def fake_fast_ask(prompt, cfg_name):
+    captured["prompt"] = prompt
+    captured["cfg_name"] = cfg_name
+    return "新的会话标题"
+
+bridge.fast_ask = fake_fast_ask
+manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
+manager.selected_llm_no = 0
+session = manager.create_session(cwd="E:/tmp/ga", title="旧标题")
+manager.add_message(session, "user", "第一轮：讨论项目目标", persist=False)
+manager.add_message(session, "assistant", "第一轮回复", persist=False)
+manager.add_message(session, "user", "第二轮：确认页面布局", persist=False)
+manager.add_message(session, "assistant", "第二轮回复", persist=False)
+manager.add_message(session, "user", "第三轮：调整模型切换交互", persist=False)
+manager.add_message(session, "assistant", "第三轮回复", persist=False)
+manager.add_message(session, "user", "第四轮：收紧按钮样式", persist=False)
+manager.add_message(session, "assistant", "第四轮回复", persist=False)
+manager.add_message(session, "user", "第五轮：处理会话标题逻辑", persist=False)
+manager.add_message(session, "assistant", "第五轮回复", persist=False)
+manager.add_message(session, "user", "第六轮：把删除放进更多菜单", persist=False)
+
+result = manager.regenerate_session_title(session.id)
+assert result["ok"] is True
+assert result["title"] == "新的会话标题"
+assert session.title == "新的会话标题"
+assert "第一轮" not in captured["prompt"]
+assert "第二轮" in captured["prompt"]
+assert "第六轮" in captured["prompt"]
 `;
 
   try {

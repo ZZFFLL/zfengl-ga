@@ -11,6 +11,7 @@ import {
   listSessions,
   listTranscript,
   openBridgePath,
+  regenerateSessionTitle,
   subscribeTurn,
   switchModelProfile,
   type BridgeStatus,
@@ -404,6 +405,7 @@ export function App() {
         modelLabel={modelLabel}
         onCreateSession={handleCreateSession}
         onDeleteSessions={handleDeleteSessions}
+        onRegenerateSessionTitle={(sessionId) => void handleRegenerateSessionTitle(sessionId)}
         onSelectSession={handleSelectSession}
       />
       <section className="conversation-main" aria-label="GenericAgent 智能工作台">
@@ -522,6 +524,30 @@ export function App() {
     setArtifacts([]);
     setIsLoadingMessages(false);
     return session;
+  }
+
+  async function handleRegenerateSessionTitle(sessionId: string) {
+    try {
+      const updated = await regenerateSessionTitle(sessionId);
+      setSessions((current) =>
+        current.map((session) =>
+          session.id === updated.id
+            ? {
+                ...session,
+                title: updated.title,
+                updated_at: updated.updated_at,
+              }
+            : session,
+        ),
+      );
+      if (activeSessionId === updated.id) {
+        setMessages((current) => [...current]);
+      }
+      setAppError("");
+      void refreshSessions();
+    } catch (error) {
+      setAppError(readError(error));
+    }
   }
 }
 

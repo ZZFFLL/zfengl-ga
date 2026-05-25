@@ -1,5 +1,5 @@
-import { Avatar, Button } from "@heroui/react";
-import { CheckSquare, MessageCircle, MessageSquarePlus, Square, Trash2, X } from "lucide-react";
+import { Avatar, Button, Dropdown, Label } from "@heroui/react";
+import { CheckSquare, Ellipsis, MessageCircle, MessageSquarePlus, PencilLine, Square, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import type { SessionRecord } from "../types";
 
@@ -9,6 +9,7 @@ type ConversationRailProps = {
   modelLabel: string;
   onCreateSession: () => void;
   onDeleteSessions: (sessionIds: string[]) => void;
+  onRegenerateSessionTitle: (sessionId: string) => void;
   onSelectSession: (sessionId: string) => void;
 };
 
@@ -18,6 +19,7 @@ export function ConversationRail({
   modelLabel,
   onCreateSession,
   onDeleteSessions,
+  onRegenerateSessionTitle,
   onSelectSession,
 }: ConversationRailProps) {
   const [isDeleting, setIsDeleting] = useState(false);
@@ -85,24 +87,48 @@ export function ConversationRail({
 
       <nav className="recent-list" aria-label="最近会话">
         {sessions.map((session, index) => (
-          <Button
-            className={`recent-item ${session.id === activeSessionId ? "is-active" : ""}`}
-            fullWidth
-            key={session.id}
-            onPress={() => (isDeleting ? toggleSession(session.id) : onSelectSession(session.id))}
-            variant="tertiary"
-          >
-            {isDeleting ? (
-              selectedIds.includes(session.id) ? (
-                <CheckSquare size={18} />
+          <div className={`recent-item-row ${session.id === activeSessionId ? "is-active" : ""}`} key={session.id}>
+            <Button
+              className={`recent-item ${session.id === activeSessionId ? "is-active" : ""}`}
+              fullWidth
+              onPress={() => (isDeleting ? toggleSession(session.id) : onSelectSession(session.id))}
+              variant="tertiary"
+            >
+              {isDeleting ? (
+                selectedIds.includes(session.id) ? (
+                  <CheckSquare size={18} />
+                ) : (
+                  <Square size={18} />
+                )
               ) : (
-                <Square size={18} />
-              )
-            ) : (
-              <MessageCircle size={18} />
-            )}
-            <span>{formatChineseTitle(session.title, sessions, index)}</span>
-          </Button>
+                <MessageCircle size={18} />
+              )}
+              <span>{formatChineseTitle(session.title, sessions, index)}</span>
+            </Button>
+            {!isDeleting ? (
+              <div className="recent-item-actions">
+                <Dropdown>
+                  <Dropdown.Trigger>
+                    <Button aria-label="更多会话操作" className="recent-item-menu-button" isIconOnly size="sm" variant="ghost">
+                      <Ellipsis size={16} />
+                    </Button>
+                  </Dropdown.Trigger>
+                  <Dropdown.Popover>
+                    <Dropdown.Menu onAction={(key) => handleSessionAction(String(key), session.id)}>
+                      <Dropdown.Item id="regenerate-title" textValue="重新生成标题">
+                        <PencilLine className="size-4 shrink-0 text-muted" />
+                        <Label>重新生成标题</Label>
+                      </Dropdown.Item>
+                      <Dropdown.Item id="delete-session" textValue="删除会话" variant="danger">
+                        <Trash2 className="size-4 shrink-0 text-danger" />
+                        <Label>删除会话</Label>
+                      </Dropdown.Item>
+                    </Dropdown.Menu>
+                  </Dropdown.Popover>
+                </Dropdown>
+              </div>
+            ) : null}
+          </div>
         ))}
         {sessions.length === 0 ? <div className="recent-empty">暂无会话</div> : null}
       </nav>
@@ -125,6 +151,16 @@ export function ConversationRail({
       ) : null}
     </aside>
   );
+
+  function handleSessionAction(action: string, sessionId: string) {
+    if (action === "regenerate-title") {
+      onRegenerateSessionTitle(sessionId);
+      return;
+    }
+    if (action === "delete-session") {
+      onDeleteSessions([sessionId]);
+    }
+  }
 }
 
 function formatChineseTitle(title: string, sessions: SessionRecord[], index: number): string {

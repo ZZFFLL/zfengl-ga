@@ -34,6 +34,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 from aiohttp import web, WSMsgType
+from llmcore import fast_ask
 
 APP_DIR = Path(__file__).resolve().parent
 
@@ -635,11 +636,68 @@ class AgentManager:
         msg.update(extra)
         sess.messages.append(msg)
         sess.updated_at = time.time()
-        if role == "user" and content.strip() and sess.title == "New chat":
+        # 仅在默认未命名会话下，使用首条用户消息生成标题，避免覆盖用户已有命名。
+        if role == "user" and content.strip() and self._is_untitled_session_title(sess.title):
             sess.title = content.strip().replace("\n", " ")[:40]
         if persist:
             self._persist_session_and_message(sess, msg)
         return msg
+
+    def _is_untitled_session_title(self, title: str) -> bool:
+        normalized = (title or "").strip().lower()
+        return normalized in {"new chat", "新会话"}
+
+    def regenerate_session_title(self, sid: str) -> dict:
+        with self.lock:
+            sess = self.sessions.get(sid)
+            if not sess:
+                raise web.HTTPNotFound(text=json.dumps({"error": f"session not found: {sid}"}, ensure_ascii=False), content_type="application/json")
+            recent_user_messages = [
+                str(message.get("content") or "").strip()
+                for message in sess.messages
+                if message.get("role") == "user" and str(message.get("content") or "").strip()
+            ][-5:]
+            if not recent_user_messages:
+                raise web.HTTPBadRequest(text=json.dumps({"error": "no user messages available for title regeneration"}, ensure_ascii=False), content_type="application/json")
+            llm_no = self.selected_llm_no if self.selected_llm_no is not None else 0
+
+        prompt = self._build_title_regeneration_prompt(recent_user_messages)
+        title = self._generate_title_with_current_model(prompt, llm_no)
+        if not title:
+            raise web.HTTPBadRequest(text=json.dumps({"error": "title generation returned empty result"}, ensure_ascii=False), content_type="application/json")
+
+        with self.lock:
+            sess = self.sessions.get(sid)
+            if not sess:
+                raise web.HTTPNotFound(text=json.dumps({"error": f"session not found: {sid}"}, ensure_ascii=False), content_type="application/json")
+            sess.title = title
+            sess.updated_at = time.time()
+            self._persist_session(sess)
+        emit_session_state(sess, "updated")
+        return {"ok": True, "sessionId": sid, "title": title}
+
+    def _build_title_regeneration_prompt(self, user_messages: List[str]) -> str:
+        bullet_lines = [f"{index + 1}. {' '.join(message.split())}" for index, message in enumerate(user_messages)]
+        return (
+            "请根据以下最近 5 轮以内的用户消息，为这个会话生成一个简洁中文标题。\n"
+            "要求：\n"
+            "1. 只输出标题本身，不要解释。\n"
+            "2. 长度控制在 8 到 20 个中文字符之间。\n"
+            "3. 不要包含引号、句号、序号、前缀。\n"
+            "4. 标题要概括主题，不要照抄整句。\n\n"
+            f"用户消息：\n{chr(10).join(bullet_lines)}"
+        )
+
+    def _generate_title_with_current_model(self, prompt: str, llm_no: int) -> str:
+        self.ensure_ga_import_path()
+        agentmain = importlib.import_module("agentmain")
+        agent = agentmain.GenericAgent()
+        agent.next_llm(llm_no)
+        cfg_name = agent.get_llm_name(agent.llmclient).split("/", 1)[-1]
+        raw = fast_ask(prompt, cfg_name)
+        title = " ".join(str(raw or "").strip().replace("\n", " ").split())
+        title = title.strip("“”\"'`·-:：,.，。；; ")
+        return title[:40]
 
     def create_session(self, cwd: Optional[str] = None, title: str = "New chat") -> Session:
         sid = "sess-" + uuid.uuid4().hex[:12]
@@ -1289,6 +1347,11 @@ async def delete_session_handler(request):
     return json_ok(manager.delete_session(sid))
 
 
+async def regenerate_session_title_handler(request):
+    sid = request.match_info["sid"]
+    return json_ok(manager.regenerate_session_title(sid))
+
+
 async def prompt_handler(request):
     sid = request.match_info["sid"]
     data = await read_json(request)
@@ -1403,6 +1466,7 @@ def create_app():
     app.router.add_post("/session/new", new_session_handler)
     app.router.add_get("/session/{sid}", get_session_handler)
     app.router.add_delete("/session/{sid}", delete_session_handler)
+    app.router.add_post("/session/{sid}/title/regenerate", regenerate_session_title_handler)
     app.router.add_post("/session/{sid}/prompt", prompt_handler)
     app.router.add_get("/session/{sid}/messages", messages_handler)
     app.router.add_get("/session/{sid}/events", events_handler)
