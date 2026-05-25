@@ -34,7 +34,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 from aiohttp import web, WSMsgType
-from llmcore import fast_ask
 
 APP_DIR = Path(__file__).resolve().parent
 
@@ -55,6 +54,11 @@ def find_default_ga_root() -> Path:
 
 DEFAULT_GA_ROOT = find_default_ga_root()
 DEFAULT_HEROUI_DB_PATH = APP_DIR / ".data" / "sessions.sqlite3"
+
+if str(DEFAULT_GA_ROOT) not in sys.path:
+    sys.path.insert(0, str(DEFAULT_GA_ROOT))
+
+from llmcore import fast_ask, reload_mykeys
 
 
 def to_iso_timestamp(value: Any) -> str:
@@ -693,11 +697,31 @@ class AgentManager:
         agentmain = importlib.import_module("agentmain")
         agent = agentmain.GenericAgent()
         agent.next_llm(llm_no)
-        cfg_name = agent.get_llm_name(agent.llmclient).split("/", 1)[-1]
+        cfg_name = self._resolve_llm_config_name(agent, llm_no)
         raw = fast_ask(prompt, cfg_name)
         title = " ".join(str(raw or "").strip().replace("\n", " ").split())
         title = title.strip("“”\"'`·-:：,.，。；; ")
         return title[:40]
+
+    def _resolve_llm_config_name(self, agent: Any, llm_no: int) -> str:
+        mykeys, _ = reload_mykeys()
+        entries = [
+            (key, cfg)
+            for key, cfg in mykeys.items()
+            if any(marker in key for marker in ("api", "config", "cookie"))
+        ]
+        if not entries:
+            raise ValueError("No usable LLM configs found in mykey")
+
+        active_name = ""
+        with contextlib.suppress(Exception):
+            active_name = str(getattr(agent.llmclient.backend, "name", "") or "").strip()
+        if active_name:
+            for key, cfg in entries:
+                if str(cfg.get("name") or "").strip() == active_name:
+                    return key
+
+        return entries[llm_no % len(entries)][0]
 
     def create_session(self, cwd: Optional[str] = None, title: str = "New chat") -> Session:
         sid = "sess-" + uuid.uuid4().hex[:12]

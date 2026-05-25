@@ -530,6 +530,44 @@ def fake_fast_ask(prompt, cfg_name):
     captured["cfg_name"] = cfg_name
     return "新的会话标题"
 
+fake_agentmain = types.ModuleType("agentmain")
+
+class FakeBackend:
+    def __init__(self):
+        self.name = "newapi-native"
+        self.model = "gpt-5.4"
+        self.api_base = "https://example.invalid/v1"
+
+class FakeGenericAgent:
+    def __init__(self):
+        self.llmclient = types.SimpleNamespace(backend=FakeBackend())
+
+    def next_llm(self, llm_no):
+        return None
+
+    def get_llm_name(self, b=None, model=False):
+        b = self.llmclient if b is None else b
+        if model:
+            return b.backend.model.lower()
+        return f"{type(b.backend).__name__}/{b.backend.name}"
+
+fake_agentmain.GenericAgent = FakeGenericAgent
+sys.modules["agentmain"] = fake_agentmain
+
+def fake_reload_mykeys():
+    return (
+        {
+            "native_oai_config": {
+                "name": "newapi-native",
+                "model": "gpt-5.4",
+                "apibase": "https://example.invalid/v1",
+                "apikey": "sk-test",
+            }
+        },
+        False,
+    )
+
+bridge.reload_mykeys = fake_reload_mykeys
 bridge.fast_ask = fake_fast_ask
 manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
 manager.selected_llm_no = 0
@@ -550,6 +588,7 @@ result = manager.regenerate_session_title(session.id)
 assert result["ok"] is True
 assert result["title"] == "新的会话标题"
 assert session.title == "新的会话标题"
+assert captured["cfg_name"] == "native_oai_config"
 assert "第一轮" not in captured["prompt"]
 assert "第二轮" in captured["prompt"]
 assert "第六轮" in captured["prompt"]
