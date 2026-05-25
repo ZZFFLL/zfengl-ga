@@ -41,14 +41,26 @@ class YunjuOpenWebUIRunner:
 
     def stream_chat(self, request, meta):
         task_id = self.start(request, meta)
-        tracker = _SnapshotDeltaTracker()
+        content = ""
+        execution_log = []
+        reasoning_tracker = _SnapshotDeltaTracker()
         for event in self.manager.drain_task(task_id):
             name = event.get("event")
             if name == "message_delta":
-                delta = tracker.consume(event.get("content") or "")
-                if delta:
-                    yield {"delta": {"content": delta}, "finish_reason": None}
+                content = event.get("content") or content
+            elif name == "execution_update":
+                execution_log = event.get("execution_log") or execution_log
+                # 中文注释：OpenWebUI 会在正文开始后关闭思考块，所以这里只流式输出思考，正文延后到结束时再发。
+                reasoning_delta = reasoning_tracker.consume(_render_execution_log(execution_log))
+                if reasoning_delta:
+                    yield {"delta": {"reasoning_content": reasoning_delta}, "finish_reason": None}
             elif name == "message_done":
+                content = event.get("content") or content
+                reasoning_delta = reasoning_tracker.consume(_render_execution_log(execution_log))
+                if reasoning_delta:
+                    yield {"delta": {"reasoning_content": reasoning_delta}, "finish_reason": None}
+                if content:
+                    yield {"delta": {"content": content}, "finish_reason": None}
                 yield {"delta": {}, "finish_reason": "stop"}
                 return
             elif name == "task_aborted":
@@ -81,6 +93,47 @@ class YunjuOpenWebUIRunner:
             conversation_id = conversation["id"]
             self._conversation_ids[key] = conversation_id
             return conversation_id
+
+
+def _render_execution_log(execution_log):
+    lines = []
+    for turn in execution_log or []:
+        if not isinstance(turn, dict):
+            continue
+        title = _clean_line(turn.get("title")) or f"Turn {turn.get('turn') or len(lines) + 1}"
+        turn_no = turn.get("turn") or len(lines) + 1
+        lines.append(f"Turn {turn_no} · {title}")
+        summary = _clean_line(turn.get("summary") or turn.get("content"))
+        if summary:
+            lines.append(summary)
+        for tool_call in turn.get("tool_calls") or []:
+            tool_line = _render_tool_call(tool_call)
+            if tool_line:
+                lines.append(tool_line)
+        lines.append("")
+    return "\n".join(lines).strip()
+
+
+def _render_tool_call(tool_call):
+    if not isinstance(tool_call, dict):
+        return ""
+    tool_name = _clean_line(tool_call.get("tool"))
+    if not tool_name:
+        return ""
+    details = []
+    action = _clean_line(tool_call.get("action"))
+    status = _clean_line(tool_call.get("status"))
+    if action:
+        details.append(action)
+    if status:
+        details.append(status)
+    # 中文注释：只把工具名称和状态放入 OpenWebUI 思考流，避免把完整工具输出重复塞进聊天上下文。
+    return f"Tool: {tool_name}" + (f" ({'; '.join(details)})" if details else "")
+
+
+def _clean_line(value):
+    text = "" if value is None else str(value)
+    return " ".join(text.strip().split())
 
 
 class _SnapshotDeltaTracker:

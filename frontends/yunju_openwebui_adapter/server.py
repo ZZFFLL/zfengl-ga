@@ -98,15 +98,94 @@ def _clean_text(value):
     return value if isinstance(value, str) else str(value)
 
 
+def _metadata_task(body):
+    metadata = body.get("metadata") if isinstance(body, dict) and isinstance(body.get("metadata"), dict) else {}
+    return _clean_text(metadata.get("task")).strip()
+
+
+def _classify_task(body, request):
+    task = _metadata_task(body)
+    if task:
+        return task
+    prompt = ""
+    for message in reversed(request.messages or []):
+        if message.role == "user":
+            prompt = message.content.strip()
+            break
+    return _prompt_task(prompt)
+
+
+def _prompt_task(prompt):
+    # 中文注释：部分 OpenWebUI 二开链路会丢失 metadata.task，这里用默认任务模板做兜底识别。
+    text = _clean_text(prompt)
+    if "Suggest 3-5 relevant follow-up questions or prompts" in text and '"follow_ups"' in text:
+        return "follow_up_generation"
+    if "Generate 1-3 broad tags categorizing the main themes" in text and '"tags"' in text:
+        return "tags_generation"
+    if "Generate a concise, 3-5 word title" in text and '"title"' in text:
+        return "title_generation"
+    if text.startswith("History:\n") and "\nQuery:" in text:
+        return "function_calling"
+    return ""
+
+
+def _task_completion_content(task, body, request):
+    # 中文注释：OpenWebUI 的标题/标签/追问生成是后台辅助任务，不能再驱动一次 GA 主 agent。
+    if task == "title_generation":
+        return json.dumps({"title": _task_title(body, request)}, ensure_ascii=False)
+    if task == "tags_generation":
+        return json.dumps({"tags": []}, ensure_ascii=False)
+    if task == "follow_up_generation":
+        return json.dumps({"follow_ups": []}, ensure_ascii=False)
+    if task == "function_calling":
+        return json.dumps({"tool_calls": []}, ensure_ascii=False)
+    return ""
+
+
+def _task_title(body, request):
+    metadata = body.get("metadata") if isinstance(body, dict) and isinstance(body.get("metadata"), dict) else {}
+    task_body = metadata.get("task_body") if isinstance(metadata.get("task_body"), dict) else {}
+    task_messages = task_body.get("messages")
+    if isinstance(task_messages, list):
+        for message in task_messages:
+            if isinstance(message, dict) and message.get("role") == "user":
+                title = _clean_text(message.get("content")).strip()
+                if title:
+                    return title[:80]
+    prompt = ""
+    for message in reversed(request.messages or []):
+        if message.role == "user":
+            prompt = message.content.strip()
+            break
+    prefix = "Generate a concise title for "
+    if prompt.startswith(prefix):
+        prompt = prompt[len(prefix) :]
+    return (prompt or "New Chat")[:80]
+
+
 def _log_event(event, **fields):
     LOGGER.info(json.dumps({"event": event, **fields}, ensure_ascii=False, default=str))
+
+
+def _stream_event_summary(event):
+    finish_reason = event.get("finish_reason")
+    if finish_reason is not None:
+        return str(finish_reason)
+    delta = event.get("delta") if isinstance(event.get("delta"), dict) else {}
+    if "reasoning_content" in delta:
+        return f"reasoning chars={len(_clean_text(delta.get('reasoning_content')))}"
+    if "content" in delta:
+        return f"content chars={len(_clean_text(delta.get('content')))}"
+    if "role" in delta:
+        return f"role={_clean_text(delta.get('role'))}"
+    return "delta"
 
 
 def make_handler(runtime):
     class YunjuOpenWebUIAdapterRequestHandler(BaseHTTPRequestHandler):
         def log_message(self, fmt, *args):
             message = f"{self.address_string()} - {fmt % args}"
-            print(f"[YunjuOpenWebUIAdapter] {message}")
+            print(f"[YunjuOpenWebUIAdapter] {message}", flush=True)
             _log_event("http_access", client_ip=self.address_string(), message=message)
 
         def _send_json(self, payload, status=HTTPStatus.OK):
@@ -201,13 +280,19 @@ def make_handler(runtime):
             try:
                 request = parse_chat_request(body, allowed_models={runtime.model_id})
                 meta = extract_request_meta(body, self.headers)
+                task = _classify_task(body, request)
                 _log_event(
                     "chat_request",
                     request_id=meta.request_id,
                     chat_id=meta.chat_id,
                     user_id=meta.user_id,
                     stream=request.stream,
+                    task=task or None,
                 )
+                task_content = _task_completion_content(task, body, request)
+                if task_content:
+                    self._send_json(make_completion_response(task_content, request.model, meta.request_id))
+                    return
                 if request.stream:
                     self._send_chat_stream(request, meta)
                     return
@@ -254,6 +339,8 @@ def make_handler(runtime):
                 self.wfile.flush()
                 for event in runtime.runner.stream_chat(request, meta):
                     event = _coerce_event(event)
+                    # 中文注释：BAT 直接启动时也能看到流式输出顺序，便于排查 OpenWebUI 展示问题。
+                    print(f"[YunjuOpenWebUIAdapter] stream {_stream_event_summary(event)}", flush=True)
                     chunk = make_sse_chunk(
                         meta.request_id,
                         request.model,
@@ -320,9 +407,9 @@ def main(argv=None):
         db_path=args.db_path or None,
     )
     server = ThreadingHTTPServer((args.host, args.port), make_handler(runtime))
-    print(f"[YunjuOpenWebUIAdapter] listening on http://{args.host}:{args.port}")
+    print(f"[YunjuOpenWebUIAdapter] listening on http://{args.host}:{args.port}", flush=True)
     if runtime.init_error:
-        print(f"[YunjuOpenWebUIAdapter] agent init error: {runtime.init_error}")
+        print(f"[YunjuOpenWebUIAdapter] agent init error: {runtime.init_error}", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

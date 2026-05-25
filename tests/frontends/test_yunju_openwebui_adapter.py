@@ -193,7 +193,7 @@ class ServerTestCase(unittest.TestCase):
         self.assertIn('"content": "pong"', text)
         self.assertIn("data: [DONE]", text)
 
-    def test_chat_stream_converts_full_snapshots_to_openai_deltas(self):
+    def test_chat_stream_sends_final_snapshot_once_without_duplicate_prefix(self):
         manager = self.server.RequestHandlerClass.runtime.runner.manager
         manager.next_stream_events = [
             {"event": "message_delta", "content": "上一轮已经全部列出来了", "conversation_id": "conv-1"},
@@ -222,9 +222,171 @@ class ServerTestCase(unittest.TestCase):
 
         self.assertEqual(status, 200)
         text = payload.decode("utf-8")
-        self.assertIn('"content": "上一轮已经全部列出来了"', text)
-        self.assertIn('"content": "，共 30+ 个 SOP/工具模块"', text)
+        self.assertIn('"content": "上一轮已经全部列出来了，共 30+ 个 SOP/工具模块"', text)
         self.assertEqual(text.count("上一轮已经全部列出来了"), 1)
+
+    def test_chat_stream_streams_reasoning_before_final_answer(self):
+        manager = self.server.RequestHandlerClass.runtime.runner.manager
+        first_log = [
+            {
+                "turn": 1,
+                "title": "读取项目结构",
+                "content": "先确认适配器入口",
+                "state": "active",
+                "tool_calls": [],
+            }
+        ]
+        second_log = [
+            {
+                "turn": 1,
+                "title": "读取项目结构",
+                "content": "先确认适配器入口",
+                "state": "completed",
+                "tool_calls": [],
+            },
+            {
+                "turn": 2,
+                "title": "实现协议映射",
+                "content": "把执行日志映射到 OpenWebUI reasoning_content",
+                "state": "active",
+                "tool_calls": [],
+            },
+        ]
+        manager.next_stream_events = [
+            {"event": "execution_update", "execution_log": first_log, "conversation_id": "conv-1"},
+            {"event": "message_delta", "content": "已适配。", "conversation_id": "conv-1"},
+            {"event": "execution_update", "execution_log": second_log, "conversation_id": "conv-1"},
+            {"event": "message_done", "content": "已适配。完成。", "conversation_id": "conv-1"},
+        ]
+
+        status, _, payload = self.request(
+            "POST",
+            "/v1/chat/completions",
+            {
+                "model": "ga-yunju",
+                "stream": True,
+                "metadata": {"chat_id": "owui-chat-reasoning"},
+                "messages": [{"role": "user", "content": "ping"}],
+            },
+        )
+
+        self.assertEqual(status, 200)
+        # 中文注释：OpenWebUI 只能稳定渲染正文前的单个 reasoning_content 块。
+        text = payload.decode("utf-8")
+        self.assertGreaterEqual(text.count('"reasoning_content":'), 2)
+        self.assertIn('"reasoning_content":', text)
+        self.assertIn("Turn 1 · 读取项目结构", text)
+        self.assertIn("Turn 2 · 实现协议映射", text)
+        self.assertIn('"content": "已适配。完成。"', text)
+        self.assertEqual(text.count("先确认适配器入口"), 1)
+        self.assertLess(text.rindex('"reasoning_content":'), text.index('"content": "已适配。完成。"'))
+
+    def test_stream_console_summary_reports_outgoing_delta_kind(self):
+        from frontends.yunju_openwebui_adapter.server import _stream_event_summary
+
+        self.assertEqual(
+            _stream_event_summary({"delta": {"reasoning_content": "abc"}, "finish_reason": None}),
+            "reasoning chars=3",
+        )
+        self.assertEqual(
+            _stream_event_summary({"delta": {"content": "answer"}, "finish_reason": None}),
+            "content chars=6",
+        )
+        self.assertEqual(_stream_event_summary({"delta": {}, "finish_reason": "stop"}), "stop")
+
+    def test_openwebui_title_task_does_not_start_ga_chat(self):
+        status, _, payload = self.request(
+            "POST",
+            "/v1/chat/completions",
+            {
+                "model": "ga-yunju",
+                "stream": False,
+                "metadata": {"task": "title_generation", "chat_id": "owui-task-chat"},
+                "messages": [{"role": "user", "content": "Generate a concise title for hello world"}],
+            },
+        )
+
+        self.assertEqual(status, 200)
+        data = json.loads(payload.decode("utf-8"))
+        self.assertEqual(json.loads(data["choices"][0]["message"]["content"])["title"], "hello world")
+        manager = self.server.RequestHandlerClass.runtime.runner.manager
+        self.assertEqual(manager.started, [])
+
+    def test_openwebui_follow_up_task_returns_empty_json_without_ga_chat(self):
+        status, _, payload = self.request(
+            "POST",
+            "/v1/chat/completions",
+            {
+                "model": "ga-yunju",
+                "stream": False,
+                "metadata": {"task": "follow_up_generation", "chat_id": "owui-task-chat"},
+                "messages": [{"role": "user", "content": "Suggest follow ups"}],
+            },
+        )
+
+        self.assertEqual(status, 200)
+        data = json.loads(payload.decode("utf-8"))
+        self.assertEqual(json.loads(data["choices"][0]["message"]["content"]), {"follow_ups": []})
+        manager = self.server.RequestHandlerClass.runtime.runner.manager
+        self.assertEqual(manager.started, [])
+
+    def test_openwebui_follow_up_prompt_without_metadata_does_not_start_ga_chat(self):
+        prompt = (
+            "### Task:\n"
+            "Suggest 3-5 relevant follow-up questions or prompts that the user might naturally ask next "
+            "in this conversation as a **user**, based on the chat history, to help continue or deepen "
+            "the discussion.\n"
+            "### Output:\n"
+            'JSON format: { "follow_ups": ["Question 1?", "Question 2?", "Question 3?"] }\n'
+            "### Chat History:\n<chat_history>\nUSER: hi\nASSISTANT: hello\n</chat_history>"
+        )
+
+        status, _, payload = self.request(
+            "POST",
+            "/v1/chat/completions",
+            {
+                "model": "ga-yunju",
+                "stream": False,
+                "metadata": {"chat_id": "owui-task-chat"},
+                "messages": [{"role": "user", "content": prompt}],
+            },
+        )
+
+        self.assertEqual(status, 200)
+        data = json.loads(payload.decode("utf-8"))
+        self.assertEqual(json.loads(data["choices"][0]["message"]["content"]), {"follow_ups": []})
+        manager = self.server.RequestHandlerClass.runtime.runner.manager
+        self.assertEqual(manager.started, [])
+
+    def test_openwebui_function_calling_prompt_without_metadata_does_not_start_ga_chat(self):
+        prompt = (
+            'History:\nSYSTEM: """Host-controlled workspace publish bridge"""\n'
+            'USER: """hi"""\n'
+            "Query: 你能帮我做什么？"
+        )
+
+        status, _, payload = self.request(
+            "POST",
+            "/v1/chat/completions",
+            {
+                "model": "ga-yunju",
+                "stream": False,
+                "metadata": {"chat_id": "owui-task-chat"},
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": 'Available Tools: []\nReturn {"tool_calls": []} if no tools match.',
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+            },
+        )
+
+        self.assertEqual(status, 200)
+        data = json.loads(payload.decode("utf-8"))
+        self.assertEqual(json.loads(data["choices"][0]["message"]["content"]), {"tool_calls": []})
+        manager = self.server.RequestHandlerClass.runtime.runner.manager
+        self.assertEqual(manager.started, [])
 
     def test_openwebui_headers_are_supported_as_conversation_metadata(self):
         body = {"model": "ga-yunju", "messages": [{"role": "user", "content": "ping"}]}
@@ -280,6 +442,32 @@ class ServerTestCase(unittest.TestCase):
 
 
 class ProtocolTestCase(unittest.TestCase):
+    def test_strips_openwebui_reasoning_details_from_history_messages(self):
+        from frontends.yunju_openwebui_adapter.protocol import parse_chat_request
+
+        request = parse_chat_request(
+            {
+                "model": "ga-yunju",
+                "messages": [
+                    {
+                        "role": "assistant",
+                        "content": (
+                            '<details type="reasoning" done="true">\n'
+                            "<summary>Thought</summary>\n"
+                            "> Turn 1 · 内部过程\n"
+                            "</details>\n"
+                            "最终答复"
+                        ),
+                    },
+                    {"role": "user", "content": "继续"},
+                ],
+            },
+            allowed_models={"ga-yunju"},
+        )
+
+        self.assertEqual(request.messages[0].content, "最终答复")
+        self.assertEqual(request.messages[1].content, "继续")
+
     def test_extracts_latest_user_text_from_mixed_content_parts(self):
         from frontends.yunju_openwebui_adapter.protocol import latest_user_text, parse_chat_request
 

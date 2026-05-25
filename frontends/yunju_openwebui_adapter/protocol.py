@@ -1,3 +1,4 @@
+import re
 import time
 from dataclasses import dataclass
 from uuid import uuid4
@@ -5,6 +6,7 @@ from uuid import uuid4
 
 MODEL_ID = "ga-yunju"
 OPENWEBUI_MODEL_PREFIXES = ("openclaw/", "yunju_openclaw/")
+_OPENWEBUI_DETAILS_RE = re.compile(r"<details\b[^>]*>.*?</details>", re.IGNORECASE | re.DOTALL)
 
 
 @dataclass
@@ -136,7 +138,7 @@ def _has_allowed_prefix(model: str, prefixes: tuple) -> bool:
 
 def _normalize_content(content) -> str:
     if isinstance(content, str):
-        return content
+        return _strip_openwebui_display_blocks(content)
     if isinstance(content, list):
         parts = []
         for item in content:
@@ -153,11 +155,16 @@ def _normalize_content(content) -> str:
                 uri = _string_value(uri or item.get("image"))
                 if uri:
                     parts.append(f"[Image omitted] {uri}")
-        return "\n".join(parts)
-    return _string_value(content)
+        return _strip_openwebui_display_blocks("\n".join(parts))
+    return _strip_openwebui_display_blocks(_string_value(content))
 
 
 def _string_value(value) -> str:
     if value is None:
         return ""
     return value if isinstance(value, str) else str(value)
+
+
+def _strip_openwebui_display_blocks(text: str) -> str:
+    # 中文注释：OpenWebUI 会把 reasoning/tool 展示块写回历史消息，转给 GA 前要去掉显示层 HTML。
+    return _OPENWEBUI_DETAILS_RE.sub("", text or "").strip()
