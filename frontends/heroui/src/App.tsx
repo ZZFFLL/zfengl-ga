@@ -1,6 +1,6 @@
 import { Button, Chip } from "@heroui/react";
 import { FileCode, FolderOpen, Info, Menu, Search } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import {
   cancelSession,
   createSession,
@@ -31,6 +31,26 @@ import {
 import type { ArtifactRecord, ExecutionStep, ImageAttachment, MessageRecord, SessionRecord } from "./types";
 
 const PROMPT_PANEL_ANIMATION_MS = 180;
+const SIDEBAR_WIDTH_STORAGE_KEY = "genericagent.heroui.sidebarWidth";
+const DEFAULT_SIDEBAR_WIDTH = 240;
+const MIN_SIDEBAR_WIDTH = 220;
+const MAX_SIDEBAR_WIDTH = 420;
+
+function clampSidebarWidth(width: number) {
+  return Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, Math.round(width)));
+}
+
+function readStoredSidebarWidth() {
+  if (typeof window === "undefined") {
+    return DEFAULT_SIDEBAR_WIDTH;
+  }
+  try {
+    const storedWidth = Number(window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY));
+    return Number.isFinite(storedWidth) ? clampSidebarWidth(storedWidth) : DEFAULT_SIDEBAR_WIDTH;
+  } catch {
+    return DEFAULT_SIDEBAR_WIDTH;
+  }
+}
 
 export function App() {
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
@@ -45,6 +65,8 @@ export function App() {
   const [selectedProfileId, setSelectedProfileId] = useState("");
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(() => readStoredSidebarWidth());
+  const [isSidebarResizing, setIsSidebarResizing] = useState(false);
   const [showBridgeDiagnostics, setShowBridgeDiagnostics] = useState(false);
   const [isBridgeDiagnosticsClosing, setIsBridgeDiagnosticsClosing] = useState(false);
   const [isSwitchingModelProfile, setIsSwitchingModelProfile] = useState(false);
@@ -53,6 +75,8 @@ export function App() {
   const activeTurnRef = useRef("");
   const activeTurnStateRef = useRef<TurnState | null>(null);
   const isMountedRef = useRef(true);
+  const shellRef = useRef<HTMLElement | null>(null);
+  const sidebarResizeCleanupRef = useRef<(() => void) | null>(null);
   const bridgeDiagnosticsButtonRef = useRef<HTMLButtonElement | null>(null);
   const bridgeDiagnosticsPanelRef = useRef<HTMLDivElement | null>(null);
   const bridgeDiagnosticsCloseTimerRef = useRef<number | null>(null);
@@ -91,8 +115,20 @@ export function App() {
       cancelled = true;
       isMountedRef.current = false;
       closeActiveSource(activeSourceRef.current);
+      sidebarResizeCleanupRef.current?.();
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    try {
+      window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(sidebarWidth));
+    } catch {
+      // localStorage can be unavailable in restricted browser contexts.
+    }
+  }, [sidebarWidth]);
 
   useEffect(() => {
     if (!activeSessionId) {
@@ -150,6 +186,7 @@ export function App() {
       if (bridgeDiagnosticsCloseTimerRef.current !== null) {
         window.clearTimeout(bridgeDiagnosticsCloseTimerRef.current);
       }
+      sidebarResizeCleanupRef.current?.();
     };
   }, []);
 
@@ -180,6 +217,39 @@ export function App() {
       return;
     }
     openBridgeDiagnostics();
+  }
+
+  function handleSidebarResizePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (sidebarCollapsed || event.button !== 0) {
+      return;
+    }
+    const shell = shellRef.current;
+    if (!shell) {
+      return;
+    }
+    const shellRect = shell.getBoundingClientRect();
+    event.preventDefault();
+    sidebarResizeCleanupRef.current?.();
+    setIsSidebarResizing(true);
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      setSidebarWidth(clampSidebarWidth(moveEvent.clientX - shellRect.left));
+    };
+
+    const cleanup = () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", cleanup);
+      window.removeEventListener("pointercancel", cleanup);
+      if (isMountedRef.current) {
+        setIsSidebarResizing(false);
+      }
+      sidebarResizeCleanupRef.current = null;
+    };
+
+    sidebarResizeCleanupRef.current = cleanup;
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", cleanup);
+    window.addEventListener("pointercancel", cleanup);
   }
 
   async function refreshBridgeMetadata({ silent = false }: { silent?: boolean } = {}) {
@@ -398,7 +468,11 @@ export function App() {
   const modelLabel = activeModelName !== "未检测到生效模型" ? activeModelName : modelProfiles.length > 0 ? `${modelProfiles.length} 个模型配置` : "本地模型";
   const humanInteractionPrompt = findLatestHumanInteractionPrompt(messages, timeline, activeTurn);
   return (
-    <main className={`chat-workbench-shell ${sidebarCollapsed ? "is-sidebar-collapsed" : ""}`}>
+    <main
+      className={`chat-workbench-shell ${sidebarCollapsed ? "is-sidebar-collapsed" : ""} ${isSidebarResizing ? "is-sidebar-resizing" : ""}`}
+      ref={shellRef}
+      style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
+    >
       <ConversationRail
         sessions={sessions}
         activeSessionId={activeSessionId}
@@ -407,6 +481,13 @@ export function App() {
         onDeleteSessions={handleDeleteSessions}
         onRegenerateSessionTitle={(sessionId) => void handleRegenerateSessionTitle(sessionId)}
         onSelectSession={handleSelectSession}
+      />
+      <div
+        aria-label="调整会话列表宽度"
+        aria-orientation="vertical"
+        className="sidebar-resize-handle"
+        onPointerDown={handleSidebarResizePointerDown}
+        role="separator"
       />
       <section className="conversation-main" aria-label="GenericAgent 智能工作台">
         <header className="conversation-header">

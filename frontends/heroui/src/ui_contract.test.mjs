@@ -191,9 +191,15 @@ test("webui keeps the screenshot-style chat layout contract", () => {
   assert.match(styles, /\.batch-delete-bar/);
   assert.match(styles, /width: 100%/);
   assert.match(styles, /transition: grid-template-columns 220ms/);
-  assert.match(styles, /grid-template-columns: 240px minmax\(0, 1fr\)/);
+  assert.match(styles, /--sidebar-width: 240px/);
+  assert.match(styles, /grid-template-columns: var\(--sidebar-width\) 8px minmax\(0, 1fr\)/);
+  assert.match(styles, /\.sidebar-resize-handle/);
+  assert.match(app, /SIDEBAR_WIDTH_STORAGE_KEY/);
+  assert.match(app, /localStorage\.getItem\(SIDEBAR_WIDTH_STORAGE_KEY\)/);
+  assert.match(app, /localStorage\.setItem\(SIDEBAR_WIDTH_STORAGE_KEY/);
+  assert.match(app, /onPointerDown=\{handleSidebarResizePointerDown\}/);
   assert.match(styles, /grid-template-rows: 64px minmax\(0, 1fr\) auto/);
-  assert.match(styles, /\.conversation-main\s*{[^}]*grid-column: 2/s);
+  assert.match(styles, /\.conversation-main\s*{[^}]*grid-column: 3/s);
   assert.match(styles, /\.conversation-main\s*{[^}]*height: 100vh/s);
   assert.match(styles, /\.conversation-scroll\s*{[^}]*overflow-y: auto/s);
   assert.match(styles, /\.conversation-scroll::\-webkit-scrollbar/);
