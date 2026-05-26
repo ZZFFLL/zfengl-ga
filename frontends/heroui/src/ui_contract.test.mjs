@@ -10,6 +10,7 @@ const components = [
   "components/ChatSurface.tsx",
   "components/Composer.tsx",
   "components/ConversationRail.tsx",
+  "tool_details.ts",
 ]
   .map((path) => readFileSync(new URL(path, import.meta.url), "utf8"))
   .join("\n");
@@ -135,6 +136,10 @@ test("webui uses HeroUI components for the agent workbench shell", () => {
   assert.match(source, /Math\.max\(nowTick - Date\.parse\(activeTurn\.startedAt\), 0\)/);
   assert.match(source, /turn-phase-duration/);
   assert.match(source, /已用时/);
+  assert.match(source, /HistoryTimelineSummary/);
+  assert.match(source, /timelineMode="summary"/);
+  assert.match(source, /timelineMode="full"/);
+  assert.match(source, /次工具调用/);
   assert.doesNotMatch(source, /turn-phase--footer[\s\S]*thinking-dots/);
   assert.match(source, /Dropdown\.Popover className="assistant-actions-popover"/);
   assert.match(source, /navigator\.clipboard\.writeText/);
@@ -232,7 +237,7 @@ test("webui keeps the screenshot-style chat layout contract", () => {
   assert.match(styles, /\.message-scroll-nav-latest/);
   assert.match(styles, /\.message-scroll-nav\s*{[^}]*position: absolute/s);
   assert.match(styles, /\.message-scroll-nav\s*{[^}]*flex-direction: column/s);
-  assert.match(styles, /--conversation-content-width: 68%/);
+  assert.match(styles, /--conversation-content-width: 72%/);
   assert.match(styles, /\.conversation-thread\s*{[^}]*width: var\(--conversation-content-width\)/s);
   assert.match(styles, /\.composer-dock\s*{[^}]*width: var\(--conversation-content-width\)/s);
   assert.match(styles, /\.profile-switch\s*{[^}]*width: 100%/s);
@@ -243,7 +248,9 @@ test("webui keeps the screenshot-style chat layout contract", () => {
   assert.doesNotMatch(styles, /714px/);
   assert.doesNotMatch(styles, /\.profile-switch\s*{[^}]*min-width: 16rem/s);
   assert.doesNotMatch(styles, /\.profile-switch\s*{[^}]*width: 34%/s);
-  assert.match(styles, /\.composer-input\s*{[^}]*min-height: 112px/s);
+  assert.match(styles, /\.historical-timeline-summary/);
+  assert.match(styles, /\.historical-timeline-summary-trigger/);
+  assert.match(styles, /\.composer-input\s*{[^}]*min-height: 72px/s);
   assert.match(styles, /\.composer-actions-row/);
   assert.match(styles, /\.composer-model-switch/);
   assert.match(styles, /\.composer-model-popover/);
@@ -265,6 +272,10 @@ test("webui keeps the screenshot-style chat layout contract", () => {
   assert.doesNotMatch(styles, /\.timeline-step-trigger\s*{[^}]*align-items: flex-start/s);
   assert.match(styles, /\.timeline-step-title\s*{[^}]*word-break: break-word/s);
   assert.match(components, /buildToolDetailSections/);
+  assert.match(components, /默认：扫描当前浏览器标签页/);
+  assert.match(components, /默认：执行本轮回复中的代码块/);
+  assert.match(components, /默认：执行本轮回复中的 JavaScript 代码块/);
+  assert.match(components, /isEmptyJsonObject/);
   assert.match(components, /readStepHeadline/);
   assert.match(components, /readToolNameIcon/);
   assert.match(components, /normalizeToolName/);

@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
-    "test": "tsx --test src/state.test.mjs src/ui_contract.test.mjs src/ga_bridge_contract.test.mjs src/ga_output_parser.test.mjs src/api_stream.test.mjs"
+    "test": "tsx --test src/state.test.mjs src/tool_details.test.mjs src/ui_contract.test.mjs src/ga_bridge_contract.test.mjs src/ga_output_parser.test.mjs src/api_stream.test.mjs"
   },
   "dependencies": {
     "@heroui/react": "^3.0.5",

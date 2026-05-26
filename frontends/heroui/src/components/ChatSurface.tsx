@@ -33,6 +33,7 @@ import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { buildThreadItems, buildTurnRounds, type TurnRound, type TurnState } from "../state";
+import { buildToolDetailSections } from "../tool_details";
 import type { ArtifactRecord, ExecutionStep, MessageRecord } from "../types";
 
 type ChatSurfaceProps = {
@@ -45,11 +46,7 @@ type ChatSurfaceProps = {
   onReplayTurn: (message: MessageRecord) => void;
 };
 
-type ToolDetailSection = {
-  kind: "input" | "output" | "error" | "detail";
-  label: string;
-  content: string;
-};
+type TimelineMode = "full" | "summary";
 
 export function ChatSurface({ messages, timeline, artifacts, activeTurn, isLoadingMessages, sessionTitle, onReplayTurn }: ChatSurfaceProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -210,7 +207,14 @@ function TurnHistory({
         <MessageRow key={`${message.created_at}-user-${index}`} message={message} onReplayTurn={onReplayTurn} sessionTitle={sessionTitle} />
       ))}
       {rounds.map((round, index) => (
-        <TurnRoundView key={round.id} onReplayTurn={onReplayTurn} round={round} sessionTitle={sessionTitle} showSeparator={index > 0} />
+        <TurnRoundView
+          key={round.id}
+          onReplayTurn={onReplayTurn}
+          round={round}
+          sessionTitle={sessionTitle}
+          showSeparator={index > 0}
+          timelineMode="summary"
+        />
       ))}
     </>
   );
@@ -221,17 +225,24 @@ function TurnRoundView({
   showSeparator = false,
   sessionTitle,
   onReplayTurn,
+  timelineMode,
 }: {
   round: TurnRound;
   showSeparator?: boolean;
   sessionTitle: string;
   onReplayTurn: (message: MessageRecord) => void;
+  timelineMode: TimelineMode;
 }) {
+  const hasTimeline = round.steps.length > 0 || round.artifacts.length > 0;
   return (
     <section className="turn-round" aria-label="模型回复轮次">
       {showSeparator ? <div className="turn-round-separator" aria-hidden="true" /> : null}
-      {round.steps.length > 0 || round.artifacts.length > 0 ? (
-        <TimelineView artifacts={round.artifacts} steps={round.steps} />
+      {hasTimeline ? (
+        timelineMode === "summary" ? (
+          <HistoryTimelineSummary artifacts={round.artifacts} elapsedMs={round.message?.elapsed_ms} steps={round.steps} />
+        ) : (
+          <TimelineView artifacts={round.artifacts} steps={round.steps} />
+        )
       ) : null}
       {round.message ? <MessageRow message={round.message} onReplayTurn={onReplayTurn} sessionTitle={sessionTitle} /> : null}
     </section>
@@ -295,7 +306,14 @@ function ActiveTurnTimeline({
   return (
     <div className="turn-timeline" aria-label="本轮执行过程">
       {rounds.map((round, index) => (
-        <TurnRoundView key={round.id} onReplayTurn={onReplayTurn} round={round} sessionTitle={sessionTitle} showSeparator={index > 0} />
+        <TurnRoundView
+          key={round.id}
+          onReplayTurn={onReplayTurn}
+          round={round}
+          sessionTitle={sessionTitle}
+          showSeparator={index > 0}
+          timelineMode="full"
+        />
       ))}
       {liveElapsedLabel ? (
         <div className="turn-phase turn-phase--footer">
@@ -303,6 +321,51 @@ function ActiveTurnTimeline({
         </div>
       ) : null}
     </div>
+  );
+}
+
+function HistoryTimelineSummary({
+  steps,
+  artifacts,
+  elapsedMs,
+}: {
+  steps: ExecutionStep[];
+  artifacts: ArtifactRecord[];
+  elapsedMs?: number;
+}) {
+  const failedCount = steps.filter((step) => step.status === "failed").length;
+  const elapsedLabel = readElapsedLabel(readTimelineElapsedMs(steps, elapsedMs));
+  const summaryParts = [`${steps.length} 次工具调用`];
+  if (artifacts.length > 0) {
+    summaryParts.push(`${artifacts.length} 个附件`);
+  }
+  if (elapsedLabel) {
+    summaryParts.push(elapsedLabel);
+  }
+  if (failedCount > 0) {
+    summaryParts.push(`${failedCount} 个失败`);
+  }
+
+  return (
+    <Disclosure className="historical-timeline-summary">
+      <Disclosure.Heading>
+        <Button className="historical-timeline-summary-trigger" slot="trigger" variant="tertiary">
+          <span className="historical-timeline-summary-main">
+            <Wrench size={14} />
+            <span>{summaryParts.join(" · ")}</span>
+          </span>
+          <span className="historical-timeline-summary-action">
+            查看详情
+            <Disclosure.Indicator />
+          </span>
+        </Button>
+      </Disclosure.Heading>
+      <Disclosure.Content>
+        <Disclosure.Body className="historical-timeline-summary-body">
+          <TimelineView artifacts={artifacts} steps={steps} />
+        </Disclosure.Body>
+      </Disclosure.Content>
+    </Disclosure>
   );
 }
 
@@ -626,59 +689,6 @@ function displayArtifactPath(path: string) {
   return path.split(/[\\/]/).pop() || path;
 }
 
-function buildToolDetailSections(step: ExecutionStep): ToolDetailSection[] {
-  const sections: ToolDetailSection[] = [];
-  const input = readNonEmptyText(step.input);
-  const output = readNonEmptyText(step.output);
-  const error = readNonEmptyText(step.error);
-  const detail = readNonEmptyText(step.detail);
-
-  if (input) {
-    sections.push({ kind: "input", label: "入参", content: input });
-  }
-  if (output) {
-    sections.push({ kind: "output", label: "结果", content: output });
-  }
-  if (error) {
-    sections.push({ kind: "error", label: "错误", content: error });
-  }
-  if (sections.length === 0) {
-    const parsedSections = splitToolDetail(step.detail);
-    if (parsedSections.length > 0) {
-      return parsedSections;
-    }
-  }
-
-  if (detail && !sections.some((section) => section.content === detail)) {
-    sections.push({ kind: "detail", label: sections.length > 0 ? "过程" : "详情", content: detail });
-  }
-
-  return sections;
-}
-
-function splitToolDetail(detail: string): ToolDetailSection[] {
-  return detail
-    .split("\n")
-    .map((line) => {
-      const match = line.match(/^(参数|结果|输出|错误)：([\s\S]*)$/);
-      return match ? { kind: readDetailSectionKind(match[1]), label: match[1], content: match[2] } : null;
-    })
-    .filter((section): section is ToolDetailSection => Boolean(section));
-}
-
-function readDetailSectionKind(label: string): ToolDetailSection["kind"] {
-  if (label === "参数") {
-    return "input";
-  }
-  if (label === "结果" || label === "输出") {
-    return "output";
-  }
-  if (label === "错误") {
-    return "error";
-  }
-  return "detail";
-}
-
 function readNonEmptyText(value?: string) {
   const text = value?.trim();
   return text ? text : "";
@@ -692,6 +702,14 @@ function readElapsedLabel(elapsedMs?: number) {
     return `${(elapsedMs / 60000).toFixed(1)}m`;
   }
   return elapsedMs < 100 ? "<0.1s" : `${(elapsedMs / 1000).toFixed(1)}s`;
+}
+
+function readTimelineElapsedMs(steps: ExecutionStep[], elapsedMs?: number) {
+  if (typeof elapsedMs === "number" && elapsedMs >= 0) {
+    return elapsedMs;
+  }
+  const stepElapsedMs = steps.reduce((total, step) => total + (typeof step.elapsed_ms === "number" ? Math.max(step.elapsed_ms, 0) : 0), 0);
+  return stepElapsedMs > 0 ? stepElapsedMs : undefined;
 }
 
 function useNowTick(enabled: boolean) {
