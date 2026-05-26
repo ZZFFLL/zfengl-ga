@@ -407,6 +407,23 @@ test("active turn phase is not rendered as an assistant fallback message", () =>
   assert.doesNotMatch(activeTurnSource, /<AssistantActions \/>/);
 });
 
+test("completed active turns move into history so tool timeline collapses immediately", () => {
+  const finishStart = app.indexOf("function finishActiveTurn");
+  const finishEnd = app.indexOf("async function refreshSessions", finishStart);
+  const finishSource = app.slice(finishStart, finishEnd);
+
+  assert.match(app, /messagesRef = useRef<MessageRecord\[\]>\(\[\]\)/);
+  assert.match(app, /timelineRef = useRef<ExecutionStep\[\]>\(\[\]\)/);
+  assert.match(app, /artifactsRef = useRef<ArtifactRecord\[\]>\(\[\]\)/);
+  assert.match(finishSource, /mergeCompletedTurnIntoHistory\(messagesRef\.current, timelineRef\.current, artifactsRef\.current, completedTurn\)/);
+  assert.match(finishSource, /messagesRef\.current = history\.messages/);
+  assert.match(finishSource, /setMessages\(history\.messages\)/);
+  assert.match(finishSource, /setTimeline\(history\.timeline\)/);
+  assert.match(finishSource, /setArtifacts\(history\.artifacts\)/);
+  assert.match(finishSource, /setActiveTurn\(null\)/);
+  assert.match(finishSource, /activeTurnStateRef\.current = null/);
+});
+
 test("model process cards stay collapsed and final answers stay normal messages", () => {
   assert.match(bridge, /event_type == "llm\.visible_delta"/);
   assert.match(bridge, /"type": "answer\.delta"/);

@@ -76,6 +76,10 @@ export function App() {
   const activeSessionRef = useRef("");
   const activeTurnRef = useRef("");
   const activeTurnStateRef = useRef<TurnState | null>(null);
+  // SSE 回调会持有创建时的闭包，完成归档时必须读取最新 transcript。
+  const messagesRef = useRef<MessageRecord[]>([]);
+  const timelineRef = useRef<ExecutionStep[]>([]);
+  const artifactsRef = useRef<ArtifactRecord[]>([]);
   const isMountedRef = useRef(true);
   const shellRef = useRef<HTMLElement | null>(null);
   const sidebarResizeCleanupRef = useRef<(() => void) | null>(null);
@@ -86,6 +90,12 @@ export function App() {
   useEffect(() => {
     activeSessionRef.current = activeSessionId;
   }, [activeSessionId]);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+    timelineRef.current = timeline;
+    artifactsRef.current = artifacts;
+  }, [messages, timeline, artifacts]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -590,7 +600,15 @@ export function App() {
     }
     const completedTurn = activeTurnStateRef.current;
     if (completedTurn) {
-      setActiveTurn(completedTurn);
+      const history = mergeCompletedTurnIntoHistory(messagesRef.current, timelineRef.current, artifactsRef.current, completedTurn);
+      messagesRef.current = history.messages;
+      timelineRef.current = history.timeline;
+      artifactsRef.current = history.artifacts;
+      setMessages(history.messages);
+      setTimeline(history.timeline);
+      setArtifacts(history.artifacts);
+      setActiveTurn(null);
+      activeTurnStateRef.current = null;
     }
     closeActiveSource(activeSourceRef.current);
     activeTurnRef.current = "";
