@@ -32,9 +32,10 @@ test("webui uses HeroUI components for the agent workbench shell", () => {
   assert.match(source, /重新生成标题/);
   assert.match(source, /删除会话/);
   assert.match(source, /Ellipsis/);
+  assert.match(source, /Loader2/);
+  assert.match(source, /正在生成标题/);
   assert.match(source, /selectedIds\.length === sessions\.length/);
   assert.match(source, /删除 \{selectedIds\.length\} 个/);
-  assert.match(source, /正在思考/);
   assert.match(source, /正在处理/);
   assert.match(source, /本轮执行完成/);
   assert.match(source, /tool\.start/);
@@ -123,8 +124,24 @@ test("webui uses HeroUI components for the agent workbench shell", () => {
   assert.match(source, /selectedImages/);
   assert.match(source, /image\/\*/);
   assert.match(source, /停止生成/);
-  assert.match(source, /复制回答/);
+  assert.match(source, /导出回答/);
   assert.match(source, /重新生成回答/);
+  assert.match(source, /导出回答/);
+  assert.match(source, /复制为 Markdown/);
+  assert.match(source, /导出为 Markdown 文件/);
+  assert.match(source, /useNowTick/);
+  assert.match(source, /activeTurn\.startedAt/);
+  assert.match(source, /Date\.parse\(activeTurn\.startedAt\)/);
+  assert.match(source, /Math\.max\(nowTick - Date\.parse\(activeTurn\.startedAt\), 0\)/);
+  assert.match(source, /turn-phase-duration/);
+  assert.match(source, /已用时/);
+  assert.doesNotMatch(source, /turn-phase--footer[\s\S]*thinking-dots/);
+  assert.match(source, /Dropdown\.Popover className="assistant-actions-popover"/);
+  assert.match(source, /navigator\.clipboard\.writeText/);
+  assert.match(source, /downloadMarkdownFile/);
+  assert.match(app, /handleReplayTurn/);
+  assert.match(app, /replayTurn/);
+  assert.match(app, /await replayTurn\(/);
   assert.match(source, /正在加载会话/);
   assert.match(source, /消息导航/);
   assert.match(source, /跳到上一条用户消息/);
@@ -138,9 +155,10 @@ test("webui uses HeroUI components for the agent workbench shell", () => {
   assert.match(source, /scrollToUserMessage\("previous"\)/);
   assert.match(source, /scrollToUserMessage\("next"\)/);
   assert.match(source, /appendFinalAssistantMessage/);
-  assert.match(app, /applyStreamEvent\(activeTurnStateRef\.current \?\? createInitialTurnState\(turnId\), event\)/);
+  assert.match(app, /applyStreamEvent\(activeTurnStateRef\.current \?\? createInitialTurnState\(turnId, startedAt\), event\)/);
   assert.match(app, /setActiveTurn\(nextTurn\)/);
-  assert.match(app, /activeTurn\?\.status === "streaming" \? "正在流式输出" : "已就绪"/);
+  assert.match(app, /regeneratingTitleSessionId === activeSessionId/);
+  assert.doesNotMatch(app, /activeTurn\?\.status === "streaming" \? "正在流式输出" : "已就绪"/);
   assert.match(app, /getBridgeStatus/);
   assert.match(app, /listModelProfiles/);
   assert.match(app, /const existing = await listSessions\(\)/);
@@ -187,6 +205,11 @@ test("webui keeps the screenshot-style chat layout contract", () => {
   assert.match(styles, /\.composer-card/);
   assert.match(styles, /\.session-count-badge/);
   assert.match(styles, /\.recent-item-actions/);
+  assert.match(styles, /\.recent-item-status/);
+  assert.match(styles, /\.session-actions-popover/);
+  assert.match(styles, /\.session-actions-item/);
+  assert.match(styles, /\.assistant-actions-popover/);
+  assert.match(styles, /\.assistant-action-item/);
   assert.match(styles, /\.recent-item/);
   assert.match(styles, /\.batch-delete-bar/);
   assert.match(styles, /width: 100%/);
@@ -223,6 +246,7 @@ test("webui keeps the screenshot-style chat layout contract", () => {
   assert.match(styles, /\.composer-input\s*{[^}]*min-height: 112px/s);
   assert.match(styles, /\.composer-actions-row/);
   assert.match(styles, /\.composer-model-switch/);
+  assert.match(styles, /\.composer-model-popover/);
   assert.match(styles, /\.composer-model-option/);
   assert.match(styles, /\.message-bubble\s*{[^}]*font-size: 16px/s);
   assert.match(styles, /\.message-bubble :where\(pre\)/);
@@ -323,6 +347,7 @@ test("Composer exposes image attachments and a streaming cancel action", () => {
   assert.match(composer, /切换生效模型/);
   assert.match(composer, /composer-actions-row/);
   assert.match(composer, /composer-model-switch/);
+  assert.match(composer, /Select\.Popover className="composer-model-popover"/);
   assert.match(composer, /selectedProfile \? formatProfileOption\(selectedProfile\) : "选择模型"/);
 });
 
@@ -365,7 +390,7 @@ test("active turn phase is not rendered as an assistant fallback message", () =>
   const activeTurnEnd = components.indexOf("function TimelineView", activeTurnStart);
   const activeTurnSource = components.slice(activeTurnStart, activeTurnEnd);
 
-  assert.match(activeTurnSource, /className="turn-phase"/);
+  assert.match(activeTurnSource, /turn-phase--footer/);
   assert.doesNotMatch(activeTurnSource, /showFallbackBubble/);
   assert.doesNotMatch(activeTurnSource, /<MessageBubble content=\{activeTurn\.phase\?\.label/);
   assert.doesNotMatch(activeTurnSource, /<AssistantActions \/>/);

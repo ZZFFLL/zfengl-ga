@@ -12,6 +12,7 @@ import type {
 
 export type TurnState = {
   turnId: string;
+  startedAt: string;
   currentResponseId: string;
   answer: string;
   finalAnswer: string;
@@ -58,9 +59,10 @@ export type TurnRoundItem =
   | { type: "step"; id: string; step: ExecutionStep; created_at?: string }
   | { type: "artifact"; id: string; artifact: ArtifactRecord; created_at?: string };
 
-export function createInitialTurnState(turnId: string): TurnState {
+export function createInitialTurnState(turnId: string, startedAt = new Date().toISOString()): TurnState {
   return {
     turnId,
+    startedAt,
     currentResponseId: "",
     answer: "",
     finalAnswer: "",
@@ -110,6 +112,9 @@ export function applyStreamEvent(state: TurnState, event: StreamEvent): TurnStat
       if (typeof event.data.created_at === "string") {
         response.created_at = event.data.created_at;
       }
+      if (typeof event.data.elapsed_ms === "number") {
+        response.elapsed_ms = event.data.elapsed_ms;
+      }
       return {
         ...state,
         currentResponseId: "",
@@ -155,11 +160,18 @@ export function applyStreamEvent(state: TurnState, event: StreamEvent): TurnStat
       if (state.status === "error") {
         return state;
       }
+      const turnElapsedMs = typeof event.data.elapsed_ms === "number" ? event.data.elapsed_ms : undefined;
       return {
         ...state,
         status: "done",
         phase: { phase: "done", label: "本轮执行完成" },
         steps: closeRunningSteps(state.steps, "done"),
+        responses:
+          typeof turnElapsedMs === "number" && state.responses.length > 0
+            ? state.responses.map((response, index) =>
+                index === state.responses.length - 1 ? { ...response, elapsed_ms: turnElapsedMs } : response,
+              )
+            : state.responses,
       };
   }
 }
@@ -174,13 +186,19 @@ export function appendFinalAssistantMessage(
   }
   const responses = turn.responses.length > 0 ? turn.responses : [{ id: `${turn.turnId}:response`, content: turn.answer }];
   const nextMessages = responses
-    .map((response) => ({
-      role: "assistant" as const,
-      content: response.content.trim(),
-      turn_id: turn.turnId,
-      response_id: response.id,
-      created_at: response.created_at ?? createdAt,
-    }))
+    .map((response) => {
+      const message = {
+        role: "assistant" as const,
+        content: response.content.trim(),
+        turn_id: turn.turnId,
+        response_id: response.id,
+        created_at: response.created_at ?? createdAt,
+      };
+      if (typeof response.elapsed_ms === "number") {
+        return { ...message, elapsed_ms: response.elapsed_ms };
+      }
+      return message;
+    })
     .filter((message) => message.content);
   if (nextMessages.length === 0) {
     return messages;

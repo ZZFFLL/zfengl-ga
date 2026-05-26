@@ -1,4 +1,4 @@
-import { Button, Card, Chip, Disclosure, ScrollShadow, Tooltip } from "@heroui/react";
+import { Button, Card, Chip, Disclosure, Dropdown, Label, ScrollShadow, Tooltip } from "@heroui/react";
 import {
   BookOpen,
   Bot,
@@ -9,6 +9,7 @@ import {
   CircleHelp,
   Code2,
   Copy,
+  Download,
   Database,
   FilePenLine,
   FileSearch,
@@ -40,6 +41,8 @@ type ChatSurfaceProps = {
   artifacts: ArtifactRecord[];
   activeTurn: TurnState | null;
   isLoadingMessages: boolean;
+  sessionTitle: string;
+  onReplayTurn: (message: MessageRecord) => void;
 };
 
 type ToolDetailSection = {
@@ -48,8 +51,9 @@ type ToolDetailSection = {
   content: string;
 };
 
-export function ChatSurface({ messages, timeline, artifacts, activeTurn, isLoadingMessages }: ChatSurfaceProps) {
+export function ChatSurface({ messages, timeline, artifacts, activeTurn, isLoadingMessages, sessionTitle, onReplayTurn }: ChatSurfaceProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const nowTick = useNowTick(activeTurn?.status === "streaming");
   const isEmpty = messages.length === 0 && timeline.length === 0 && !activeTurn && !isLoadingMessages;
   const threadItems = buildThreadItems(messages, timeline, artifacts);
   const hasUserMessages = messages.some((message) => message.role === "user");
@@ -121,15 +125,13 @@ export function ChatSurface({ messages, timeline, artifacts, activeTurn, isLoadi
 
           {threadItems.map((item) =>
             item.type === "message" ? (
-              <MessageRow key={item.id} message={item.message} />
+              <MessageRow key={item.id} message={item.message} onReplayTurn={onReplayTurn} sessionTitle={sessionTitle} />
             ) : (
-              <TurnHistory key={item.id} messages={item.messages} rounds={item.rounds} />
+              <TurnHistory key={item.id} messages={item.messages} onReplayTurn={onReplayTurn} rounds={item.rounds} sessionTitle={sessionTitle} />
             ),
           )}
 
-          {activeTurn ? (
-            <ActiveTurnTimeline activeTurn={activeTurn} />
-          ) : null}
+          {activeTurn ? <ActiveTurnTimeline activeTurn={activeTurn} nowTick={nowTick} onReplayTurn={onReplayTurn} sessionTitle={sessionTitle} /> : null}
         </div>
       </ScrollShadow>
       {!isEmpty ? (
@@ -193,18 +195,22 @@ export function ChatSurface({ messages, timeline, artifacts, activeTurn, isLoadi
 function TurnHistory({
   messages,
   rounds,
+  sessionTitle,
+  onReplayTurn,
 }: {
   messages: MessageRecord[];
   rounds: TurnRound[];
+  sessionTitle: string;
+  onReplayTurn: (message: MessageRecord) => void;
 }) {
   const userMessages = messages.filter((message) => message.role === "user");
   return (
     <>
       {userMessages.map((message, index) => (
-        <MessageRow key={`${message.created_at}-user-${index}`} message={message} />
+        <MessageRow key={`${message.created_at}-user-${index}`} message={message} onReplayTurn={onReplayTurn} sessionTitle={sessionTitle} />
       ))}
       {rounds.map((round, index) => (
-        <TurnRoundView key={round.id} round={round} showSeparator={index > 0} />
+        <TurnRoundView key={round.id} onReplayTurn={onReplayTurn} round={round} sessionTitle={sessionTitle} showSeparator={index > 0} />
       ))}
     </>
   );
@@ -213,9 +219,13 @@ function TurnHistory({
 function TurnRoundView({
   round,
   showSeparator = false,
+  sessionTitle,
+  onReplayTurn,
 }: {
   round: TurnRound;
   showSeparator?: boolean;
+  sessionTitle: string;
+  onReplayTurn: (message: MessageRecord) => void;
 }) {
   return (
     <section className="turn-round" aria-label="模型回复轮次">
@@ -223,12 +233,20 @@ function TurnRoundView({
       {round.steps.length > 0 || round.artifacts.length > 0 ? (
         <TimelineView artifacts={round.artifacts} steps={round.steps} />
       ) : null}
-      {round.message ? <MessageRow message={round.message} /> : null}
+      {round.message ? <MessageRow message={round.message} onReplayTurn={onReplayTurn} sessionTitle={sessionTitle} /> : null}
     </section>
   );
 }
 
-function MessageRow({ message }: { message: MessageRecord }) {
+function MessageRow({
+  message,
+  sessionTitle,
+  onReplayTurn,
+}: {
+  message: MessageRecord;
+  sessionTitle: string;
+  onReplayTurn: (message: MessageRecord) => void;
+}) {
   return (
     <article
       className={`message-row message-row--${message.role}`}
@@ -236,18 +254,31 @@ function MessageRow({ message }: { message: MessageRecord }) {
       data-user-message-anchor={message.role === "user" ? "true" : undefined}
     >
       <MessageBubble content={message.content} />
-      {message.role === "assistant" ? <AssistantActions /> : null}
+      {message.role === "assistant" ? <AssistantActions message={message} onReplayTurn={onReplayTurn} sessionTitle={sessionTitle} /> : null}
     </article>
   );
 }
 
-function ActiveTurnTimeline({ activeTurn }: { activeTurn: TurnState }) {
+function ActiveTurnTimeline({
+  activeTurn,
+  nowTick,
+  sessionTitle,
+  onReplayTurn,
+}: {
+  activeTurn: TurnState;
+  nowTick: number;
+  sessionTitle: string;
+  onReplayTurn: (message: MessageRecord) => void;
+}) {
+  const liveElapsedMs = Math.max(nowTick - Date.parse(activeTurn.startedAt), 0);
+  const liveElapsedLabel = readElapsedLabel(liveElapsedMs);
   const activeMessages: MessageRecord[] = activeTurn.responses.map((response, index) => ({
     role: "assistant",
     content: response.content,
     turn_id: activeTurn.turnId,
     response_id: response.id,
     created_at: response.created_at || `active:${index}`,
+    elapsed_ms: typeof response.elapsed_ms === "number" ? response.elapsed_ms : liveElapsedMs,
   }));
   if (activeTurn.answer.trim()) {
     activeMessages.push({
@@ -256,27 +287,21 @@ function ActiveTurnTimeline({ activeTurn }: { activeTurn: TurnState }) {
       turn_id: activeTurn.turnId,
       response_id: activeTurn.currentResponseId || `${activeTurn.turnId}:streaming`,
       created_at: "active:streaming",
+      elapsed_ms: liveElapsedMs,
     });
   }
   const rounds = buildTurnRounds(activeMessages, activeTurn.steps, activeTurn.artifacts);
 
   return (
     <div className="turn-timeline" aria-label="本轮执行过程">
-      {activeTurn.phase && activeTurn.status === "streaming" ? (
-        <div className="turn-phase">
-          <span>{activeTurn.phase.label}</span>
-          {activeTurn.phase.phase === "understanding" ? (
-            <span className="thinking-dots" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-            </span>
-          ) : null}
+      {rounds.map((round, index) => (
+        <TurnRoundView key={round.id} onReplayTurn={onReplayTurn} round={round} sessionTitle={sessionTitle} showSeparator={index > 0} />
+      ))}
+      {liveElapsedLabel ? (
+        <div className="turn-phase turn-phase--footer">
+          <span className="turn-phase-duration">已用时 {liveElapsedLabel}</span>
         </div>
       ) : null}
-      {rounds.map((round, index) => (
-        <TurnRoundView key={round.id} round={round} showSeparator={index > 0} />
-      ))}
     </div>
   );
 }
@@ -382,17 +407,76 @@ function MessageBubble({ content }: { content: string }) {
   );
 }
 
-function AssistantActions() {
+function AssistantActions({
+  message,
+  sessionTitle,
+  onReplayTurn,
+}: {
+  message: MessageRecord;
+  sessionTitle: string;
+  onReplayTurn: (message: MessageRecord) => void;
+}) {
   return (
     <div className="assistant-actions" aria-label="助手消息操作">
-      <Button aria-label="复制回答" isIconOnly size="sm" variant="ghost">
-        <Copy size={16} />
-      </Button>
-      <Button aria-label="重新生成回答" isIconOnly size="sm" variant="ghost">
+      <Dropdown>
+        <Dropdown.Trigger>
+          <Button aria-label="导出回答" isIconOnly size="sm" variant="ghost">
+            <Copy size={16} />
+          </Button>
+        </Dropdown.Trigger>
+        <Dropdown.Popover className="assistant-actions-popover">
+          <Dropdown.Menu className="assistant-actions-menu" onAction={(key) => handleAssistantExportAction(String(key), message, sessionTitle)}>
+            <Dropdown.Item className="assistant-action-item" id="copy-markdown" textValue="复制为 Markdown">
+              <Copy className="size-4 shrink-0 text-muted" />
+              <Label>复制为 Markdown</Label>
+            </Dropdown.Item>
+            <Dropdown.Item className="assistant-action-item" id="download-markdown" textValue="导出为 Markdown 文件">
+              <Download className="size-4 shrink-0 text-muted" />
+              <Label>导出为 Markdown 文件</Label>
+            </Dropdown.Item>
+          </Dropdown.Menu>
+        </Dropdown.Popover>
+      </Dropdown>
+      <Button aria-label="重新生成回答" isIconOnly onPress={() => onReplayTurn(message)} size="sm" variant="ghost">
         <RefreshCw size={16} />
       </Button>
     </div>
   );
+}
+
+async function handleAssistantExportAction(action: string, message: MessageRecord, sessionTitle: string) {
+  const markdown = buildAssistantMarkdown(message, sessionTitle);
+  if (action === "copy-markdown") {
+    await navigator.clipboard.writeText(markdown);
+    return;
+  }
+  if (action === "download-markdown") {
+    downloadMarkdownFile(markdown, sessionTitle, message.created_at);
+  }
+}
+
+function buildAssistantMarkdown(message: MessageRecord, sessionTitle: string) {
+  return `# ${formatExportTitle(sessionTitle)}\n\n${message.content.trim()}\n`;
+}
+
+function formatExportTitle(sessionTitle: string) {
+  const title = sessionTitle.trim();
+  return title || "当前回答";
+}
+
+function downloadMarkdownFile(markdown: string, sessionTitle: string, createdAt: string) {
+  const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${slugifyFilename(sessionTitle)}-${createdAt.slice(0, 19).replace(/[:T]/g, "-")}.md`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function slugifyFilename(value: string) {
+  const normalized = value.trim().replace(/[\\/:*?"<>|]+/g, "-");
+  return normalized || "answer";
 }
 
 function readStepIcon(step: ExecutionStep) {
@@ -608,4 +692,21 @@ function readElapsedLabel(elapsedMs?: number) {
     return `${(elapsedMs / 60000).toFixed(1)}m`;
   }
   return elapsedMs < 100 ? "<0.1s" : `${(elapsedMs / 1000).toFixed(1)}s`;
+}
+
+function useNowTick(enabled: boolean) {
+  const [nowTick, setNowTick] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+    setNowTick(Date.now());
+    const timer = window.setInterval(() => {
+      setNowTick(Date.now());
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [enabled]);
+
+  return nowTick;
 }

@@ -138,7 +138,7 @@ export function Composer({
                   <Select.Value>{selectedProfile ? formatProfileOption(selectedProfile) : "选择模型"}</Select.Value>
                   <Select.Indicator />
                 </Select.Trigger>
-                <Select.Popover>
+                <Select.Popover className="composer-model-popover">
                   <ListBox className="composer-model-listbox">
                     {modelProfiles.map((profile) => (
                       <ListBox.Item

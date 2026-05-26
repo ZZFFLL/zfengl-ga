@@ -336,6 +336,47 @@ test("subscribeTurn polling preserves legacy outputs after backend turn.done rep
   assert.deepEqual(events.map((event) => event.type), ["answer.final", "timeline.step", "turn.done"]);
 });
 
+test("subscribeTurn forwards elapsed_ms from backend turn.done events", async () => {
+  const { subscribeTurn } = await import("./api.ts");
+  const events = [];
+  const originalEventSource = globalThis.EventSource;
+  const originalFetch = globalThis.fetch;
+  const originalWindow = globalThis.window;
+  globalThis.EventSource = undefined;
+  globalThis.window = { setTimeout: () => 0 };
+  globalThis.fetch = async () => ({
+    ok: true,
+    async json() {
+      return {
+        status: "idle",
+        events: [
+          {
+            seq: 1,
+            type: "answer.final",
+            turn_id: "ga|sess-1|2",
+            session_id: "sess-1",
+            data: { text: "完成", response_id: "ga|sess-1|2:response:1" },
+          },
+          { seq: 2, type: "turn.done", turn_id: "ga|sess-1|2", session_id: "sess-1", data: { ok: true, elapsed_ms: 3210 } },
+        ],
+        messages: [{ id: 3, role: "assistant", content: "完成", ts: 1, elapsed_ms: 3210 }],
+      };
+    },
+  });
+
+  try {
+    subscribeTurn("ga|sess-1|2", (event) => events.push(event));
+    await new Promise((resolve) => setImmediate(resolve));
+  } finally {
+    globalThis.EventSource = originalEventSource;
+    globalThis.fetch = originalFetch;
+    globalThis.window = originalWindow;
+  }
+
+  assert.equal(events[1].type, "turn.done");
+  assert.equal(events[1].data.elapsed_ms, 3210);
+});
+
 test("subscribeTurn does not stream raw partial text when structured events are present", async () => {
   const { subscribeTurn } = await import("./api.ts");
   const events = [];

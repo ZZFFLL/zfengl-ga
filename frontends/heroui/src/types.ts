@@ -34,6 +34,7 @@ export type MessageRecord = {
   ga_turn?: number;
   outputs?: string[];
   source?: string;
+  elapsed_ms?: number;
 };
 
 export type ImageAttachment = {
@@ -113,6 +114,7 @@ export type TurnResponse = {
   id: string;
   content: string;
   created_at?: string;
+  elapsed_ms?: number;
 };
 
 export type ToolCard = {

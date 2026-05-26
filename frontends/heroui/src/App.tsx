@@ -1,5 +1,5 @@
 import { Button, Chip } from "@heroui/react";
-import { FileCode, FolderOpen, Info, Menu, Search } from "lucide-react";
+import { FileCode, FolderOpen, Info, Loader2, Menu, Search } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import {
   cancelSession,
@@ -11,6 +11,7 @@ import {
   listSessions,
   listTranscript,
   openBridgePath,
+  replayTurn,
   regenerateSessionTitle,
   subscribeTurn,
   switchModelProfile,
@@ -70,6 +71,7 @@ export function App() {
   const [showBridgeDiagnostics, setShowBridgeDiagnostics] = useState(false);
   const [isBridgeDiagnosticsClosing, setIsBridgeDiagnosticsClosing] = useState(false);
   const [isSwitchingModelProfile, setIsSwitchingModelProfile] = useState(false);
+  const [regeneratingTitleSessionId, setRegeneratingTitleSessionId] = useState("");
   const activeSourceRef = useRef<EventSource | null>(null);
   const activeSessionRef = useRef("");
   const activeTurnRef = useRef("");
@@ -333,6 +335,7 @@ export function App() {
 
   async function handleSubmit(content: string, images: ImageAttachment[] = []) {
     const sessionId = activeSessionId || (await createSessionForSubmit()).id;
+    const startedAt = new Date().toISOString();
     const terminalTurn =
       activeTurnStateRef.current?.status === "done" || activeTurnStateRef.current?.status === "error"
         ? activeTurnStateRef.current
@@ -368,13 +371,13 @@ export function App() {
         ),
       );
       activeTurnRef.current = turnId;
-      activeTurnStateRef.current = createInitialTurnState(turnId);
+      activeTurnStateRef.current = createInitialTurnState(turnId, startedAt);
       setActiveTurn(activeTurnStateRef.current);
       activeSourceRef.current = subscribeTurn(turnId, (event) => {
         if (activeSessionRef.current !== sessionId || activeTurnRef.current !== turnId) {
           return;
         }
-        const nextTurn = applyStreamEvent(activeTurnStateRef.current ?? createInitialTurnState(turnId), event);
+        const nextTurn = applyStreamEvent(activeTurnStateRef.current ?? createInitialTurnState(turnId, startedAt), event);
         activeTurnStateRef.current = nextTurn;
         setActiveTurn(nextTurn);
         if (event.type === "turn.done") {
@@ -477,6 +480,7 @@ export function App() {
         sessions={sessions}
         activeSessionId={activeSessionId}
         modelLabel={modelLabel}
+        regeneratingSessionId={regeneratingTitleSessionId}
         onCreateSession={handleCreateSession}
         onDeleteSessions={handleDeleteSessions}
         onRegenerateSessionTitle={(sessionId) => void handleRegenerateSessionTitle(sessionId)}
@@ -502,7 +506,12 @@ export function App() {
           </Button>
           <div className="conversation-title">
             <h1>{formatChineseTitle(activeSession?.title ?? "新会话")}</h1>
-            <span>{activeTurn?.status === "streaming" ? "正在流式输出" : "已就绪"}</span>
+            {regeneratingTitleSessionId === activeSessionId ? (
+              <span className="conversation-title-status">
+                <Loader2 size={12} />
+                正在生成标题…
+              </span>
+            ) : null}
           </div>
           <div className="header-actions">
             <div className="bridge-meta-strip" aria-label="HeroBridge 状态">
@@ -556,6 +565,8 @@ export function App() {
           artifacts={artifacts}
           isLoadingMessages={isLoadingMessages}
           messages={messages}
+          onReplayTurn={(message) => void handleReplayTurn(message)}
+          sessionTitle={activeSession?.title ?? "新会话"}
           timeline={timeline}
         />
         <div className="composer-stack">
@@ -609,6 +620,7 @@ export function App() {
 
   async function handleRegenerateSessionTitle(sessionId: string) {
     try {
+      setRegeneratingTitleSessionId(sessionId);
       const updated = await regenerateSessionTitle(sessionId);
       setSessions((current) =>
         current.map((session) =>
@@ -628,6 +640,65 @@ export function App() {
       void refreshSessions();
     } catch (error) {
       setAppError(readError(error));
+    } finally {
+      setRegeneratingTitleSessionId((current) => (current === sessionId ? "" : current));
+    }
+  }
+
+  async function handleReplayTurn(message: MessageRecord) {
+    if (activeTurn?.status === "streaming") {
+      return;
+    }
+    if (!activeSessionId) {
+      setAppError("当前没有可重答的会话");
+      return;
+    }
+    const turnId = message.turn_id || "";
+    if (!turnId) {
+      setAppError("未找到可重新回答的本轮提问");
+      return;
+    }
+    try {
+      closeActiveSource(activeSourceRef.current);
+      activeSourceRef.current = null;
+      activeTurnRef.current = "";
+      activeTurnStateRef.current = null;
+      setAppError("");
+
+      const replayedTurnId = await replayTurn(activeSessionId, turnId);
+      const startedAt = new Date().toISOString();
+      const trimmedTranscript = await listTranscript(activeSessionId);
+      if (activeSessionRef.current !== activeSessionId) {
+        return;
+      }
+      setMessages(trimmedTranscript.messages);
+      setTimeline(trimmedTranscript.timeline);
+      setArtifacts(trimmedTranscript.artifacts);
+      activeTurnRef.current = replayedTurnId;
+      activeTurnStateRef.current = createInitialTurnState(replayedTurnId, startedAt);
+      setActiveTurn(activeTurnStateRef.current);
+      activeSourceRef.current = subscribeTurn(replayedTurnId, (event) => {
+        if (activeSessionRef.current !== activeSessionId || activeTurnRef.current !== replayedTurnId) {
+          return;
+        }
+        const nextTurn = applyStreamEvent(activeTurnStateRef.current ?? createInitialTurnState(replayedTurnId, startedAt), event);
+        activeTurnStateRef.current = nextTurn;
+        setActiveTurn(nextTurn);
+        if (event.type === "turn.done") {
+          finishActiveTurn(activeSessionId, replayedTurnId);
+        }
+      }, () => {
+        if (activeSessionRef.current === activeSessionId && activeTurnRef.current === replayedTurnId) {
+          setAppError("会话流连接已中断");
+          setActiveTurn(null);
+          activeTurnRef.current = "";
+          activeTurnStateRef.current = null;
+          activeSourceRef.current = null;
+        }
+      });
+    } catch (error) {
+      setAppError(readError(error));
+      setActiveTurn(null);
     }
   }
 }

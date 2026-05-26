@@ -16,7 +16,7 @@ const baseEvent = {
 };
 
 test("answer.delta appends streaming text and marks state streaming", () => {
-  let state = createInitialTurnState("turn-1");
+  let state = createInitialTurnState("turn-1", "2026-05-23T00:00:00.000Z");
   state = applyStreamEvent(state, {
     ...baseEvent,
     type: "answer.delta",
@@ -33,7 +33,7 @@ test("answer.delta appends streaming text and marks state streaming", () => {
 });
 
 test("answer.retract clears only the matching streaming draft", () => {
-  let state = createInitialTurnState("turn-1");
+  let state = createInitialTurnState("turn-1", "2026-05-23T00:00:00.000Z");
   state = applyStreamEvent(state, {
     ...baseEvent,
     type: "answer.delta",
@@ -60,7 +60,7 @@ test("answer.retract clears only the matching streaming draft", () => {
 });
 
 test("phase.update replaces current phase", () => {
-  const state = applyStreamEvent(createInitialTurnState("turn-1"), {
+  const state = applyStreamEvent(createInitialTurnState("turn-1", "2026-05-23T00:00:00.000Z"), {
     ...baseEvent,
     type: "phase.update",
     data: { phase: "calling_tool", label: "Calling tool" },
@@ -70,7 +70,7 @@ test("phase.update replaces current phase", () => {
 });
 
 test("phase.update localizes legacy English status labels", () => {
-  const state = applyStreamEvent(createInitialTurnState("turn-1"), {
+  const state = applyStreamEvent(createInitialTurnState("turn-1", "2026-05-23T00:00:00.000Z"), {
     ...baseEvent,
     type: "phase.update",
     data: { phase: "understanding", label: "Understanding request" },
@@ -445,6 +445,38 @@ test("answer.final stores a completed response and turn.done marks successful tu
   assert.deepEqual(state.responses, [{ id: "turn-1:response:1", content: "final answer" }]);
   assert.equal(state.status, "done");
   assert.deepEqual(state.phase, { phase: "done", label: "本轮执行完成" });
+});
+
+test("createInitialTurnState keeps a startedAt timestamp for live elapsed rendering", () => {
+  const state = createInitialTurnState("turn-1", "2026-05-23T00:00:00.000Z");
+  assert.equal(state.startedAt, "2026-05-23T00:00:00.000Z");
+});
+
+test("turn.done backfills total elapsed time onto the final assistant response", () => {
+  let state = createInitialTurnState("turn-1");
+  state = applyStreamEvent(state, {
+    ...baseEvent,
+    type: "answer.final",
+    data: { text: "final answer" },
+  });
+  state = applyStreamEvent(state, {
+    ...baseEvent,
+    type: "turn.done",
+    data: { elapsed_ms: 4321 },
+  });
+
+  assert.equal(state.responses[0].elapsed_ms, 4321);
+  assert.deepEqual(
+    appendFinalAssistantMessage([{ role: "user", content: "你好", created_at: "2026-05-23T00:00:00.000Z" }], state, "2026-05-23T00:00:01.000Z")[1],
+    {
+      role: "assistant",
+      content: "final answer",
+      turn_id: "turn-1",
+      response_id: "turn-1:response:1",
+      created_at: "2026-05-23T00:00:01.000Z",
+      elapsed_ms: 4321,
+    },
+  );
 });
 
 test("turn.done closes any still-running execution steps without adding a completion node", () => {

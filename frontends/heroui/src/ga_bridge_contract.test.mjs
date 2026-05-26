@@ -31,6 +31,7 @@ test("HeroUI frontend has a dedicated GenericAgent bridge copy", () => {
   assert.match(bridge, /selected_llm_no/);
   assert.match(bridge, /def switch_model_profile/);
   assert.match(bridge, /def regenerate_session_title/);
+  assert.match(bridge, /def replay_turn/);
   assert.match(bridge, /events: List\[dict\] = field\(default_factory=list\)/);
   assert.match(bridge, /event_seq: int = 0/);
   assert.match(bridge, /CREATE TABLE IF NOT EXISTS events/);
@@ -44,6 +45,7 @@ test("HeroUI frontend has a dedicated GenericAgent bridge copy", () => {
   assert.match(bridge, /app\.router\.add_get\("\/session\/\{sid\}\/messages", messages_handler\)/);
   assert.match(bridge, /app\.router\.add_post\("\/model-profile", switch_model_profile_handler\)/);
   assert.match(bridge, /app\.router\.add_post\("\/session\/\{sid\}\/title\/regenerate", regenerate_session_title_handler\)/);
+  assert.match(bridge, /app\.router\.add_post\("\/session\/\{sid\}\/turn\/replay", replay_turn_handler\)/);
 });
 
 test("HeroUI api adapter speaks the GA bridge polling contract", () => {
@@ -71,7 +73,61 @@ test("HeroUI api adapter speaks the GA bridge polling contract", () => {
   assert.match(api, /\/model-profile/);
   assert.match(api, /regenerateSessionTitle/);
   assert.match(api, /\/title\/regenerate/);
+  assert.match(api, /replayTurn/);
+  assert.match(api, /\/turn\/replay/);
   assert.doesNotMatch(api, /\/api\/turns\/\$\{encodeURIComponent\(turnId\)\}\/events/);
+});
+
+test("HeroUI bridge replays a turn by trimming that turn and rerunning from the original user prompt", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-bridge-"));
+  const dbPath = join(tempDir, "sessions.sqlite3");
+  const script = `
+import importlib.util
+import sys
+from pathlib import Path
+
+bridge_path = Path(${JSON.stringify(bridgePath)})
+spec = importlib.util.spec_from_file_location("heroui_bridge_under_test_replay_turn", bridge_path)
+bridge = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bridge
+spec.loader.exec_module(bridge)
+
+manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
+session = manager.create_session(cwd="E:/tmp/ga", title="replay test")
+
+captured = {}
+
+def fake_run_agent_turn(sess, turn_id, prompt, images=None):
+    captured["sid"] = sess.id
+    captured["turn_id"] = turn_id
+    captured["prompt"] = prompt
+    captured["images"] = images
+
+manager.run_agent_turn = fake_run_agent_turn
+
+manager.add_message(session, "user", "第一轮问题", turn_id="ga|" + session.id + "|1", source="user")
+manager.add_message(session, "assistant", "第一轮回答", turn_id="ga|" + session.id + "|1", responseId="resp-1", response_id="resp-1", source="assistant")
+manager.add_event(session, {"type": "timeline.step", "turn_id": "ga|" + session.id + "|1", "data": {"id": "t1", "kind": "tool", "title": "第一轮工具", "status": "done"}})
+manager.add_message(session, "user", "第二轮问题", turn_id="ga|" + session.id + "|2", source="user")
+manager.add_message(session, "assistant", "第二轮旧回答", turn_id="ga|" + session.id + "|2", responseId="resp-2", response_id="resp-2", source="assistant")
+manager.add_event(session, {"type": "timeline.step", "turn_id": "ga|" + session.id + "|2", "data": {"id": "t2", "kind": "tool", "title": "第二轮工具", "status": "done"}})
+
+result = manager.replay_turn(session.id, "ga|" + session.id + "|2")
+
+assert result["ok"] is True
+assert captured["sid"] == session.id
+assert captured["prompt"] == "第二轮问题"
+assert captured["turn_id"] == "ga|" + session.id + "|2"
+assert [message["content"] for message in session.messages] == ["第一轮问题", "第一轮回答", "第二轮问题"]
+assert [event["data"]["id"] for event in session.events if event["type"] == "timeline.step"] == ["t1"]
+assert session.status == "running"
+`;
+
+  try {
+    execFileSync("python", ["-c", script], { stdio: "pipe" });
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
 });
 
 test("HeroUI bridge exposes persisted SSE events with replay cursor", () => {
@@ -477,12 +533,13 @@ assert restored[0].messages[1]["outputs"] == ["thinking", "done"]
   }
 });
 
-test("HeroUI bridge derives the title from the first user message when the session is still untitled", () => {
+test("HeroUI bridge derives the first title from the first user message and first assistant reply summary", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-bridge-"));
   const dbPath = join(tempDir, "sessions.sqlite3");
   const script = `
 import importlib.util
 import sys
+import types
 from pathlib import Path
 
 bridge_path = Path(${JSON.stringify(bridgePath)})
@@ -491,14 +548,65 @@ bridge = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = bridge
 spec.loader.exec_module(bridge)
 
+captured = {}
+
+def fake_fast_ask(prompt, cfg_name):
+    captured["prompt"] = prompt
+    captured["cfg_name"] = cfg_name
+    return "OpenAI 封号原因汇总"
+
+fake_agentmain = types.ModuleType("agentmain")
+
+class FakeBackend:
+    def __init__(self):
+        self.name = "newapi-native"
+        self.model = "gpt-5.4"
+        self.api_base = "https://example.invalid/v1"
+
+class FakeGenericAgent:
+    def __init__(self):
+        self.llmclient = types.SimpleNamespace(backend=FakeBackend())
+
+    def next_llm(self, llm_no):
+        return None
+
+    def get_llm_name(self, b=None, model=False):
+        b = self.llmclient if b is None else b
+        if model:
+            return b.backend.model.lower()
+        return f"{type(b.backend).__name__}/{b.backend.name}"
+
+fake_agentmain.GenericAgent = FakeGenericAgent
+sys.modules["agentmain"] = fake_agentmain
+
+def fake_reload_mykeys():
+    return (
+        {
+            "native_oai_config": {
+                "name": "newapi-native",
+                "model": "gpt-5.4",
+                "apibase": "https://example.invalid/v1",
+                "apikey": "sk-test",
+            }
+        },
+        False,
+    )
+
+bridge.reload_mykeys = fake_reload_mykeys
+bridge.fast_ask = fake_fast_ask
 manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
 session = manager.create_session(cwd="E:/tmp/ga", title="新会话")
-manager.add_message(session, "user", "请帮我整理一下今天的开发任务和优先级\\n顺便给出建议", turn_id="turn-1", source="user")
+manager.selected_llm_no = 0
+manager.add_message(session, "user", "去X站上找一下关于openai pro账号的封号和警告邮件的内容和原因", turn_id="turn-1", source="user")
+manager.add_message(session, "assistant", "我整理了 OpenAI Pro 封号、警告邮件、触发原因与常见申诉路径。", turn_id="turn-1", responseId="resp-1", source="assistant")
 
-assert session.title == "请帮我整理一下今天的开发任务和优先级 顺便给出建议"[:40]
+assert session.title == "OpenAI 封号原因汇总"
+assert "openai pro账号的封号" in captured["prompt"]
+assert "警告邮件" in captured["prompt"]
+assert "常见申诉路径" in captured["prompt"]
 
 manager.add_message(session, "user", "第二条消息不应覆盖标题", turn_id="turn-2", source="user")
-assert session.title == "请帮我整理一下今天的开发任务和优先级 顺便给出建议"[:40]
+assert session.title == "OpenAI 封号原因汇总"
 `;
 
   try {

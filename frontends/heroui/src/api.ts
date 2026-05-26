@@ -64,6 +64,7 @@ type BridgeMessage = {
   gaTurn?: number;
   outputs?: string[];
   source?: string;
+  elapsed_ms?: number;
 };
 
 type BridgeTimelineEvent = StreamEvent & {
@@ -163,6 +164,20 @@ export async function regenerateSessionTitle(sessionId: string): Promise<Session
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
+}
+
+export async function replayTurn(sessionId: string, turnId: string): Promise<string> {
+  const response = await fetch(apiUrl(`/session/${encodeURIComponent(sessionId)}/turn/replay`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ turnId }),
+  });
+  const payload = await readJson<{ turnId?: string; seq?: number; eventSeq?: number }>(response);
+  const resolvedTurnId = String(payload.turnId ?? turnId);
+  if (typeof payload.eventSeq === "number") {
+    TURN_EVENT_CURSORS.set(resolvedTurnId, payload.eventSeq);
+  }
+  return resolvedTurnId;
 }
 
 export async function listMessages(sessionId: string): Promise<MessageRecord[]> {
@@ -483,6 +498,7 @@ function mapMessageRecord(message: BridgeMessage): MessageRecord {
     ga_turn: message.gaTurn,
     outputs: message.outputs,
     source: message.source,
+    elapsed_ms: typeof message.elapsed_ms === "number" ? message.elapsed_ms : undefined,
   };
 }
 

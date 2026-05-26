@@ -1,5 +1,5 @@
 import { Avatar, Button, Dropdown, Label } from "@heroui/react";
-import { CheckSquare, Ellipsis, MessageCircle, MessageSquarePlus, PencilLine, Square, Trash2, X } from "lucide-react";
+import { CheckSquare, Ellipsis, Loader2, MessageCircle, MessageSquarePlus, PencilLine, Square, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import type { SessionRecord } from "../types";
 
@@ -7,6 +7,7 @@ type ConversationRailProps = {
   sessions: SessionRecord[];
   activeSessionId: string;
   modelLabel: string;
+  regeneratingSessionId: string;
   onCreateSession: () => void;
   onDeleteSessions: (sessionIds: string[]) => void;
   onRegenerateSessionTitle: (sessionId: string) => void;
@@ -17,6 +18,7 @@ export function ConversationRail({
   sessions,
   activeSessionId,
   modelLabel,
+  regeneratingSessionId,
   onCreateSession,
   onDeleteSessions,
   onRegenerateSessionTitle,
@@ -105,7 +107,13 @@ export function ConversationRail({
               )}
               <span>{formatChineseTitle(session.title, sessions, index)}</span>
             </Button>
-            {!isDeleting ? (
+            {!isDeleting && regeneratingSessionId === session.id ? (
+              <div className="recent-item-status" aria-label="正在生成标题">
+                <Loader2 size={12} />
+                <span>正在生成标题…</span>
+              </div>
+            ) : null}
+            {!isDeleting && regeneratingSessionId !== session.id ? (
               <div className="recent-item-actions">
                 <Dropdown>
                   <Dropdown.Trigger>
@@ -113,13 +121,13 @@ export function ConversationRail({
                       <Ellipsis size={16} />
                     </Button>
                   </Dropdown.Trigger>
-                  <Dropdown.Popover>
-                    <Dropdown.Menu onAction={(key) => handleSessionAction(String(key), session.id)}>
-                      <Dropdown.Item id="regenerate-title" textValue="重新生成标题">
+                  <Dropdown.Popover className="session-actions-popover">
+                    <Dropdown.Menu className="session-actions-menu" onAction={(key) => handleSessionAction(String(key), session.id)}>
+                      <Dropdown.Item className="session-actions-item" id="regenerate-title" textValue="重新生成标题">
                         <PencilLine className="size-4 shrink-0 text-muted" />
                         <Label>重新生成标题</Label>
                       </Dropdown.Item>
-                      <Dropdown.Item id="delete-session" textValue="删除会话" variant="danger">
+                      <Dropdown.Item className="session-actions-item" id="delete-session" textValue="删除会话" variant="danger">
                         <Trash2 className="size-4 shrink-0 text-danger" />
                         <Label>删除会话</Label>
                       </Dropdown.Item>

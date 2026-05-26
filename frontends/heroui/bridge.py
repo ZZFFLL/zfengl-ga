@@ -640,9 +640,8 @@ class AgentManager:
         msg.update(extra)
         sess.messages.append(msg)
         sess.updated_at = time.time()
-        # 仅在默认未命名会话下，使用首条用户消息生成标题，避免覆盖用户已有命名。
-        if role == "user" and content.strip() and self._is_untitled_session_title(sess.title):
-            sess.title = content.strip().replace("\n", " ")[:40]
+        if role == "assistant" and content.strip():
+            self._assign_initial_summary_title_if_needed(sess)
         if persist:
             self._persist_session_and_message(sess, msg)
         return msg
@@ -650,6 +649,45 @@ class AgentManager:
     def _is_untitled_session_title(self, title: str) -> bool:
         normalized = (title or "").strip().lower()
         return normalized in {"new chat", "新会话"}
+
+    def _assign_initial_summary_title_if_needed(self, sess: Session) -> None:
+        if not self._is_untitled_session_title(sess.title):
+            return
+        first_user_message = next(
+            (
+                str(message.get("content") or "").strip()
+                for message in sess.messages
+                if message.get("role") == "user" and str(message.get("content") or "").strip()
+            ),
+            "",
+        )
+        first_assistant_message = next(
+            (
+                str(message.get("content") or "").strip()
+                for message in sess.messages
+                if message.get("role") == "assistant" and str(message.get("content") or "").strip()
+            ),
+            "",
+        )
+        if not first_user_message or not first_assistant_message:
+            return
+        llm_no = self.selected_llm_no if self.selected_llm_no is not None else 0
+        prompt = self._build_initial_title_prompt(first_user_message, first_assistant_message)
+        title = self._generate_title_with_current_model(prompt, llm_no)
+        if title:
+            sess.title = title
+
+    def _build_initial_title_prompt(self, first_user_message: str, first_assistant_message: str) -> str:
+        return (
+            "请根据下面这组会话开头内容，生成一个简洁中文会话标题。\n"
+            "要求：\n"
+            "1. 只输出标题本身，不要解释。\n"
+            "2. 长度控制在 8 到 20 个中文字符之间。\n"
+            "3. 要综合用户第一条消息和助手第一次正文回复，不要直接照抄用户原句。\n"
+            "4. 不要包含引号、句号、序号、前缀。\n\n"
+            f"用户第一条消息：{' '.join(first_user_message.split())}\n"
+            f"助手第一次正文回复：{' '.join(first_assistant_message.split())}"
+        )
 
     def regenerate_session_title(self, sid: str) -> dict:
         with self.lock:
@@ -679,6 +717,78 @@ class AgentManager:
             self._persist_session(sess)
         emit_session_state(sess, "updated")
         return {"ok": True, "sessionId": sid, "title": title}
+
+    def replay_turn(self, sid: str, turn_id: str) -> dict:
+        with self.lock:
+            sess = self.sessions.get(sid)
+            if not sess:
+                raise web.HTTPNotFound(text=json.dumps({"error": f"session not found: {sid}"}, ensure_ascii=False), content_type="application/json")
+            if sess.status == "running":
+                raise web.HTTPConflict(text=json.dumps({"error": "session is already running"}, ensure_ascii=False), content_type="application/json")
+
+            target_user_message = next(
+                (
+                    message
+                    for message in sess.messages
+                    if message.get("role") == "user" and message.get("turn_id") == turn_id and str(message.get("content") or "").strip()
+                ),
+                None,
+            )
+            if not target_user_message:
+                raise web.HTTPBadRequest(text=json.dumps({"error": f"user message not found for turn: {turn_id}"}, ensure_ascii=False), content_type="application/json")
+
+            replay_prompt = str(target_user_message.get("content") or "")
+            replay_images = list(target_user_message.get("image_ids") or [])
+            replay_turn_no = int(target_user_message.get("id") or 0)
+
+            sess.messages = [message for message in sess.messages if int(message.get("id", 0)) < replay_turn_no]
+            sess.events = [event for event in sess.events if str(event.get("turn_id") or "") != turn_id]
+            sess.msg_seq = replay_turn_no - 1
+            sess.event_seq = max((int(event.get("seq", 0)) for event in sess.events), default=0)
+            sess.partial = None
+            sess.status = "running"
+            sess.cancel_requested = False
+            sess.last_error = ""
+            sess.updated_at = time.time()
+            self._persist_session(sess)
+
+            with self._connect() as conn:
+                conn.execute("DELETE FROM messages WHERE session_id = ? AND id >= ?", (sid, replay_turn_no))
+                conn.execute("DELETE FROM events WHERE session_id = ? AND turn_id = ?", (sid, turn_id))
+                conn.commit()
+
+            replay_user_message = self.add_message(
+                sess,
+                "user",
+                replay_prompt,
+                persist=False,
+                image_ids=replay_images,
+                turn_started_at=time.time(),
+            )
+            replay_user_message["turn_id"] = turn_id
+            replay_user_message["source"] = "user"
+            self._persist_session_and_message(sess, replay_user_message)
+            sess.partial = {
+                "id": sess.msg_seq + 1,
+                "role": "assistant",
+                "content": "",
+                "ts": time.time(),
+                "partial": True,
+                "turn_id": turn_id,
+                "responseId": self.make_response_id(turn_id, 1),
+                "gaTurn": 0,
+                "outputs": [],
+                "source": "user",
+                "turn_started_at": replay_user_message.get("turn_started_at"),
+            }
+            thread = threading.Thread(target=self.run_agent_turn, args=(sess, turn_id, replay_prompt, replay_images), daemon=True, name=f"Replay-{sid}")
+            sess.thread = thread
+            event_seq = sess.event_seq
+            seq = sess.msg_seq
+            thread.start()
+
+        emit_session_state(sess, "running")
+        return {"ok": True, "sessionId": sid, "turnId": turn_id, "seq": seq, "eventSeq": event_seq}
 
     def _build_title_regeneration_prompt(self, user_messages: List[str]) -> str:
         bullet_lines = [f"{index + 1}. {' '.join(message.split())}" for index, message in enumerate(user_messages)]
@@ -773,9 +883,11 @@ class AgentManager:
             if image_ids:
                 extra["image_ids"] = image_ids
             user_msg = self.add_message(sess, "user", prompt, persist=False, **extra)
+            turn_started_at = float(user_msg.get("ts") or time.time())
             turn_id = self.make_turn_id(sid, user_msg["id"])
             user_msg["turn_id"] = turn_id
             user_msg["source"] = "user"
+            user_msg["turn_started_at"] = turn_started_at
             sess.status = "running"
             sess.cancel_requested = False
             sess.last_error = ""
@@ -792,6 +904,7 @@ class AgentManager:
                 "gaTurn": 0,
                 "outputs": [],
                 "source": "user",
+                "turn_started_at": turn_started_at,
             }
             t = threading.Thread(target=self.run_agent_turn, args=(sess, turn_id, prompt, None), daemon=True, name=f"Turn-{sid}")
             sess.thread = t
@@ -806,6 +919,7 @@ class AgentManager:
         turn_outputs: List[str] = []
         response_id = self.make_response_id(turn_id, 1)
         structured_final_text = ""
+        turn_started_at = 0.0
         emitted_final_event = False
         emitted_terminal_event = False
         pending_terminal_event: Optional[dict] = None
@@ -873,6 +987,22 @@ class AgentManager:
             add_stream_event(event)
 
         try:
+            with self.lock:
+                # 兼容直接调用 run_agent_turn 的测试场景，此时不一定先落过用户消息。
+                turn_started_at = float((sess.partial or {}).get("turn_started_at") or 0.0)
+                if turn_started_at <= 0:
+                    turn_started_at = float(
+                        next(
+                            (
+                                message.get("turn_started_at") or message.get("ts") or 0
+                                for message in reversed(sess.messages)
+                                if message.get("turn_id") == turn_id
+                            ),
+                            0.0,
+                        )
+                    )
+                if turn_started_at <= 0:
+                    turn_started_at = time.time()
             if sess.agent is None:
                 sess.agent = self.make_agent(sess)
             agent = sess.agent
@@ -981,8 +1111,9 @@ class AgentManager:
                         assistant_content = structured_final_text.strip() if structured_final_text.strip() else full
                 else:
                     assistant_content = full
+                turn_elapsed_ms = int(max(time.time() - (turn_started_at or time.time()), 0) * 1000)
                 add_final_event_if_missing(assistant_content)
-                add_terminal_event_if_missing("turn.done", {"ok": True})
+                add_terminal_event_if_missing("turn.done", {"ok": True, "elapsed_ms": turn_elapsed_ms})
                 flush_pending_terminal_event()
                 if assistant_content.strip():
                     self.add_message(
@@ -995,6 +1126,7 @@ class AgentManager:
                         gaTurn=ga_turn,
                         outputs=turn_outputs,
                         source="assistant",
+                        elapsed_ms=turn_elapsed_ms,
                     )
                 sess.status = "idle"
                 sess.last_error = ""
@@ -1376,6 +1508,13 @@ async def regenerate_session_title_handler(request):
     return json_ok(manager.regenerate_session_title(sid))
 
 
+async def replay_turn_handler(request):
+    sid = request.match_info["sid"]
+    data = await read_json(request)
+    turn_id = str(data.get("turnId") or data.get("turn_id") or "")
+    return json_ok(manager.replay_turn(sid, turn_id))
+
+
 async def prompt_handler(request):
     sid = request.match_info["sid"]
     data = await read_json(request)
@@ -1491,6 +1630,7 @@ def create_app():
     app.router.add_get("/session/{sid}", get_session_handler)
     app.router.add_delete("/session/{sid}", delete_session_handler)
     app.router.add_post("/session/{sid}/title/regenerate", regenerate_session_title_handler)
+    app.router.add_post("/session/{sid}/turn/replay", replay_turn_handler)
     app.router.add_post("/session/{sid}/prompt", prompt_handler)
     app.router.add_get("/session/{sid}/messages", messages_handler)
     app.router.add_get("/session/{sid}/events", events_handler)
