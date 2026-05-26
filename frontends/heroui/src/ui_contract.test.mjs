@@ -396,6 +396,12 @@ test("selecting the already active session does not reset the transcript into lo
   assert.ok(selectSource.indexOf("if (sessionId === activeSessionId)") < selectSource.indexOf("setMessages([])"));
 });
 
+test("empty session state does not show title regeneration status", () => {
+  assert.match(app, /const isRegeneratingActiveTitle = Boolean\(\s*activeSession && activeSessionId && regeneratingTitleSessionId === activeSessionId,/);
+  assert.match(app, /isRegeneratingActiveTitle \? \(/);
+  assert.doesNotMatch(app, /\{regeneratingTitleSessionId === activeSessionId \? \(/);
+});
+
 test("active turn phase is not rendered as an assistant fallback message", () => {
   const activeTurnStart = components.indexOf("function ActiveTurnTimeline");
   const activeTurnEnd = components.indexOf("function TimelineView", activeTurnStart);

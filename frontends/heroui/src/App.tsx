@@ -476,6 +476,9 @@ export function App() {
   }
 
   const activeSession = sessions.find((session) => session.id === activeSessionId);
+  const isRegeneratingActiveTitle = Boolean(
+    activeSession && activeSessionId && regeneratingTitleSessionId === activeSessionId,
+  );
   const activeModelProfile = modelProfiles.find((profile) => profile.active);
   const activeModelName = formatModelName(activeModelProfile);
   const modelLabel = activeModelName !== "未检测到生效模型" ? activeModelName : modelProfiles.length > 0 ? `${modelProfiles.length} 个模型配置` : "本地模型";
@@ -516,7 +519,7 @@ export function App() {
           </Button>
           <div className="conversation-title">
             <h1>{formatChineseTitle(activeSession?.title ?? "新会话")}</h1>
-            {regeneratingTitleSessionId === activeSessionId ? (
+            {isRegeneratingActiveTitle ? (
               <span className="conversation-title-status">
                 <Loader2 size={12} />
                 正在生成标题…
