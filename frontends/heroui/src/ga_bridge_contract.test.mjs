@@ -34,7 +34,7 @@ test("HeroUI frontend has a dedicated GenericAgent bridge copy", () => {
   assert.match(bridge, /def replay_turn/);
   assert.match(bridge, /events: List\[dict\] = field\(default_factory=list\)/);
   assert.match(bridge, /event_seq: int = 0/);
-  assert.match(bridge, /CREATE TABLE IF NOT EXISTS events/);
+  assert.match(bridge, /SessionStore/);
   assert.match(bridge, /def add_event/);
   assert.match(bridge, /def convert_agent_event/);
   assert.match(bridge, /agent\.structured_events = True/);
@@ -111,6 +111,12 @@ manager.add_event(session, {"type": "timeline.step", "turn_id": "ga|" + session.
 manager.add_message(session, "user", "第二轮问题", turn_id="ga|" + session.id + "|2", source="user")
 manager.add_message(session, "assistant", "第二轮旧回答", turn_id="ga|" + session.id + "|2", responseId="resp-2", response_id="resp-2", source="assistant")
 manager.add_event(session, {"type": "timeline.step", "turn_id": "ga|" + session.id + "|2", "data": {"id": "t2", "kind": "tool", "title": "第二轮工具", "status": "done"}})
+manager.store.upsert_agent_state(session.id, {
+    "ga_history": ["[USER]: 第一轮问题", "[Agent] 第一轮回答", "[USER]: 第二轮问题", "[Agent] 第二轮旧回答"],
+    "backend_history": [{"role": "assistant", "content": [{"type": "text", "text": "future"}]}],
+    "working": {"key_info": "future state"},
+    "llm_no": 0,
+})
 
 result = manager.replay_turn(session.id, "ga|" + session.id + "|2")
 
@@ -120,6 +126,8 @@ assert captured["prompt"] == "第二轮问题"
 assert captured["turn_id"] == "ga|" + session.id + "|2"
 assert [message["content"] for message in session.messages] == ["第一轮问题", "第一轮回答", "第二轮问题"]
 assert [event["data"]["id"] for event in session.events if event["type"] == "timeline.step"] == ["t1"]
+assert manager.store.load_agent_state(session.id)["ga_history"] == ["[USER]: 第一轮问题", "[Agent] 第一轮回答"]
+assert manager.store.load_agent_state(session.id)["llm_no"] == 0
 assert session.status == "running"
 `;
 
@@ -1264,6 +1272,674 @@ assert "turn.error" in types, types
   }
 });
 
+test("HeroUI bridge restores sqlite agent state before submitting a restored session prompt", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-state-"));
+  const dbPath = join(tempDir, "sessions.sqlite3");
+  const script = `
+import importlib.util
+import sys
+from pathlib import Path
+
+bridge_path = Path(${JSON.stringify(bridgePath)})
+spec = importlib.util.spec_from_file_location("heroui_bridge_under_test_state_restore", bridge_path)
+bridge = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bridge
+spec.loader.exec_module(bridge)
+
+class FakeBackend:
+    def __init__(self):
+        self.history = []
+
+class FakeClient:
+    def __init__(self):
+        self.backend = FakeBackend()
+
+class FakeAgent:
+    def __init__(self):
+        self.history = []
+        self.llmclient = FakeClient()
+        self.handler = None
+        self.llm_no = 0
+        self.structured_events = False
+        self.inc_out = False
+        self.verbose = False
+        self.seen_prompt = None
+
+    def next_llm(self, n):
+        self.llm_no = n
+
+    def run(self):
+        return None
+
+    def put_task(self, prompt, images=None):
+        self.seen_prompt = prompt
+        import queue
+        q = queue.Queue()
+        q.put({"done": "restored answer", "turn": 1, "outputs": []})
+        return q
+
+manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
+session = manager.create_session(cwd="E:/tmp/ga", title="restore")
+manager.add_message(session, "user", "旧问题", turn_id="ga|" + session.id + "|1", source="user")
+manager.store.upsert_agent_state(session.id, {
+    "ga_history": ["[USER]: 旧问题", "[Agent] 旧回答"],
+    "backend_history": [{"role": "user", "content": [{"type": "text", "text": "旧问题"}]}],
+    "working": {"key_info": "old context"},
+    "llm_no": 3,
+})
+
+fake = FakeAgent()
+manager.make_agent = lambda sess: (bridge.restore_agent_state(fake, manager.load_continuation_state(sess)) or fake)
+manager.run_agent_turn(session, "ga|" + session.id + "|2", "之前聊了什么？")
+
+assert fake.history == ["[USER]: 旧问题", "[Agent] 旧回答"]
+assert fake.llmclient.backend.history == [{"role": "user", "content": [{"type": "text", "text": "旧问题"}]}]
+assert fake.llm_no == 3
+assert fake.seen_prompt == "之前聊了什么？"
+`;
+
+  try {
+    execFileSync("python", ["-c", script], { stdio: "pipe" });
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("HeroUI bridge writes updated agent state after a completed turn", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-state-"));
+  const dbPath = join(tempDir, "sessions.sqlite3");
+  const script = `
+import importlib.util
+import sys
+from pathlib import Path
+
+bridge_path = Path(${JSON.stringify(bridgePath)})
+spec = importlib.util.spec_from_file_location("heroui_bridge_under_test_state_capture", bridge_path)
+bridge = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bridge
+spec.loader.exec_module(bridge)
+
+class FakeBackend:
+    def __init__(self):
+        self.history = []
+
+class FakeClient:
+    def __init__(self):
+        self.backend = FakeBackend()
+
+class FakeAgent:
+    def __init__(self):
+        self.history = []
+        self.llmclient = FakeClient()
+        self.handler = type("Handler", (), {"working": {"key_info": "captured"}})()
+        self.llm_no = 2
+        self.structured_events = False
+        self.inc_out = False
+
+    def put_task(self, prompt, images=None):
+        self.history = ["[USER]: " + prompt, "[Agent] captured answer"]
+        self.llmclient.backend.history = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
+        import queue
+        q = queue.Queue()
+        q.put({"done": "captured answer", "turn": 1, "outputs": []})
+        return q
+
+manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
+session = manager.create_session(cwd="E:/tmp/ga", title="capture")
+session.agent = FakeAgent()
+manager.run_agent_turn(session, "ga|" + session.id + "|1", "保存状态")
+
+state = manager.store.load_agent_state(session.id)
+assert state["ga_history"] == ["[USER]: 保存状态", "[Agent] captured answer"]
+assert state["backend_history"] == [{"role": "user", "content": [{"type": "text", "text": "保存状态"}]}]
+assert state["working"] == {"key_info": "captured"}
+assert state["llm_no"] == 2
+`;
+
+  try {
+    execFileSync("python", ["-c", script], { stdio: "pipe" });
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("HeroUI bridge waits for GA task completion before capturing terminal state", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-state-race-"));
+  const dbPath = join(tempDir, "sessions.sqlite3");
+  const script = `
+import importlib.util
+import queue
+import sys
+import threading
+import time
+from pathlib import Path
+
+bridge_path = Path(${JSON.stringify(bridgePath)})
+spec = importlib.util.spec_from_file_location("heroui_bridge_under_test_state_race", bridge_path)
+bridge = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bridge
+spec.loader.exec_module(bridge)
+
+class FakeBackend:
+    def __init__(self):
+        self.history = []
+
+class FakeClient:
+    def __init__(self):
+        self.backend = FakeBackend()
+
+class FakeAgent:
+    def __init__(self):
+        self.history = []
+        self.llmclient = FakeClient()
+        self.handler = type("Handler", (), {"working": {"key_info": "captured after task done"}})()
+        self.llm_no = 2
+        self.structured_events = False
+        self.inc_out = False
+        self.task_queue = queue.Queue()
+
+    def put_task(self, prompt, images=None):
+        self.task_queue.put({"query": prompt})
+        display_q = queue.Queue()
+        display_q.put({"done": "captured answer", "turn": 1, "outputs": []})
+
+        def finish_after_done():
+            time.sleep(0.2)
+            self.history = ["[USER]: " + prompt, "[Agent] captured answer"]
+            self.llmclient.backend.history = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
+            self.task_queue.task_done()
+
+        threading.Thread(target=finish_after_done, daemon=True).start()
+        return display_q
+
+manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
+session = manager.create_session(cwd="E:/tmp/ga", title="capture race")
+session.agent = FakeAgent()
+manager.run_agent_turn(session, "ga|" + session.id + "|1", "保存状态")
+
+state = manager.store.load_agent_state(session.id)
+assert state["ga_history"] == ["[USER]: 保存状态", "[Agent] captured answer"]
+assert state["backend_history"] == [{"role": "user", "content": [{"type": "text", "text": "保存状态"}]}]
+`;
+
+  try {
+    execFileSync("python", ["-c", script], { stdio: "pipe" });
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("HeroUI bridge fallback state excludes the currently submitted user turn", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-state-"));
+  const dbPath = join(tempDir, "sessions.sqlite3");
+  const script = `
+import importlib.util
+import sys
+from pathlib import Path
+
+bridge_path = Path(${JSON.stringify(bridgePath)})
+spec = importlib.util.spec_from_file_location("heroui_bridge_under_test_state_fallback", bridge_path)
+bridge = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bridge
+spec.loader.exec_module(bridge)
+
+manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
+session = manager.create_session(cwd="E:/tmp/ga", title="fallback")
+manager.add_message(session, "user", "旧问题", turn_id="ga|" + session.id + "|1", source="user")
+manager.add_message(session, "assistant", "旧回答", turn_id="ga|" + session.id + "|1", source="assistant")
+current = manager.add_message(session, "user", "当前问题", turn_id="ga|" + session.id + "|2", source="user")
+session.partial = {"turn_id": current["turn_id"]}
+
+state = manager.load_continuation_state(session)
+
+assert state["ga_history"] == ["[USER]: 旧问题", "[Agent] 旧回答"]
+`;
+
+  try {
+    execFileSync("python", ["-c", script], { stdio: "pipe" });
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("HeroUI bridge falls back to messages when stored agent state is corrupt", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-state-corrupt-"));
+  const dbPath = join(tempDir, "sessions.sqlite3");
+  const script = `
+import importlib.util
+import sqlite3
+import sys
+from pathlib import Path
+
+bridge_path = Path(${JSON.stringify(bridgePath)})
+spec = importlib.util.spec_from_file_location("heroui_bridge_under_test_corrupt_state", bridge_path)
+bridge = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bridge
+spec.loader.exec_module(bridge)
+
+manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
+session = manager.create_session(cwd="E:/tmp/ga", title="corrupt")
+manager.add_message(session, "user", "旧问题", turn_id="ga|" + session.id + "|1", source="user")
+manager.add_message(session, "assistant", "旧回答", turn_id="ga|" + session.id + "|1", source="assistant")
+
+with sqlite3.connect(${JSON.stringify(dbPath)}) as conn:
+    conn.execute(
+        "INSERT OR REPLACE INTO agent_state (session_id, ga_history_json, backend_history_json, working_json, llm_no, state_version, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (session.id, "{bad json", "[]", "{}", 1, 1, 100.0),
+    )
+    conn.commit()
+
+state = manager.load_continuation_state(session)
+assert state["ga_history"] == ["[USER]: 旧问题", "[Agent] 旧回答"]
+assert state["llm_no"] is None
+`;
+
+  try {
+    execFileSync("python", ["-c", script], { stdio: "pipe" });
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("HeroUI bridge persists a session model switch into agent state", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-model-state-"));
+  const dbPath = join(tempDir, "sessions.sqlite3");
+  const script = `
+import importlib.util
+import sys
+from pathlib import Path
+
+bridge_path = Path(${JSON.stringify(bridgePath)})
+spec = importlib.util.spec_from_file_location("heroui_bridge_under_test_model_state", bridge_path)
+bridge = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bridge
+spec.loader.exec_module(bridge)
+
+manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
+manager.list_model_profiles = lambda: [
+    {"id": "0", "name": "default", "active": False},
+    {"id": "2", "name": "selected", "active": False},
+]
+session = manager.create_session(cwd="E:/tmp/ga", title="model")
+manager.add_message(session, "user", "旧问题", turn_id="ga|" + session.id + "|1", source="user")
+
+manager.switch_model_profile(2, session.id)
+
+restored_manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
+restored_session = restored_manager.get_session(session.id)
+state = restored_manager.load_continuation_state(restored_session)
+assert state["llm_no"] == 2
+`;
+
+  try {
+    execFileSync("python", ["-c", script], { stdio: "pipe" });
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("HeroUI bridge prefers persisted session model over global selected model on restore", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-model-restore-"));
+  const dbPath = join(tempDir, "sessions.sqlite3");
+  const script = `
+import importlib.util
+import queue
+import sys
+from pathlib import Path
+
+bridge_path = Path(${JSON.stringify(bridgePath)})
+spec = importlib.util.spec_from_file_location("heroui_bridge_under_test_model_restore", bridge_path)
+bridge = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bridge
+spec.loader.exec_module(bridge)
+
+class FakeBackend:
+    def __init__(self):
+        self.history = []
+
+class FakeClient:
+    def __init__(self):
+        self.backend = FakeBackend()
+
+class FakeAgent:
+    def __init__(self):
+        self.history = []
+        self.llmclient = FakeClient()
+        self.handler = type("Handler", (), {"working": {}})()
+        self.llm_no = 0
+        self.structured_events = False
+        self.inc_out = False
+
+    def next_llm(self, llm_no):
+        self.llm_no = llm_no
+
+    def put_task(self, prompt, images=None):
+        q = queue.Queue()
+        q.put({"done": "answer", "turn": 1, "outputs": []})
+        return q
+
+manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
+session = manager.create_session(cwd="E:/tmp/ga", title="model restore")
+manager.store.upsert_agent_state(session.id, {
+    "ga_history": ["[USER]: old", "[Agent] old"],
+    "backend_history": [],
+    "working": {},
+    "llm_no": 2,
+})
+manager.selected_llm_no = 0
+
+fake = FakeAgent()
+session.agent = fake
+manager.run_agent_turn(session, "ga|" + session.id + "|2", "继续")
+
+assert fake.llm_no == 2
+`;
+
+  try {
+    execFileSync("python", ["-c", script], { stdio: "pipe" });
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("HeroUI bridge replay preserves persisted session model over global selected model", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-replay-model-"));
+  const dbPath = join(tempDir, "sessions.sqlite3");
+  const script = `
+import importlib.util
+import queue
+import sys
+from pathlib import Path
+
+bridge_path = Path(${JSON.stringify(bridgePath)})
+spec = importlib.util.spec_from_file_location("heroui_bridge_under_test_replay_model", bridge_path)
+bridge = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bridge
+spec.loader.exec_module(bridge)
+
+class FakeBackend:
+    def __init__(self):
+        self.history = []
+
+class FakeClient:
+    def __init__(self):
+        self.backend = FakeBackend()
+
+class FakeAgent:
+    def __init__(self):
+        self.history = []
+        self.llmclient = FakeClient()
+        self.handler = type("Handler", (), {"working": {}})()
+        self.llm_no = 0
+        self.structured_events = False
+        self.inc_out = False
+
+    def next_llm(self, llm_no):
+        self.llm_no = llm_no
+
+    def put_task(self, prompt, images=None):
+        q = queue.Queue()
+        q.put({"done": "replayed", "turn": 1, "outputs": []})
+        return q
+
+manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
+session = manager.create_session(cwd="E:/tmp/ga", title="replay model")
+manager.add_message(session, "user", "第一轮问题", turn_id="ga|" + session.id + "|1", source="user")
+manager.add_message(session, "assistant", "第一轮回答", turn_id="ga|" + session.id + "|1", source="assistant")
+manager.add_message(session, "user", "第二轮问题", turn_id="ga|" + session.id + "|2", source="user")
+manager.add_message(session, "assistant", "第二轮旧回答", turn_id="ga|" + session.id + "|2", source="assistant")
+manager.store.upsert_agent_state(session.id, {
+    "ga_history": ["[USER]: 第一轮问题", "[Agent] 第一轮回答", "[USER]: 第二轮问题", "[Agent] 第二轮旧回答"],
+    "backend_history": [],
+    "working": {},
+    "llm_no": 2,
+})
+manager.selected_llm_no = 0
+session.agent = FakeAgent()
+
+manager.replay_turn(session.id, "ga|" + session.id + "|2")
+session.thread.join(timeout=5)
+
+assert manager.store.load_agent_state(session.id)["llm_no"] == 2
+assert session.agent.llm_no == 2
+`;
+
+  try {
+    execFileSync("python", ["-c", script], { stdio: "pipe" });
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("HeroUI bridge replay truncates future turn events with future messages", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-replay-events-"));
+  const dbPath = join(tempDir, "sessions.sqlite3");
+  const script = `
+import importlib.util
+import queue
+import sys
+from pathlib import Path
+
+bridge_path = Path(${JSON.stringify(bridgePath)})
+spec = importlib.util.spec_from_file_location("heroui_bridge_under_test_replay_events", bridge_path)
+bridge = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bridge
+spec.loader.exec_module(bridge)
+
+class FakeBackend:
+    def __init__(self):
+        self.history = []
+
+class FakeClient:
+    def __init__(self):
+        self.backend = FakeBackend()
+
+class FakeAgent:
+    def __init__(self):
+        self.history = []
+        self.llmclient = FakeClient()
+        self.handler = type("Handler", (), {"working": {}})()
+        self.llm_no = 0
+        self.structured_events = False
+        self.inc_out = False
+
+    def put_task(self, prompt, images=None):
+        self.history = ["[USER]: " + prompt, "[Agent] replayed"]
+        q = queue.Queue()
+        q.put({"done": "replayed", "turn": 1, "outputs": []})
+        return q
+
+manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
+session = manager.create_session(cwd="E:/tmp/ga", title="replay events")
+for index in range(1, 4):
+    turn_id = "ga|" + session.id + "|" + str(index)
+    manager.add_message(session, "user", "问题" + str(index), turn_id=turn_id, source="user")
+    manager.add_message(session, "assistant", "回答" + str(index), turn_id=turn_id, source="assistant")
+    manager.add_event(session, {"type": "timeline.step", "turn_id": turn_id, "session_id": session.id, "data": {"id": "tool-" + str(index)}})
+
+session.agent = FakeAgent()
+manager.replay_turn(session.id, "ga|" + session.id + "|2")
+session.thread.join(timeout=5)
+
+future_turn_id = "ga|" + session.id + "|3"
+assert not any(message.get("turn_id") == future_turn_id for message in session.messages)
+assert not any(event.get("turn_id") == future_turn_id for event in session.events)
+
+loaded = manager.store.load_all_sessions()[session.id]
+assert not any(message.get("turn_id") == future_turn_id for message in loaded.messages)
+assert not any(event.get("turn_id") == future_turn_id for event in loaded.events)
+`;
+
+  try {
+    execFileSync("python", ["-c", script], { stdio: "pipe" });
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("HeroUI bridge clears stale existing-agent working after replay truncates state", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-state-"));
+  const dbPath = join(tempDir, "sessions.sqlite3");
+  const script = `
+import importlib.util
+import sys
+from pathlib import Path
+
+bridge_path = Path(${JSON.stringify(bridgePath)})
+spec = importlib.util.spec_from_file_location("heroui_bridge_under_test_replay_working", bridge_path)
+bridge = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bridge
+spec.loader.exec_module(bridge)
+
+class FakeBackend:
+    def __init__(self):
+        self.history = []
+
+class FakeClient:
+    def __init__(self):
+        self.backend = FakeBackend()
+
+class FakeAgent:
+    def __init__(self):
+        self.history = []
+        self.llmclient = FakeClient()
+        self.handler = type("Handler", (), {"working": {"key_info": "future state"}})()
+        self.llm_no = 0
+        self.structured_events = False
+        self.inc_out = False
+        self.seen_working_before_put_task = None
+
+    def put_task(self, prompt, images=None):
+        self.seen_working_before_put_task = dict(self.handler.working)
+        import queue
+        q = queue.Queue()
+        q.put({"done": "replayed", "turn": 1, "outputs": []})
+        return q
+
+manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
+session = manager.create_session(cwd="E:/tmp/ga", title="replay working")
+manager.add_message(session, "user", "第一轮问题", turn_id="ga|" + session.id + "|1", source="user")
+manager.add_message(session, "assistant", "第一轮回答", turn_id="ga|" + session.id + "|1", source="assistant")
+manager.add_message(session, "user", "第二轮问题", turn_id="ga|" + session.id + "|2", source="user")
+manager.add_message(session, "assistant", "第二轮旧回答", turn_id="ga|" + session.id + "|2", source="assistant")
+manager.store.upsert_agent_state(session.id, {
+    "ga_history": ["[USER]: 第一轮问题", "[Agent] 第一轮回答", "[USER]: 第二轮问题", "[Agent] 第二轮旧回答"],
+    "backend_history": [],
+    "working": {"key_info": "future state"},
+    "llm_no": 3,
+})
+
+fake = FakeAgent()
+session.agent = fake
+manager.replay_turn(session.id, "ga|" + session.id + "|2")
+session.thread.join(timeout=5)
+
+assert fake.seen_working_before_put_task == {}
+assert manager.store.load_agent_state(session.id)["working"] == {}
+assert manager.store.load_agent_state(session.id)["llm_no"] == 3
+`;
+
+  try {
+    execFileSync("python", ["-c", script], { stdio: "pipe" });
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("HeroUI bridge merges saved working into the GA-created handler", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-handler-working-"));
+  const dbPath = join(tempDir, "sessions.sqlite3");
+  const script = `
+import importlib.util
+import queue
+import sys
+import threading
+import types
+from pathlib import Path
+
+bridge_path = Path(${JSON.stringify(bridgePath)})
+spec = importlib.util.spec_from_file_location("heroui_bridge_under_test_handler_working", bridge_path)
+bridge = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bridge
+spec.loader.exec_module(bridge)
+
+runtime = types.ModuleType("fake_ga_runtime")
+
+class RuntimeHandler:
+    def __init__(self, agent, history, temp_dir):
+        self.working = {}
+
+runtime.GenericAgentHandler = RuntimeHandler
+sys.modules[runtime.__name__] = runtime
+
+class FakeBackend:
+    def __init__(self):
+        self.history = []
+
+class FakeClient:
+    def __init__(self):
+        self.backend = FakeBackend()
+
+class ExistingHandler:
+    def __init__(self):
+        self.working = {}
+
+class FakeAgent:
+    def __init__(self):
+        self.history = []
+        self.llmclient = FakeClient()
+        self.handler = ExistingHandler()
+        self.llm_no = 0
+        self.structured_events = False
+        self.inc_out = False
+        self.task_queue = queue.Queue()
+        self.seen_new_handler_working = None
+
+    def put_task(self, prompt, images=None):
+        self.task_queue.put({"query": prompt})
+        display_q = queue.Queue()
+
+        def run_like_ga():
+            handler = runtime.GenericAgentHandler(self, self.history, "temp")
+            if self.handler and "key_info" in self.handler.working:
+                handler.working["key_info"] = self.handler.working["key_info"]
+                handler.working["passed_sessions"] = self.handler.working.get("passed_sessions", 0) + 1
+            self.handler = handler
+            self.seen_new_handler_working = dict(handler.working)
+            self.history = ["[USER]: " + prompt, "[Agent] answer"]
+            display_q.put({"done": "answer", "turn": 1, "outputs": []})
+            self.task_queue.task_done()
+
+        threading.Thread(target=run_like_ga, daemon=True).start()
+        return display_q
+
+FakeAgent.__module__ = runtime.__name__
+
+manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
+session = manager.create_session(cwd="E:/tmp/ga", title="handler working")
+manager.store.upsert_agent_state(session.id, {
+    "ga_history": ["[USER]: old", "[Agent] old"],
+    "backend_history": [],
+    "working": {"key_info": "saved key", "passed_sessions": 2, "related_sop": "saved sop"},
+    "llm_no": 0,
+})
+
+fake = FakeAgent()
+session.agent = fake
+manager.run_agent_turn(session, "ga|" + session.id + "|2", "继续")
+
+assert fake.seen_new_handler_working["key_info"] == "saved key"
+assert fake.seen_new_handler_working["passed_sessions"] == 3
+assert fake.seen_new_handler_working["related_sop"] == "saved sop"
+`;
+
+  try {
+    execFileSync("python", ["-c", script], { stdio: "pipe" });
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
 test("Vite development server proxies GA bridge endpoints", () => {
   assert.equal(existsSync(vitePath), true);
   const vite = readFileSync(vitePath, "utf8");
@@ -1274,4 +1950,19 @@ test("Vite development server proxies GA bridge endpoints", () => {
   assert.match(vite, /"\/sessions"/);
   assert.match(vite, /"\/status"/);
   assert.match(vite, /"\/model-profile"/);
+});
+
+test("HeroUI bridge persists Bridge-owned agent state without model_responses restore", () => {
+  assert.equal(existsSync(bridgePath), true);
+  const bridge = readFileSync(bridgePath, "utf8");
+
+  assert.match(bridge, /from session_store import|import session_store/);
+  assert.match(bridge, /from agent_state import|import agent_state/);
+  assert.match(bridge, /agent_state/);
+  assert.match(bridge, /restore_agent_state/);
+  assert.match(bridge, /capture_agent_state/);
+  assert.match(bridge, /upsert_agent_state/);
+  assert.doesNotMatch(bridge, /extract_history/);
+  assert.doesNotMatch(bridge, /compress_session/);
+  assert.doesNotMatch(bridge, /model_responses.*restore/);
 });

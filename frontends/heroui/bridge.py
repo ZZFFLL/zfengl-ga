@@ -60,6 +60,20 @@ if str(DEFAULT_GA_ROOT) not in sys.path:
 
 from llmcore import fast_ask, reload_mykeys
 
+try:
+    from .session_store import SessionStore, StoredSession
+except ImportError:
+    if str(APP_DIR) not in sys.path:
+        sys.path.insert(0, str(APP_DIR))
+    from session_store import SessionStore, StoredSession
+
+try:
+    from .agent_state import build_state_from_messages, capture_agent_state, restore_agent_state, restore_handler_working
+except ImportError:
+    if str(APP_DIR) not in sys.path:
+        sys.path.insert(0, str(APP_DIR))
+    from agent_state import build_state_from_messages, capture_agent_state, restore_agent_state, restore_handler_working
+
 
 def to_iso_timestamp(value: Any) -> str:
     try:
@@ -148,7 +162,7 @@ class AgentManager:
         self.active_session_id: Optional[str] = None
         self.deleted_session_ids: Set[str] = set()
         self.db_path = Path(db_path or os.environ.get("HEROUI_BRIDGE_DB") or DEFAULT_HEROUI_DB_PATH)
-        self._init_store()
+        self.store = SessionStore(self.db_path)
         self._load_sessions()
 
     @property
@@ -168,112 +182,29 @@ class AgentManager:
         return f"{turn_id}:response:{response_no}"
 
     def _connect(self) -> sqlite3.Connection:
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
+        return self.store.connect()
 
     def _init_store(self) -> None:
-        with self._connect() as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS sessions (
-                    id TEXT PRIMARY KEY,
-                    title TEXT NOT NULL,
-                    cwd TEXT NOT NULL,
-                    created_at REAL NOT NULL,
-                    updated_at REAL NOT NULL,
-                    status TEXT NOT NULL,
-                    msg_seq INTEGER NOT NULL,
-                    last_error TEXT NOT NULL DEFAULT ''
-                )
-                """
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS messages (
-                    session_id TEXT NOT NULL,
-                    id INTEGER NOT NULL,
-                    role TEXT NOT NULL,
-                    content TEXT NOT NULL,
-                    ts REAL NOT NULL,
-                    payload TEXT NOT NULL,
-                    PRIMARY KEY (session_id, id),
-                    FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
-                )
-                """
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS events (
-                    session_id TEXT NOT NULL,
-                    seq INTEGER NOT NULL,
-                    turn_id TEXT NOT NULL,
-                    type TEXT NOT NULL,
-                    ts REAL NOT NULL,
-                    payload TEXT NOT NULL,
-                    PRIMARY KEY (session_id, seq),
-                    FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
-                )
-                """
-            )
-            conn.commit()
+        self.store.init_schema()
 
     def _load_sessions(self) -> None:
+        loaded = self.store.load_all_sessions()
         sessions: Dict[str, Session] = {}
-        with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT id, title, cwd, created_at, updated_at, status, msg_seq, last_error FROM sessions ORDER BY updated_at ASC"
-            ).fetchall()
-            for row in rows:
-                sessions[row["id"]] = Session(
-                    id=row["id"],
-                    title=row["title"],
-                    cwd=row["cwd"],
-                    created_at=float(row["created_at"]),
-                    updated_at=float(row["updated_at"]),
-                    msg_seq=int(row["msg_seq"]),
-                    status=self._restore_status(str(row["status"])),
-                    last_error=str(row["last_error"] or ""),
-                )
-            if sessions:
-                msg_rows = conn.execute(
-                    "SELECT session_id, id, role, content, ts, payload FROM messages ORDER BY session_id ASC, id ASC"
-                ).fetchall()
-                for row in msg_rows:
-                    sess = sessions.get(row["session_id"])
-                    if not sess:
-                        continue
-                    msg = {
-                        "id": int(row["id"]),
-                        "role": row["role"],
-                        "content": row["content"],
-                        "ts": float(row["ts"]),
-                    }
-                    payload = str(row["payload"] or "")
-                    if payload:
-                        with contextlib.suppress(Exception):
-                            msg.update(json.loads(payload))
-                    sess.messages.append(msg)
-                event_rows = conn.execute(
-                    "SELECT session_id, seq, turn_id, type, ts, payload FROM events ORDER BY session_id ASC, seq ASC"
-                ).fetchall()
-                for row in event_rows:
-                    sess = sessions.get(row["session_id"])
-                    if not sess:
-                        continue
-                    event = {
-                        "seq": int(row["seq"]),
-                        "turn_id": row["turn_id"],
-                        "type": row["type"],
-                        "ts": float(row["ts"]),
-                    }
-                    payload = str(row["payload"] or "")
-                    if payload:
-                        with contextlib.suppress(Exception):
-                            event.update(json.loads(payload))
-                    sess.events.append(event)
-                    sess.event_seq = max(sess.event_seq, int(row["seq"]))
+        for sid, stored in loaded.items():
+            sess = Session(
+                id=stored.id,
+                title=stored.title,
+                cwd=stored.cwd,
+                created_at=stored.created_at,
+                updated_at=stored.updated_at,
+                msg_seq=stored.msg_seq,
+                status=self._restore_status(stored.status),
+                last_error=stored.last_error,
+            )
+            sess.messages = list(stored.messages)
+            sess.events = list(stored.events)
+            sess.event_seq = max((int(event.get("seq", 0)) for event in sess.events), default=0)
+            sessions[sid] = sess
         with self.lock:
             self.sessions = sessions
             self.active_session_id = next(reversed(sessions), None) if sessions else None
@@ -291,78 +222,29 @@ class AgentManager:
     def _persist_session_row(self, conn: sqlite3.Connection, sess: Session) -> None:
         if sess.id in self.deleted_session_ids:
             return
-        conn.execute(
-            """
-            INSERT INTO sessions (id, title, cwd, created_at, updated_at, status, msg_seq, last_error)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-                title=excluded.title,
-                cwd=excluded.cwd,
-                created_at=excluded.created_at,
-                updated_at=excluded.updated_at,
-                status=excluded.status,
-                msg_seq=excluded.msg_seq,
-                last_error=excluded.last_error
-            """,
-            (
-                sess.id,
-                sess.title,
-                sess.cwd,
-                sess.created_at,
-                sess.updated_at,
-                sess.status,
-                sess.msg_seq,
-                sess.last_error,
-            ),
-        )
+        self.store.upsert_session_row(conn, self._session_store_payload(sess))
 
     def _persist_message_row(self, conn: sqlite3.Connection, sess: Session, msg: dict) -> None:
         if sess.id in self.deleted_session_ids:
             return
-        payload = {k: v for k, v in msg.items() if k not in {"id", "role", "content", "ts"}}
-        conn.execute(
-            """
-            INSERT INTO messages (session_id, id, role, content, ts, payload)
-            VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(session_id, id) DO UPDATE SET
-                role=excluded.role,
-                content=excluded.content,
-                ts=excluded.ts,
-                payload=excluded.payload
-            """,
-            (
-                sess.id,
-                int(msg["id"]),
-                str(msg["role"]),
-                str(msg["content"]),
-                float(msg["ts"]),
-                json.dumps(payload, ensure_ascii=False, default=str),
-            ),
-        )
+        self.store.upsert_message_row(conn, sess.id, msg)
 
     def _persist_event_row(self, conn: sqlite3.Connection, sess: Session, event: dict) -> None:
         if sess.id in self.deleted_session_ids:
             return
-        payload = {k: v for k, v in event.items() if k not in {"seq", "turn_id", "type", "ts"}}
-        conn.execute(
-            """
-            INSERT INTO events (session_id, seq, turn_id, type, ts, payload)
-            VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(session_id, seq) DO UPDATE SET
-                turn_id=excluded.turn_id,
-                type=excluded.type,
-                ts=excluded.ts,
-                payload=excluded.payload
-            """,
-            (
-                sess.id,
-                int(event["seq"]),
-                str(event["turn_id"]),
-                str(event["type"]),
-                float(event["ts"]),
-                json.dumps(payload, ensure_ascii=False, default=str),
-            ),
-        )
+        self.store.upsert_event_row(conn, sess.id, event)
+
+    def _session_store_payload(self, sess: Session) -> dict:
+        return {
+            "id": sess.id,
+            "title": sess.title,
+            "cwd": sess.cwd,
+            "created_at": sess.created_at,
+            "updated_at": sess.updated_at,
+            "status": sess.status,
+            "msg_seq": sess.msg_seq,
+            "last_error": sess.last_error,
+        }
 
     def _persist_session_and_message(self, sess: Session, msg: Optional[dict] = None) -> None:
         if sess.id in self.deleted_session_ids:
@@ -546,6 +428,72 @@ class AgentManager:
             }
         return None
 
+    def load_continuation_state(self, sess: Session, current_turn_id: Optional[str] = None) -> dict:
+        state = self.store.load_agent_state(sess.id)
+        if state is not None:
+            return state
+        excluded_turn_id = current_turn_id or str((sess.partial or {}).get("turn_id") or "")
+        return build_state_from_messages(
+            sess.messages,
+            llm_no=self.selected_llm_no,
+            exclude_turn_id=excluded_turn_id or None,
+        )
+
+    def persist_continuation_state(self, sess: Session) -> None:
+        agent = getattr(sess, "agent", None)
+        if agent is None or sess.id in self.deleted_session_ids:
+            return
+        state = capture_agent_state(agent)
+        if state.get("llm_no") is None and self.selected_llm_no is not None:
+            state["llm_no"] = self.selected_llm_no
+        self.store.upsert_agent_state(sess.id, state)
+
+    def _wait_for_agent_task_completion(self, agent: Any, timeout: float = 30.0) -> None:
+        task_queue = getattr(agent, "task_queue", None)
+        if task_queue is None:
+            return
+        if not hasattr(task_queue, "unfinished_tasks"):
+            return
+        deadline = time.time() + timeout
+        while int(getattr(task_queue, "unfinished_tasks", 0) or 0) > 0:
+            if time.time() >= deadline:
+                return
+            time.sleep(0.01)
+
+    def _persist_session_llm_state(self, sess: Session, llm_no: int) -> None:
+        if sess.agent is not None:
+            self.persist_continuation_state(sess)
+            state = self.store.load_agent_state(sess.id) or {}
+        else:
+            state = self.load_continuation_state(sess)
+        state["llm_no"] = int(llm_no)
+        self.store.upsert_agent_state(sess.id, state)
+
+    def _install_handler_working_restore_hook(self, agent: Any, state: dict) -> None:
+        if agent is None:
+            return
+        working = dict((state or {}).get("working") or {})
+        setattr(agent, "_heroui_restore_working_state", {"working": working})
+        module_name = str(getattr(type(agent), "__module__", "") or "")
+        agent_module = sys.modules.get(module_name)
+        if agent_module is None or not hasattr(agent_module, "GenericAgentHandler"):
+            return
+        if getattr(agent_module, "_heroui_handler_restore_installed", False):
+            return
+        original_handler_factory = getattr(agent_module, "GenericAgentHandler")
+
+        def heroui_handler_factory(*args, **kwargs):
+            handler = original_handler_factory(*args, **kwargs)
+            target_agent = args[0] if args else kwargs.get("agent")
+            pending_state = getattr(target_agent, "_heroui_restore_working_state", None)
+            if pending_state is not None:
+                restore_handler_working(handler, pending_state)
+            return handler
+
+        setattr(agent_module, "_heroui_original_GenericAgentHandler", original_handler_factory)
+        setattr(agent_module, "_heroui_handler_restore_installed", True)
+        setattr(agent_module, "GenericAgentHandler", heroui_handler_factory)
+
     def make_agent(self, sess: Session):
         root = self.ensure_ga_import_path()
         old_cwd = os.getcwd()
@@ -554,7 +502,10 @@ class AgentManager:
             agentmain = importlib.import_module("agentmain")
             GA = getattr(agentmain, "GenericAgent")
             agent = GA()
-            if self.selected_llm_no is not None and hasattr(agent, "next_llm"):
+            state = self.load_continuation_state(sess)
+            restore_agent_state(agent, state)
+            self._install_handler_working_restore_hook(agent, state)
+            if state.get("llm_no") is None and self.selected_llm_no is not None and hasattr(agent, "next_llm"):
                 agent.next_llm(self.selected_llm_no)
             agent.inc_out = True
             agent.verbose = True
@@ -612,6 +563,8 @@ class AgentManager:
             self.config["activeProfileId"] = str(next_llm_no)
             if sess and sess.agent and hasattr(sess.agent, "next_llm"):
                 sess.agent.next_llm(next_llm_no)
+            if sess:
+                self._persist_session_llm_state(sess, next_llm_no)
 
         return {"ok": True, "activeProfileId": str(next_llm_no), "profiles": self.list_model_profiles()}
 
@@ -740,9 +693,15 @@ class AgentManager:
             replay_prompt = str(target_user_message.get("content") or "")
             replay_images = list(target_user_message.get("image_ids") or [])
             replay_turn_no = int(target_user_message.get("id") or 0)
+            truncated_turn_ids = {
+                str(message.get("turn_id") or "")
+                for message in sess.messages
+                if int(message.get("id", 0)) >= replay_turn_no
+            }
+            truncated_turn_ids.discard("")
 
             sess.messages = [message for message in sess.messages if int(message.get("id", 0)) < replay_turn_no]
-            sess.events = [event for event in sess.events if str(event.get("turn_id") or "") != turn_id]
+            sess.events = [event for event in sess.events if str(event.get("turn_id") or "") not in truncated_turn_ids]
             sess.msg_seq = replay_turn_no - 1
             sess.event_seq = max((int(event.get("seq", 0)) for event in sess.events), default=0)
             sess.partial = None
@@ -754,8 +713,19 @@ class AgentManager:
 
             with self._connect() as conn:
                 conn.execute("DELETE FROM messages WHERE session_id = ? AND id >= ?", (sid, replay_turn_no))
-                conn.execute("DELETE FROM events WHERE session_id = ? AND turn_id = ?", (sid, turn_id))
+                if truncated_turn_ids:
+                    placeholders = ",".join("?" for _ in truncated_turn_ids)
+                    conn.execute(
+                        f"DELETE FROM events WHERE session_id = ? AND turn_id IN ({placeholders})",
+                        (sid, *sorted(truncated_turn_ids)),
+                    )
                 conn.commit()
+            previous_state = self.store.load_agent_state(sid) or {}
+            replay_llm_no = previous_state.get("llm_no") if previous_state.get("llm_no") is not None else self.selected_llm_no
+            self.store.upsert_agent_state(
+                sid,
+                build_state_from_messages(sess.messages, llm_no=replay_llm_no),
+            )
 
             replay_user_message = self.add_message(
                 sess,
@@ -863,11 +833,7 @@ class AgentManager:
             if sess.agent and hasattr(sess.agent, "abort"):
                 with contextlib.suppress(Exception):
                     sess.agent.abort()
-        with self._connect() as conn:
-            conn.execute("DELETE FROM events WHERE session_id = ?", (sid,))
-            conn.execute("DELETE FROM messages WHERE session_id = ?", (sid,))
-            conn.execute("DELETE FROM sessions WHERE id = ?", (sid,))
-            conn.commit()
+        self.store.delete_session(sid)
         emit_session_state(sess, "closed")
         return {"ok": True, "sessionId": sid}
 
@@ -925,6 +891,7 @@ class AgentManager:
         pending_terminal_event: Optional[dict] = None
         saw_structured_output_event = False
         saw_human_intervention = False
+        agent = None
 
         def remember_stream_event(event_type: str) -> None:
             nonlocal emitted_final_event, emitted_terminal_event
@@ -1003,11 +970,21 @@ class AgentManager:
                     )
                 if turn_started_at <= 0:
                     turn_started_at = time.time()
+            created_agent = False
             if sess.agent is None:
                 sess.agent = self.make_agent(sess)
+                created_agent = True
             agent = sess.agent
+            if not created_agent:
+                state = self.load_continuation_state(sess, current_turn_id=turn_id)
+                restore_agent_state(agent, state)
+                if state.get("llm_no") is None and self.selected_llm_no is not None and hasattr(agent, "next_llm"):
+                    agent.next_llm(self.selected_llm_no)
+            state = self.load_continuation_state(sess, current_turn_id=turn_id)
+            self._install_handler_working_restore_hook(agent, state)
             if hasattr(agent, "put_task"):
                 display_q = agent.put_task(prompt, images=images or [])
+                restore_handler_working(getattr(agent, "handler", None), state)
                 pieces = []
                 import queue as _queue
                 while True:
@@ -1088,6 +1065,7 @@ class AgentManager:
                 full = "GenericAgent object has no put_task/run method"
             if not full:
                 full = "(completed)"
+            self._wait_for_agent_task_completion(agent)
             if sess.cancel_requested:
                 with self.lock:
                     sess.partial = None
@@ -1097,6 +1075,7 @@ class AgentManager:
                         sess.status = "cancelled"
                     sess.updated_at = time.time()
                     self._persist_session(sess)
+                    self.persist_continuation_state(sess)
                 emit_session_state(sess, "cancelled")
                 return
             with self.lock:
@@ -1131,9 +1110,12 @@ class AgentManager:
                 sess.status = "idle"
                 sess.last_error = ""
                 self._persist_session(sess)
+                self.persist_continuation_state(sess)
             emit_session_state(sess, "idle")
         except Exception as e:
             tb = traceback.format_exc()
+            with contextlib.suppress(Exception):
+                self._wait_for_agent_task_completion(agent)
             with self.lock:
                 sess.partial = None
                 sess.status = "error"
@@ -1151,6 +1133,7 @@ class AgentManager:
                     source="error",
                 )
                 self._persist_session(sess)
+                self.persist_continuation_state(sess)
             print(tb, file=sys.stderr)
             emit_session_state(sess, "error")
 
