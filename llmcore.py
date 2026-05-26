@@ -617,24 +617,36 @@ class LLMSession(BaseSession):
     def raw_ask(self, messages): return (yield from _openai_stream(self, messages))
     def make_messages(self, raw_list): return _msgs_claude2oai(_fix_messages(raw_list))
 
+def _content_blocks(content):
+    if isinstance(content, list): return list(content)
+    if isinstance(content, dict): return [dict(content)]
+    return [{"type": "text", "text": str(content)}]
+
 def _fix_messages(messages):
     """修复 messages 符合 Claude API：交替、tool_use/tool_result 配对"""
     if not messages: return messages
-    _wrap = lambda c: c if isinstance(c, list) else [{"type": "text", "text": str(c)}]
     fixed = []
     for m in messages:
-        if fixed and m['role'] == fixed[-1]['role']:
-            fixed[-1] = {**fixed[-1], 'content': _wrap(fixed[-1]['content']) + [{"type": "text", "text": "\n"}] + _wrap(m['content'])}; continue
-        if fixed and fixed[-1]['role'] == 'assistant' and m['role'] == 'user':
+        role = m.get('role', 'user')
+        content = _content_blocks(m.get('content', ''))
+        m = {**m, 'content': content}
+        if fixed and role == fixed[-1]['role']:
+            fixed[-1] = {**fixed[-1], 'content': fixed[-1]['content'] + [{"type": "text", "text": "\n"}] + content}; continue
+        if fixed and fixed[-1]['role'] == 'assistant' and role == 'user':
             uses = [b.get('id') for b in fixed[-1].get('content', []) if isinstance(b, dict) and b.get('type') == 'tool_use' and b.get('id')]
-            has = {b.get('tool_use_id') for b in _wrap(m['content']) if isinstance(b, dict) and b.get('type') == 'tool_result'}
+            has = {b.get('tool_use_id') for b in content if isinstance(b, dict) and b.get('type') == 'tool_result'}
             miss = [uid for uid in uses if uid not in has]
-            if miss: m = {**m, 'content': [{"type": "tool_result", "tool_use_id": uid, "content": "(error)"} for uid in miss] + _wrap(m['content'])}
+            if miss:
+                content = [{"type": "tool_result", "tool_use_id": uid, "content": "(error)"} for uid in miss] + content
+                m = {**m, 'content': content}
             orphan = has - set(uses)
-            if orphan: m = {**m, 'content': [{"type":"text","text":str(b.get('content',''))} if isinstance(b,dict) and b.get('type')=='tool_result' and b.get('tool_use_id') in orphan else b for b in _wrap(m['content'])]}
+            if orphan:
+                content = [{"type":"text","text":str(b.get('content',''))} if isinstance(b,dict) and b.get('type')=='tool_result' and b.get('tool_use_id') in orphan else b for b in content]
+                m = {**m, 'content': content}
         fixed.append(m)
     while fixed and fixed[0]['role'] != 'user': fixed.pop(0)
     return fixed
+
 
 class NativeClaudeSession(BaseSession):
     def __init__(self, cfg):
@@ -667,7 +679,6 @@ class NativeClaudeSession(BaseSession):
             claude_tools = openai_tools_to_claude(self.tools)
             tools = [dict(t) for t in claude_tools]; tools[-1]["cache_control"] = {"type": "ephemeral"}
             payload["tools"] = tools
-        else: print("[ERROR] No tools provided for this session.")
         payload['system'] = [{"type": "text", "text": "You are Claude Code, Anthropic's official CLI for Claude.", "cache_control": {"type": "ephemeral"}}]
         if self.system:
             if self.fake_cc_system_prompt: messages[0]["content"].insert(0, {"type": "text", "text": self.system})
