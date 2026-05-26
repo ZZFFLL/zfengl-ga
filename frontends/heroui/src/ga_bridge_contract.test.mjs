@@ -11,6 +11,7 @@ const herouiRoot = new URL("..", import.meta.url);
 const herouiPath = fileURLToPath(herouiRoot);
 const apiPath = join(herouiPath, "src", "api.ts");
 const bridgePath = join(herouiPath, "bridge.py");
+const bridgeEventsPath = join(herouiPath, "bridge_core", "events.py");
 const vitePath = join(herouiPath, "vite.config.ts");
 
 test("HeroUI frontend has a dedicated GenericAgent bridge copy", () => {
@@ -154,14 +155,17 @@ test("HeroUI bridge exposes persisted SSE events with replay cursor", () => {
 
 test("HeroUI bridge maps model deltas, retracts, and process summaries", () => {
   assert.equal(existsSync(bridgePath), true);
+  assert.equal(existsSync(bridgeEventsPath), true);
   const bridge = readFileSync(bridgePath, "utf8");
+  const events = readFileSync(bridgeEventsPath, "utf8");
+  const bridgeAndEvents = `${bridge}\n${events}`;
 
-  assert.match(bridge, /event_type == "llm\.visible_delta"/);
-  assert.match(bridge, /"type": "answer\.delta"/);
-  assert.match(bridge, /"type": "answer\.retract"/);
-  assert.match(bridge, /thinking_summary/);
-  assert.match(bridge, /retract_response_id/);
-  assert.match(bridge, /_round_label\(ga_turn\)/);
+  assert.match(bridgeAndEvents, /event_type == "llm\.visible_delta"/);
+  assert.match(bridgeAndEvents, /"type": "answer\.delta"/);
+  assert.match(bridgeAndEvents, /"type": "answer\.retract"/);
+  assert.match(bridgeAndEvents, /thinking_summary/);
+  assert.match(bridgeAndEvents, /retract_response_id/);
+  assert.match(bridgeAndEvents, /round_label\(ga_turn\)/);
 });
 
 test("HeroUI bridge live SSE filters by session before advancing cursor", () => {

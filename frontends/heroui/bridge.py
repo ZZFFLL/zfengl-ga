@@ -27,9 +27,8 @@ WS API:
 """
 from __future__ import annotations
 
-import asyncio, contextlib, importlib, json, os, re, sqlite3, sys
+import asyncio, contextlib, importlib, json, os, sqlite3, sys
 import threading, time, traceback, uuid
-from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
@@ -74,54 +73,38 @@ except ImportError:
         sys.path.insert(0, str(APP_DIR))
     from agent_state import build_state_from_messages, capture_agent_state, restore_agent_state, restore_handler_working
 
+try:
+    from .bridge_core.titles import (
+        build_initial_title_prompt,
+        build_title_regeneration_prompt,
+        generate_title_with_current_model,
+        is_untitled_session_title,
+        resolve_llm_config_name,
+    )
+except ImportError:
+    if str(APP_DIR) not in sys.path:
+        sys.path.insert(0, str(APP_DIR))
+    from bridge_core.titles import (
+        build_initial_title_prompt,
+        build_title_regeneration_prompt,
+        generate_title_with_current_model,
+        is_untitled_session_title,
+        resolve_llm_config_name,
+    )
 
-def to_iso_timestamp(value: Any) -> str:
-    try:
-        seconds = float(value)
-    except (TypeError, ValueError):
-        seconds = time.time()
-    return datetime.fromtimestamp(seconds, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+try:
+    from .bridge_core.uploads import normalize_prompt
+except ImportError:
+    if str(APP_DIR) not in sys.path:
+        sys.path.insert(0, str(APP_DIR))
+    from bridge_core.uploads import normalize_prompt
 
-
-def _extract_summary_text(text: str) -> str:
-    raw = (text or "").strip()
-    if not raw:
-        return ""
-    match = re.search(r"<summary>\s*([\s\S]*?)\s*</(?:summary|parameter)>", raw, flags=re.IGNORECASE)
-    if match:
-        return " ".join(match.group(1).split())
-    lines = [line.strip() for line in raw.splitlines() if line.strip()]
-    if not lines:
-        return ""
-    return lines[0]
-
-
-def _round_label(turn_no: int) -> str:
-    return f"第{turn_no}轮"
-
-
-def _ask_user_interaction_payload(raw: dict) -> Optional[dict]:
-    result = raw.get("result")
-    if not isinstance(result, dict):
-        return None
-    intent = str(result.get("intent") or "")
-    status = str(result.get("status") or "")
-    if intent != "HUMAN_INTERVENTION":
-        return None
-    data = result.get("data")
-    payload = data if isinstance(data, dict) else {}
-    candidates = payload.get("candidates") or []
-    if not isinstance(candidates, list):
-        candidates = []
-    candidate_texts = [str(candidate) for candidate in candidates if str(candidate).strip()]
-    if not candidate_texts:
-        return None
-    return {
-        "status": status,
-        "intent": intent,
-        "question": str(payload.get("question") or ""),
-        "candidates": candidate_texts,
-    }
+try:
+    from .bridge_core.events import convert_agent_event as map_agent_event, to_iso_timestamp
+except ImportError:
+    if str(APP_DIR) not in sys.path:
+        sys.path.insert(0, str(APP_DIR))
+    from bridge_core.events import convert_agent_event as map_agent_event, to_iso_timestamp
 
 
 for _s in (sys.stdout, sys.stderr):
@@ -274,159 +257,7 @@ class AgentManager:
         return stored
 
     def convert_agent_event(self, sess: Session, turn_id: str, response_id: str, raw: dict) -> Optional[dict]:
-        event_type = str(raw.get("type") or "")
-        ga_turn = int(raw.get("turn") or 0)
-        created_at = to_iso_timestamp(raw.get("ts") or time.time())
-        tool_name = str(raw.get("tool_name") or "tool")
-        tool_kind = str(raw.get("tool_kind") or "tool")
-        index = int(raw.get("index") or 0) + 1
-        step_id = f"{response_id}:tool:{ga_turn}:{index}"
-        round_label = _round_label(ga_turn) if ga_turn else "GA"
-        tool_title = f"{round_label} 调用了 {tool_name}"
-
-        if event_type == "turn.start":
-            return None
-        if event_type == "llm.start":
-            return {
-                "type": "phase.update",
-                "turn_id": turn_id,
-                "session_id": sess.id,
-                "data": {"phase": "understanding", "label": "正在思考"},
-            }
-        if event_type == "llm.visible_delta":
-            return {
-                "type": "answer.delta",
-                "turn_id": turn_id,
-                "session_id": sess.id,
-                "data": {
-                    "delta": str(raw.get("delta") or ""),
-                    "response_id": response_id,
-                    "created_at": created_at,
-                },
-            }
-        if event_type == "llm.end":
-            if not raw.get("has_tools"):
-                return None
-            text = str(raw.get("text") or "")
-            summary = str(raw.get("summary") or "") or _extract_summary_text(text) or "模型输出"
-            thinking_summary = str(raw.get("thinking_summary") or "")
-            detail = thinking_summary if thinking_summary and thinking_summary != summary else ""
-            return {
-                "type": "timeline.step",
-                "turn_id": turn_id,
-                "session_id": sess.id,
-                "data": {
-                    "id": f"{response_id}:phase:{ga_turn}:llm",
-                    "turn_id": turn_id,
-                    "response_id": response_id,
-                    "kind": "phase",
-                    "title": summary,
-                    "status": "done",
-                    "summary": summary,
-                    "detail": detail,
-                    "elapsed_ms": raw.get("elapsed_ms"),
-                    "default_open": False,
-                    "created_at": created_at,
-                    "retract_response_id": response_id,
-                },
-            }
-        if event_type == "tool.start":
-            data = {
-                "id": step_id,
-                "turn_id": turn_id,
-                "response_id": response_id,
-                "kind": tool_kind,
-                "title": tool_title,
-                "status": "running",
-                "summary": tool_title,
-                "detail": "",
-                "input": json.dumps(raw.get("args") or {}, ensure_ascii=False, indent=2),
-                "tool_name": tool_name,
-                "tool_label": round_label,
-                "created_at": created_at,
-            }
-            interaction = _ask_user_interaction_payload(raw)
-            if interaction is not None:
-                data["interaction"] = interaction
-            return {
-                "type": "timeline.step",
-                "turn_id": turn_id,
-                "session_id": sess.id,
-                "data": data,
-            }
-        if event_type == "tool.delta":
-            return {
-                "type": "timeline.step",
-                "turn_id": turn_id,
-                "session_id": sess.id,
-                "data": {
-                    "id": step_id,
-                    "turn_id": turn_id,
-                    "response_id": response_id,
-                    "kind": tool_kind,
-                    "title": tool_title,
-                    "status": "running",
-                    "summary": tool_title,
-                    "detail": "",
-                    "detail_delta": str(raw.get("delta") or ""),
-                    "tool_name": tool_name,
-                    "tool_label": round_label,
-                    "created_at": created_at,
-                },
-            }
-        if event_type == "tool.end":
-            status = str(raw.get("status") or "done")
-            error = str(raw.get("error") or "")
-            if status == "failed" and not error:
-                error = str(raw.get("result") or "")
-            data = {
-                "id": step_id,
-                "turn_id": turn_id,
-                "response_id": response_id,
-                "kind": tool_kind,
-                "title": tool_title,
-                "status": "failed" if status == "failed" else "done",
-                "summary": tool_title,
-                "detail": str(raw.get("detail") or ""),
-                "output": str(raw.get("output") or ""),
-                "error": error if status == "failed" else "",
-                "elapsed_ms": raw.get("elapsed_ms"),
-                "tool_name": tool_name,
-                "tool_label": round_label,
-                "created_at": created_at,
-            }
-            interaction = _ask_user_interaction_payload(raw)
-            if tool_name == "ask_user":
-                data["default_open"] = interaction is None
-            if interaction is not None:
-                data["interaction"] = interaction
-            return {
-                "type": "timeline.step",
-                "turn_id": turn_id,
-                "session_id": sess.id,
-                "data": data,
-            }
-        if event_type == "turn.end":
-            return None
-        if event_type == "agent.final":
-            return {
-                "type": "answer.final",
-                "turn_id": turn_id,
-                "session_id": sess.id,
-                "data": {
-                    "text": str(raw.get("text") or ""),
-                    "response_id": response_id,
-                    "created_at": created_at,
-                },
-            }
-        if event_type == "agent.done":
-            return {
-                "type": "turn.done",
-                "turn_id": turn_id,
-                "session_id": sess.id,
-                "data": {"ok": True},
-            }
-        return None
+        return map_agent_event(sess.id, turn_id, response_id, raw)
 
     def load_continuation_state(self, sess: Session, current_turn_id: Optional[str] = None) -> dict:
         state = self.store.load_agent_state(sess.id)
@@ -600,8 +431,7 @@ class AgentManager:
         return msg
 
     def _is_untitled_session_title(self, title: str) -> bool:
-        normalized = (title or "").strip().lower()
-        return normalized in {"new chat", "新会话"}
+        return is_untitled_session_title(title)
 
     def _assign_initial_summary_title_if_needed(self, sess: Session) -> None:
         if not self._is_untitled_session_title(sess.title):
@@ -631,16 +461,7 @@ class AgentManager:
             sess.title = title
 
     def _build_initial_title_prompt(self, first_user_message: str, first_assistant_message: str) -> str:
-        return (
-            "请根据下面这组会话开头内容，生成一个简洁中文会话标题。\n"
-            "要求：\n"
-            "1. 只输出标题本身，不要解释。\n"
-            "2. 长度控制在 8 到 20 个中文字符之间。\n"
-            "3. 要综合用户第一条消息和助手第一次正文回复，不要直接照抄用户原句。\n"
-            "4. 不要包含引号、句号、序号、前缀。\n\n"
-            f"用户第一条消息：{' '.join(first_user_message.split())}\n"
-            f"助手第一次正文回复：{' '.join(first_assistant_message.split())}"
-        )
+        return build_initial_title_prompt(first_user_message, first_assistant_message)
 
     def regenerate_session_title(self, sid: str) -> dict:
         with self.lock:
@@ -761,47 +582,19 @@ class AgentManager:
         return {"ok": True, "sessionId": sid, "turnId": turn_id, "seq": seq, "eventSeq": event_seq}
 
     def _build_title_regeneration_prompt(self, user_messages: List[str]) -> str:
-        bullet_lines = [f"{index + 1}. {' '.join(message.split())}" for index, message in enumerate(user_messages)]
-        return (
-            "请根据以下最近 5 轮以内的用户消息，为这个会话生成一个简洁中文标题。\n"
-            "要求：\n"
-            "1. 只输出标题本身，不要解释。\n"
-            "2. 长度控制在 8 到 20 个中文字符之间。\n"
-            "3. 不要包含引号、句号、序号、前缀。\n"
-            "4. 标题要概括主题，不要照抄整句。\n\n"
-            f"用户消息：\n{chr(10).join(bullet_lines)}"
-        )
+        return build_title_regeneration_prompt(user_messages)
 
     def _generate_title_with_current_model(self, prompt: str, llm_no: int) -> str:
-        self.ensure_ga_import_path()
-        agentmain = importlib.import_module("agentmain")
-        agent = agentmain.GenericAgent()
-        agent.next_llm(llm_no)
-        cfg_name = self._resolve_llm_config_name(agent, llm_no)
-        raw = fast_ask(prompt, cfg_name)
-        title = " ".join(str(raw or "").strip().replace("\n", " ").split())
-        title = title.strip("“”\"'`·-:：,.，。；; ")
-        return title[:40]
+        return generate_title_with_current_model(
+            prompt,
+            llm_no,
+            self.ensure_ga_import_path,
+            fast_ask,
+            reload_mykeys,
+        )
 
     def _resolve_llm_config_name(self, agent: Any, llm_no: int) -> str:
-        mykeys, _ = reload_mykeys()
-        entries = [
-            (key, cfg)
-            for key, cfg in mykeys.items()
-            if any(marker in key for marker in ("api", "config", "cookie"))
-        ]
-        if not entries:
-            raise ValueError("No usable LLM configs found in mykey")
-
-        active_name = ""
-        with contextlib.suppress(Exception):
-            active_name = str(getattr(agent.llmclient.backend, "name", "") or "").strip()
-        if active_name:
-            for key, cfg in entries:
-                if str(cfg.get("name") or "").strip() == active_name:
-                    return key
-
-        return entries[llm_no % len(entries)][0]
+        return resolve_llm_config_name(agent, llm_no, reload_mykeys)
 
     def create_session(self, cwd: Optional[str] = None, title: str = "New chat") -> Session:
         sid = "sess-" + uuid.uuid4().hex[:12]
@@ -1173,81 +966,6 @@ class AgentManager:
             self._persist_session(sess)
         emit_session_state(sess, "cancelled")
         return {"ok": True, "sessionId": sid}
-
-
-import base64
-import tempfile
-
-# Shared temp dir for image uploads (persists for process lifetime)
-_UPLOAD_DIR = Path(tempfile.gettempdir()) / "ga_web2_uploads"
-_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-
-
-def _save_image_data(data_url: str, img_id: str) -> str:
-    """Save a data URL to disk, return absolute path."""
-    # data:image/png;base64,xxxxx
-    if "," in data_url:
-        header, b64 = data_url.split(",", 1)
-    else:
-        b64 = data_url
-        header = ""
-    ext = "png"
-    if "jpeg" in header or "jpg" in header:
-        ext = "jpg"
-    elif "webp" in header:
-        ext = "webp"
-    elif "gif" in header:
-        ext = "gif"
-    fpath = _UPLOAD_DIR / f"{img_id}.{ext}"
-    fpath.write_bytes(base64.b64decode(b64))
-    return str(fpath)
-
-
-def normalize_prompt(prompt: Any, images: Optional[list] = None):
-    """Normalize prompt and images.
-
-    images: list of dicts {"id": "img-xxx", "dataUrl": "data:..."} or plain data URLs.
-    Returns: (prompt_text_with_image_tags, image_ids_list)
-    """
-    images = list(images or [])
-    if isinstance(prompt, list):
-        text_parts = []
-        for part in prompt:
-            if isinstance(part, str):
-                text_parts.append(part)
-            elif isinstance(part, dict):
-                if part.get("type") in ("text", "input_text"):
-                    text_parts.append(str(part.get("text") or part.get("content") or ""))
-                elif part.get("type") in ("image", "input_image"):
-                    url = part.get("image_url") or part.get("url") or part.get("data")
-                    if isinstance(url, dict):
-                        url = url.get("url")
-                    if url:
-                        images.append(url)
-        prompt = "\n".join([p for p in text_parts if p])
-
-    # Process images: save to disk, build [image:path] tags
-    image_ids = []
-    image_tags = []
-    for img in images:
-        if isinstance(img, dict):
-            img_id = img.get("id") or f"img-{uuid.uuid4().hex[:8]}"
-            data_url = img.get("dataUrl") or img.get("data_url") or ""
-        else:
-            # Plain data URL string
-            img_id = f"img-{uuid.uuid4().hex[:8]}"
-            data_url = str(img)
-        if data_url:
-            path = _save_image_data(data_url, img_id)
-            image_tags.append(f"[image:{path}]")
-            image_ids.append(img_id)
-
-    # Append image tags to prompt
-    final_prompt = str(prompt or "")
-    if image_tags:
-        final_prompt = final_prompt + "\n" + "\n".join(image_tags)
-
-    return final_prompt, image_ids
 
 
 manager = AgentManager()

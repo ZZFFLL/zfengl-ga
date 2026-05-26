@@ -6,6 +6,7 @@ const app = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
 const api = readFileSync(new URL("./api.ts", import.meta.url), "utf8");
 const state = readFileSync(new URL("./state.ts", import.meta.url), "utf8");
 const bridge = readFileSync(new URL("../bridge.py", import.meta.url), "utf8");
+const bridgeEvents = readFileSync(new URL("../bridge_core/events.py", import.meta.url), "utf8");
 const components = [
   "components/ChatSurface.tsx",
   "components/Composer.tsx",
@@ -431,14 +432,16 @@ test("completed active turns move into history so tool timeline collapses immedi
 });
 
 test("model process cards stay collapsed and final answers stay normal messages", () => {
-  assert.match(bridge, /event_type == "llm\.visible_delta"/);
-  assert.match(bridge, /"type": "answer\.delta"/);
-  assert.match(bridge, /"type": "answer\.retract"/);
-  assert.match(bridge, /"type": "answer\.final"/);
-  assert.match(bridge, /default_open/);
-  assert.match(bridge, /thinking_summary/);
-  assert.doesNotMatch(bridge, /模型输出：/);
-  assert.doesNotMatch(bridge, /摘要：/);
+  const bridgeEventSource = `${bridge}\n${bridgeEvents}`;
+
+  assert.match(bridgeEventSource, /event_type == "llm\.visible_delta"/);
+  assert.match(bridgeEventSource, /"type": "answer\.delta"/);
+  assert.match(bridgeEventSource, /"type": "answer\.retract"/);
+  assert.match(bridgeEventSource, /"type": "answer\.final"/);
+  assert.match(bridgeEventSource, /default_open/);
+  assert.match(bridgeEventSource, /thinking_summary/);
+  assert.doesNotMatch(bridgeEventSource, /模型输出：/);
+  assert.doesNotMatch(bridgeEventSource, /摘要：/);
   assert.match(components, /isModelSummaryStep/);
   assert.match(components, /Boolean\(step\.default_open && !isModelSummaryStep\(step\)\)/);
   assert.match(components, /readStepHeadline/);
