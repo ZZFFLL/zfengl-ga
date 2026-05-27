@@ -2046,7 +2046,6 @@ textarea {
   height: 100vh;
   overflow: hidden;
   background: #f8fafc;
-  transition: grid-template-columns 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .sop-workspace.has-preview {
@@ -2204,6 +2203,8 @@ textarea {
 .sop-editor-panel {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+  align-self: stretch;
+  height: 100%;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
