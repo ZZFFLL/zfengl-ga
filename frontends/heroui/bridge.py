@@ -27,32 +27,20 @@ WS API:
 """
 from __future__ import annotations
 
-import asyncio, contextlib, importlib, json, os, sqlite3, sys
+import contextlib, importlib, json, os, sqlite3, sys
 import threading, time, traceback, uuid
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
-from aiohttp import web, WSMsgType
+from typing import Any, Dict, List, Optional
+from aiohttp import web
 
 APP_DIR = Path(__file__).resolve().parent
 
-
-def find_default_ga_root() -> Path:
-    candidates = [
-        APP_DIR / "..",
-        APP_DIR / ".." / "..",
-        APP_DIR / ".." / "GenericAgent",
-        APP_DIR / ".." / ".." / "GenericAgent",
-    ]
-    for p in candidates:
-        root = p.resolve()
-        if (root / "agentmain.py").exists():
-            return root
-    return APP_DIR.parent.parent.resolve()
-
-
-DEFAULT_GA_ROOT = find_default_ga_root()
-DEFAULT_HEROUI_DB_PATH = APP_DIR / ".data" / "sessions.sqlite3"
+try:
+    from .bridge_core.session import DEFAULT_GA_ROOT, DEFAULT_HEROUI_DB_PATH, Session, find_default_ga_root
+except ImportError:
+    if str(APP_DIR) not in sys.path:
+        sys.path.insert(0, str(APP_DIR))
+    from bridge_core.session import DEFAULT_GA_ROOT, DEFAULT_HEROUI_DB_PATH, Session, find_default_ga_root
 
 if str(DEFAULT_GA_ROOT) not in sys.path:
     sys.path.insert(0, str(DEFAULT_GA_ROOT))
@@ -106,6 +94,20 @@ except ImportError:
         sys.path.insert(0, str(APP_DIR))
     from bridge_core.events import convert_agent_event as map_agent_event, to_iso_timestamp
 
+try:
+    from .bridge_core.streaming import EventStreamHub, WsHub
+except ImportError:
+    if str(APP_DIR) not in sys.path:
+        sys.path.insert(0, str(APP_DIR))
+    from bridge_core.streaming import EventStreamHub, WsHub
+
+try:
+    from .bridge_core.routes import BridgeRoutes
+except ImportError:
+    if str(APP_DIR) not in sys.path:
+        sys.path.insert(0, str(APP_DIR))
+    from bridge_core.routes import BridgeRoutes
+
 
 for _s in (sys.stdout, sys.stderr):
     with contextlib.suppress(Exception):
@@ -116,25 +118,6 @@ for _s in (sys.stdout, sys.stderr):
 # Agent management layer
 # ---------------------------------------------------------------------------
 
-@dataclass
-class Session:
-    id: str
-    title: str = "New chat"
-    cwd: str = ""
-    created_at: float = field(default_factory=time.time)
-    updated_at: float = field(default_factory=time.time)
-    messages: List[dict] = field(default_factory=list)
-    events: List[dict] = field(default_factory=list)
-    msg_seq: int = 0
-    event_seq: int = 0
-    partial: Optional[dict] = None
-    status: str = "idle"  # idle|running|error|cancelled
-    agent: Any = None
-    thread: Optional[threading.Thread] = None
-    cancel_requested: bool = False
-    last_error: str = ""
-
-
 class AgentManager:
     def __init__(self, db_path: Optional[str] = None):
         self.lock = threading.RLock()
@@ -143,7 +126,7 @@ class AgentManager:
         self.selected_llm_no: Optional[int] = None
         self.sessions: Dict[str, Session] = {}
         self.active_session_id: Optional[str] = None
-        self.deleted_session_ids: Set[str] = set()
+        self.deleted_session_ids: set[str] = set()
         self.db_path = Path(db_path or os.environ.get("HEROUI_BRIDGE_DB") or DEFAULT_HEROUI_DB_PATH)
         self.store = SessionStore(self.db_path)
         self._load_sessions()
@@ -975,65 +958,17 @@ manager = AgentManager()
 # Transport layer: WS notification only
 # ---------------------------------------------------------------------------
 
-class WsHub:
-    def __init__(self):
-        self.websockets: Set[web.WebSocketResponse] = set()
-        self.loop: Optional[asyncio.AbstractEventLoop] = None
-
-    def emit(self, obj: dict):
-        if self.loop and self.loop.is_running():
-            asyncio.run_coroutine_threadsafe(self._broadcast(obj), self.loop)
-
-    async def _broadcast(self, obj: dict):
-        data = json.dumps(obj, ensure_ascii=False, default=str)
-        dead = set()
-        for ws in list(self.websockets):
-            try:
-                await ws.send_str(data)
-            except Exception:
-                dead.add(ws)
-        self.websockets.difference_update(dead)
-
-
 hub = WsHub()
 
 
-class EventStreamHub:
-    def __init__(self):
-        self.loop: Optional[asyncio.AbstractEventLoop] = None
-        self.subscribers: Dict[asyncio.Queue, tuple[str, str]] = {}
-
-    def subscribe(self, session_id: str, turn_id: str = "") -> asyncio.Queue:
-        queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
-        self.subscribers[queue] = (str(session_id or ""), str(turn_id or ""))
-        return queue
-
-    def unsubscribe(self, queue: asyncio.Queue) -> None:
-        self.subscribers.pop(queue, None)
-
-    def publish(self, event: dict) -> None:
-        if self.loop and self.loop.is_running():
-            asyncio.run_coroutine_threadsafe(self._publish(dict(event)), self.loop)
-
-    async def _publish(self, event: dict) -> None:
-        dead = set()
-        for queue, (session_id, turn_id) in list(self.subscribers.items()):
-            if str(event.get("session_id") or "") != session_id:
-                continue
-            if turn_id and event.get("turn_id") != turn_id:
-                continue
-            try:
-                if queue.full():
-                    with contextlib.suppress(asyncio.QueueEmpty):
-                        queue.get_nowait()
-                queue.put_nowait(event)
-            except Exception:
-                dead.add(queue)
-        for queue in dead:
-            self.unsubscribe(queue)
-
-
 event_hub = EventStreamHub()
+
+
+def _manager_provider():
+    return manager
+
+
+routes = BridgeRoutes(_manager_provider, hub, event_hub, APP_DIR)
 
 
 def emit_session_state(sess: Session, state_name: str):
@@ -1049,310 +984,79 @@ def emit_session_state(sess: Session, state_name: str):
 
 
 async def ws_handler(request):
-    ws = web.WebSocketResponse(heartbeat=30)
-    await ws.prepare(request)
-    hub.websockets.add(ws)
-    await ws.send_str(json.dumps({
-        "type": "bridge-ready",
-        "gaRoot": manager.ga_root,
-        "mykeyPath": manager.mykey_path,
-        "http": True,
-        "wsEventsOnly": True,
-    }, ensure_ascii=False))
-    async for msg in ws:
-        if msg.type == WSMsgType.TEXT:
-            # WS is intentionally not a data/command channel anymore.
-            with contextlib.suppress(Exception):
-                data = json.loads(msg.data)
-                if data.get("action") == "ping":
-                    await ws.send_str(json.dumps({"type": "pong", "ts": time.time()}, ensure_ascii=False))
-    hub.websockets.discard(ws)
-    return ws
+    return await routes.ws_handler(request)
 
 
 # ---------------------------------------------------------------------------
 # Transport layer: HTTP command/data API
 # ---------------------------------------------------------------------------
 
-def cors_headers():
-    return {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type",
-    }
-
-
-@web.middleware
-async def cors_middleware(request, handler):
-    if request.method == "OPTIONS":
-        return web.Response(status=204, headers=cors_headers())
-    resp = await handler(request)
-    for k, v in cors_headers().items():
-        resp.headers[k] = v
-    return resp
-
-
-def json_ok(data: dict, status: int = 200):
-    return web.json_response(data, status=status, headers=cors_headers(), dumps=lambda x: json.dumps(x, ensure_ascii=False, default=str))
-
-
-def sse_format_event(event: dict) -> bytes:
-    data = json.dumps(event, ensure_ascii=False, default=str)
-    return f'id: {event["seq"]}\nevent: message\ndata: {data}\n\n'.encode("utf-8")
-
-
-async def sse_write_event(response: web.StreamResponse, event: dict) -> None:
-    await response.write(sse_format_event(event))
-    with contextlib.suppress(Exception):
-        await response.drain()
-
-
-def parse_event_cursor(value: Any) -> int:
-    try:
-        return max(0, int(value or 0))
-    except (TypeError, ValueError):
-        return 0
-
-
-def parse_positive_int(value: Any, default: int) -> int:
-    try:
-        parsed = int(value or default)
-    except (TypeError, ValueError):
-        return default
-    return parsed if parsed > 0 else default
-
-
-async def read_json(request) -> dict:
-    if request.can_read_body:
-        try:
-            data = await request.json()
-            return data if isinstance(data, dict) else {}
-        except Exception:
-            return {}
-    return {}
-
-
 async def status_handler(request):
-    return json_ok({
-        "ok": True,
-        "running": True,
-        "ready": True,
-        "gaRoot": manager.ga_root,
-        "mykeyPath": manager.mykey_path,
-        "sessionCount": len(manager.sessions),
-        "activeSessionId": manager.active_session_id,
-        "ws": "/ws",
-        "transport": {"http": True, "wsEventsOnly": True},
-    })
+    return await routes.status_handler(request)
 
 
 async def get_config_handler(request):
-    return json_ok({"gaRoot": manager.ga_root, "mykeyPath": manager.mykey_path, "config": manager.config})
+    return await routes.get_config_handler(request)
 
 
 async def save_config_handler(request):
-    data = await read_json(request)
-    cfg = data.get("config", data)
-    if isinstance(cfg, dict):
-        manager.config.update(cfg)
-    return json_ok({"ok": True, "gaRoot": manager.ga_root, "mykeyPath": manager.mykey_path, "config": manager.config})
+    return await routes.save_config_handler(request)
 
 
 async def model_profiles_handler(request):
-    return json_ok({"profiles": manager.list_model_profiles(), "activeProfileId": manager.config.get("activeProfileId")})
+    return await routes.model_profiles_handler(request)
 
 
 async def switch_model_profile_handler(request):
-    data = await read_json(request)
-    profile_id = data.get("profileId", data.get("id"))
-    session_id = data.get("sessionId")
-    return json_ok(manager.switch_model_profile(profile_id, session_id if isinstance(session_id, str) and session_id else None))
+    return await routes.switch_model_profile_handler(request)
 
 
 async def list_sessions_handler(request):
-    with manager.lock:
-        sessions = sorted(
-            (manager.snapshot(s, include_messages=False) for s in manager.sessions.values()),
-            key=lambda session: session["updatedAt"],
-            reverse=True,
-        )
-    return json_ok({"sessions": sessions, "activeSessionId": manager.active_session_id})
+    return await routes.list_sessions_handler(request)
 
 
 async def new_session_handler(request):
-    data = await read_json(request)
-    title = data.get("title") if isinstance(data.get("title"), str) else "New chat"
-    sess = manager.create_session(cwd=data.get("cwd") or data.get("path"), title=title)
-    return json_ok({"ok": True, "sessionId": sess.id, "session": manager.snapshot(sess)}, status=201)
+    return await routes.new_session_handler(request)
 
 
 async def get_session_handler(request):
-    sid = request.match_info["sid"]
-    sess = manager.get_session(sid)
-    return json_ok({
-        "sessionId": sid,
-        "session": manager.snapshot(sess),
-        "messages": list(sess.messages),
-        "events": list(sess.events),
-        "eventSeq": sess.event_seq,
-        "partial": sess.partial,
-    })
+    return await routes.get_session_handler(request)
 
 
 async def delete_session_handler(request):
-    sid = request.match_info["sid"]
-    return json_ok(manager.delete_session(sid))
+    return await routes.delete_session_handler(request)
 
 
 async def regenerate_session_title_handler(request):
-    sid = request.match_info["sid"]
-    return json_ok(manager.regenerate_session_title(sid))
+    return await routes.regenerate_session_title_handler(request)
 
 
 async def replay_turn_handler(request):
-    sid = request.match_info["sid"]
-    data = await read_json(request)
-    turn_id = str(data.get("turnId") or data.get("turn_id") or "")
-    return json_ok(manager.replay_turn(sid, turn_id))
+    return await routes.replay_turn_handler(request)
 
 
 async def prompt_handler(request):
-    sid = request.match_info["sid"]
-    data = await read_json(request)
-    prompt = data.get("prompt", data.get("content", data.get("message", "")))
-    images = data.get("images") or []
-    return json_ok(manager.submit_prompt(sid, prompt, images))
+    return await routes.prompt_handler(request)
 
 
 async def messages_handler(request):
-    sid = request.match_info["sid"]
-    after = parse_event_cursor(request.query.get("after") or request.query.get("afterId"))
-    limit = parse_positive_int(request.query.get("limit"), 200)
-    after_event = parse_event_cursor(request.query.get("after_event") or request.query.get("afterEvent"))
-    return json_ok(manager.messages(sid, after=after, limit=limit, after_event=after_event))
+    return await routes.messages_handler(request)
 
 
 async def events_handler(request):
-    sid = request.match_info["sid"]
-    turn_id = str(request.query.get("turn_id") or "")
-    query_after = parse_event_cursor(request.query.get("after_event") or request.query.get("afterEvent"))
-    header_after = parse_event_cursor(request.headers.get("Last-Event-ID"))
-    after_event = max(query_after, header_after)
-    queue = event_hub.subscribe(sid, turn_id)
-    try:
-        with manager.lock:
-            sess = manager.sessions.get(sid)
-            if not sess:
-                raise web.HTTPNotFound(text=json.dumps({"error": f"session not found: {sid}"}, ensure_ascii=False), content_type="application/json")
-            replay_events = [
-                event
-                for event in sess.events
-                if int(event.get("seq", 0)) > after_event and (not turn_id or event.get("turn_id") == turn_id)
-            ]
-
-        response = web.StreamResponse(
-            status=200,
-            headers={
-                **cors_headers(),
-                "Content-Type": "text/event-stream",
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Accel-Buffering": "no",
-            },
-        )
-        await response.prepare(request)
-
-        cursor = after_event
-        for event in replay_events:
-            cursor = max(cursor, int(event.get("seq", 0)))
-            await sse_write_event(response, event)
-            if turn_id and event.get("type") in {"turn.done", "turn.error"}:
-                return response
-
-        while True:
-            try:
-                event = await asyncio.wait_for(queue.get(), timeout=15)
-            except asyncio.TimeoutError:
-                await response.write(b": keep-alive\n\n")
-                continue
-            if str(event.get("session_id") or "") != sid:
-                continue
-            if turn_id and event.get("turn_id") != turn_id:
-                continue
-            event_seq = parse_event_cursor(event.get("seq"))
-            if event_seq <= cursor:
-                continue
-            cursor = event_seq
-            await sse_write_event(response, event)
-            if turn_id and event.get("type") in {"turn.done", "turn.error"}:
-                return response
-    except (asyncio.CancelledError, ConnectionResetError, BrokenPipeError):
-        raise
-    finally:
-        event_hub.unsubscribe(queue)
+    return await routes.events_handler(request)
 
 
 async def cancel_handler(request):
-    sid = request.match_info["sid"]
-    return json_ok(manager.cancel(sid))
+    return await routes.cancel_handler(request)
 
 
 async def path_open_handler(request):
-    data = await read_json(request)
-    kind = data.get("kind", "")
-    if kind == "mykey":
-        target = Path(manager.ga_root) / "mykey.py"
-    else:
-        target = Path(data.get("path") or data.get("target") or manager.ga_root)
-    target = target.resolve()
-    if not target.exists():
-        return json_ok({"ok": False, "error": f"File not found: {target}"})
-    # Actually open the file with the system default editor
-    import subprocess, platform
-    if platform.system() == "Windows":
-        os.startfile(str(target))
-    elif platform.system() == "Darwin":
-        subprocess.Popen(["open", str(target)])
-    else:
-        subprocess.Popen(["xdg-open", str(target)])
-    return json_ok({"ok": True, "path": str(target)})
+    return await routes.path_open_handler(request)
 
 
 def create_app():
-    app = web.Application(middlewares=[cors_middleware])
-    app.router.add_get("/ws", ws_handler)
-    app.router.add_get("/status", status_handler)
-    app.router.add_get("/config", get_config_handler)
-    app.router.add_post("/config", save_config_handler)
-    app.router.add_get("/model-profiles", model_profiles_handler)
-    app.router.add_post("/model-profile", switch_model_profile_handler)
-    app.router.add_get("/sessions", list_sessions_handler)
-    app.router.add_post("/session/new", new_session_handler)
-    app.router.add_get("/session/{sid}", get_session_handler)
-    app.router.add_delete("/session/{sid}", delete_session_handler)
-    app.router.add_post("/session/{sid}/title/regenerate", regenerate_session_title_handler)
-    app.router.add_post("/session/{sid}/turn/replay", replay_turn_handler)
-    app.router.add_post("/session/{sid}/prompt", prompt_handler)
-    app.router.add_get("/session/{sid}/messages", messages_handler)
-    app.router.add_get("/session/{sid}/events", events_handler)
-    app.router.add_post("/session/{sid}/cancel", cancel_handler)
-    app.router.add_post("/path/open", path_open_handler)
-
-    # Serve the built HeroUI frontend.
-    static_dir = APP_DIR / "dist"
-
-    async def index_handler(request):
-        return web.FileResponse(static_dir / "index.html")
-
-    app.router.add_get("/", index_handler)
-    app.router.add_static("/", static_dir, show_index=False)
-
-    async def on_startup(app):
-        hub.loop = asyncio.get_running_loop()
-        event_hub.loop = asyncio.get_running_loop()
-
-    app.on_startup.append(on_startup)
-    return app
+    return routes.create_app()
 
 
 if __name__ == "__main__":

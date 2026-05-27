@@ -12,15 +12,25 @@ const herouiPath = fileURLToPath(herouiRoot);
 const apiPath = join(herouiPath, "src", "api.ts");
 const bridgePath = join(herouiPath, "bridge.py");
 const bridgeEventsPath = join(herouiPath, "bridge_core", "events.py");
+const bridgeSessionPath = join(herouiPath, "bridge_core", "session.py");
+const bridgeRoutesPath = join(herouiPath, "bridge_core", "routes.py");
+const bridgeStreamingPath = join(herouiPath, "bridge_core", "streaming.py");
+const bridgeHttpUtilsPath = join(herouiPath, "bridge_core", "http_utils.py");
 const vitePath = join(herouiPath, "vite.config.ts");
 
 test("HeroUI frontend has a dedicated GenericAgent bridge copy", () => {
   assert.equal(existsSync(bridgePath), true);
+  assert.equal(existsSync(bridgeSessionPath), true);
+  assert.equal(existsSync(bridgeRoutesPath), true);
   const bridge = readFileSync(bridgePath, "utf8");
+  const session = readFileSync(bridgeSessionPath, "utf8");
+  const routes = readFileSync(bridgeRoutesPath, "utf8");
+  const bridgeAndSession = `${bridge}\n${session}`;
+  const bridgeAndRoutes = `${bridge}\n${routes}`;
 
   assert.match(bridge, /GenericAgent HeroUI Bridge/);
   assert.match(bridge, /HEROUI_BRIDGE_PORT/);
-  assert.match(bridge, /APP_DIR \/ "dist"/);
+  assert.match(bridgeAndRoutes, /APP_DIR \/ "dist"|app_dir .* "dist"|self\.app_dir \/ "dist"/);
   assert.match(bridge, /make_turn_id/);
   assert.match(bridge, /make_response_id/);
   assert.match(bridge, /"turn_id"/);
@@ -33,8 +43,8 @@ test("HeroUI frontend has a dedicated GenericAgent bridge copy", () => {
   assert.match(bridge, /def switch_model_profile/);
   assert.match(bridge, /def regenerate_session_title/);
   assert.match(bridge, /def replay_turn/);
-  assert.match(bridge, /events: List\[dict\] = field\(default_factory=list\)/);
-  assert.match(bridge, /event_seq: int = 0/);
+  assert.match(bridgeAndSession, /events: List\[dict\] = field\(default_factory=list\)/);
+  assert.match(bridgeAndSession, /event_seq: int = 0/);
   assert.match(bridge, /SessionStore/);
   assert.match(bridge, /def add_event/);
   assert.match(bridge, /def convert_agent_event/);
@@ -42,11 +52,24 @@ test("HeroUI frontend has a dedicated GenericAgent bridge copy", () => {
   assert.match(bridge, /def _persist_session_and_message/);
   assert.match(bridge, /persist=False/);
   assert.doesNotMatch(bridge, /self\._persist_message\(sess, user_msg\)/);
-  assert.match(bridge, /app\.router\.add_post\("\/session\/new", new_session_handler\)/);
-  assert.match(bridge, /app\.router\.add_get\("\/session\/\{sid\}\/messages", messages_handler\)/);
-  assert.match(bridge, /app\.router\.add_post\("\/model-profile", switch_model_profile_handler\)/);
-  assert.match(bridge, /app\.router\.add_post\("\/session\/\{sid\}\/title\/regenerate", regenerate_session_title_handler\)/);
-  assert.match(bridge, /app\.router\.add_post\("\/session\/\{sid\}\/turn\/replay", replay_turn_handler\)/);
+  assert.match(bridgeAndRoutes, /app\.router\.add_post\("\/session\/new", (self\.)?new_session_handler\)/);
+  assert.match(bridgeAndRoutes, /app\.router\.add_get\("\/session\/\{sid\}\/messages", (self\.)?messages_handler\)/);
+  assert.match(bridgeAndRoutes, /app\.router\.add_post\("\/model-profile", (self\.)?switch_model_profile_handler\)/);
+  assert.match(bridgeAndRoutes, /app\.router\.add_post\("\/session\/\{sid\}\/title\/regenerate", (self\.)?regenerate_session_title_handler\)/);
+  assert.match(bridgeAndRoutes, /app\.router\.add_post\("\/session\/\{sid\}\/turn\/replay", (self\.)?replay_turn_handler\)/);
+});
+
+test("HeroUI bridge keeps session model and default paths in bridge_core", () => {
+  assert.equal(existsSync(bridgePath), true);
+  assert.equal(existsSync(bridgeSessionPath), true);
+  const bridge = readFileSync(bridgePath, "utf8");
+  const session = readFileSync(bridgeSessionPath, "utf8");
+
+  assert.match(bridge, /from .*session import|from bridge_core\.session import/);
+  assert.match(session, /class Session/);
+  assert.match(session, /def find_default_ga_root/);
+  assert.match(session, /DEFAULT_GA_ROOT = find_default_ga_root\(\)/);
+  assert.match(session, /DEFAULT_HEROUI_DB_PATH = APP_DIR \/ "\.data" \/ "sessions\.sqlite3"/);
 });
 
 test("HeroUI api adapter speaks the GA bridge polling contract", () => {
@@ -141,16 +164,53 @@ assert session.status == "running"
 
 test("HeroUI bridge exposes persisted SSE events with replay cursor", () => {
   assert.equal(existsSync(bridgePath), true);
+  assert.equal(existsSync(bridgeRoutesPath), true);
+  assert.equal(existsSync(bridgeStreamingPath), true);
   const bridge = readFileSync(bridgePath, "utf8");
+  const routes = readFileSync(bridgeRoutesPath, "utf8");
+  const streaming = readFileSync(bridgeStreamingPath, "utf8");
+  const bridgeAndStreaming = `${bridge}\n${routes}\n${streaming}`;
 
-  assert.match(bridge, /class EventStreamHub/);
-  assert.match(bridge, /event_hub = EventStreamHub\(\)/);
-  assert.match(bridge, /async def events_handler\(request\):/);
-  assert.match(bridge, /text\/event-stream/);
-  assert.match(bridge, /after_event/);
-  assert.match(bridge, /Last-Event-ID/);
-  assert.match(bridge, /event_hub\.publish\(stored\)/);
-  assert.match(bridge, /app\.router\.add_get\("\/session\/\{sid\}\/events", events_handler\)/);
+  assert.match(bridge, /from .*streaming import|from bridge_core\.streaming import/);
+  assert.match(bridgeAndStreaming, /class EventStreamHub/);
+  assert.match(bridgeAndStreaming, /event_hub = EventStreamHub\(\)/);
+  assert.match(bridgeAndStreaming, /async def events_handler\(self, request\):|async def events_handler\(request\):/);
+  assert.match(bridgeAndStreaming, /text\/event-stream/);
+  assert.match(bridgeAndStreaming, /after_event/);
+  assert.match(bridgeAndStreaming, /Last-Event-ID/);
+  assert.match(bridgeAndStreaming, /event_hub\.publish\(stored\)/);
+  assert.match(bridgeAndStreaming, /app\.router\.add_get\("\/session\/\{sid\}\/events", (self\.)?events_handler\)/);
+});
+
+test("HeroUI bridge keeps aiohttp route handlers in bridge_core", () => {
+  assert.equal(existsSync(bridgePath), true);
+  assert.equal(existsSync(bridgeRoutesPath), true);
+  const bridge = readFileSync(bridgePath, "utf8");
+  const routes = readFileSync(bridgeRoutesPath, "utf8");
+
+  assert.match(bridge, /from .*routes import|from bridge_core\.routes import/);
+  assert.match(routes, /class BridgeRoutes/);
+  assert.match(routes, /async def ws_handler\(self, request\)/);
+  assert.match(routes, /async def status_handler\(self, request\)/);
+  assert.match(routes, /async def path_open_handler\(self, request\)/);
+  assert.match(routes, /def create_app\(self\)/);
+});
+
+test("HeroUI bridge keeps HTTP utility helpers in bridge_core", () => {
+  assert.equal(existsSync(bridgePath), true);
+  assert.equal(existsSync(bridgeRoutesPath), true);
+  assert.equal(existsSync(bridgeHttpUtilsPath), true);
+  const bridge = readFileSync(bridgePath, "utf8");
+  const routes = readFileSync(bridgeRoutesPath, "utf8");
+  const httpUtils = readFileSync(bridgeHttpUtilsPath, "utf8");
+  const bridgeAndRoutes = `${bridge}\n${routes}`;
+
+  assert.match(bridgeAndRoutes, /from .*http_utils import|from bridge_core\.http_utils import/);
+  assert.match(httpUtils, /def cors_headers/);
+  assert.match(httpUtils, /async def cors_middleware/);
+  assert.match(httpUtils, /def json_ok/);
+  assert.match(httpUtils, /def parse_positive_int/);
+  assert.match(httpUtils, /async def read_json/);
 });
 
 test("HeroUI bridge maps model deltas, retracts, and process summaries", () => {
