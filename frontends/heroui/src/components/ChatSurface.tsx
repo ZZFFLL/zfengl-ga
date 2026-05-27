@@ -391,10 +391,15 @@ function TimelineView({
   steps: ExecutionStep[];
   artifacts: ArtifactRecord[];
 }) {
+  const groupedSteps = groupTimelineSteps(steps);
   return (
     <div className="execution-timeline" aria-label="执行过程时间线">
-      {steps.map((step) => (
-        <TimelineStepCard key={step.id} step={step} />
+      {groupedSteps.map((group, index) => (
+        <div className={`timeline-round-group ${index > 0 ? "timeline-round-group--separated" : ""}`} key={`${group.key}-${index}`}>
+          {group.steps.map((step) => (
+            <TimelineStepCard key={step.id} step={step} />
+          ))}
+        </div>
       ))}
       {artifacts.length > 0 ? (
         <div className="artifact-section">
@@ -414,11 +419,38 @@ function TimelineView({
   );
 }
 
+function groupTimelineSteps(steps: ExecutionStep[]) {
+  const groups: { key: string; steps: ExecutionStep[] }[] = [];
+  for (const step of steps) {
+    const key = readTimelineStepRoundKey(step);
+    const lastGroup = groups[groups.length - 1];
+    if (lastGroup && lastGroup.key === key) {
+      lastGroup.steps.push(step);
+    } else {
+      groups.push({ key, steps: [step] });
+    }
+  }
+  return groups;
+}
+
+function readTimelineStepRoundKey(step: ExecutionStep) {
+  const label = step.tool_label?.trim();
+  if (label) {
+    return label;
+  }
+  const idMatch = step.id.match(/phase:(\d+):llm/);
+  if (idMatch) {
+    return `第${idMatch[1]}轮`;
+  }
+  const text = `${step.title || ""} ${step.summary || ""}`;
+  const match = text.match(/第\d+轮/);
+  return match?.[0] ?? "round";
+}
+
 function TimelineStepCard({ step }: { step: ExecutionStep }) {
   const [isExpanded, setIsExpanded] = useState(Boolean(step.default_open && !isModelSummaryStep(step)));
   const icon = readStepIcon(step);
   const title = readStepHeadline(step);
-  const runLabel = `已运行 ${title}`;
   const statusLabel = readStepStatusLabel(step);
   const detailSections = step.kind === "thought" ? [] : buildToolDetailSections(step);
   const hasDetail = detailSections.length > 0 || Boolean(step.detail.trim());
@@ -439,7 +471,7 @@ function TimelineStepCard({ step }: { step: ExecutionStep }) {
         <Disclosure.Heading>
           <Button className="timeline-step-trigger" slot="trigger" variant="tertiary">
             <span className="timeline-step-trigger-main">
-              <span className="timeline-step-title">{runLabel}</span>
+              <span className="timeline-step-title">{title}</span>
             </span>
             <span className="timeline-step-trigger-meta">
               <Chip className="timeline-step-chip" size="sm" variant="secondary">
