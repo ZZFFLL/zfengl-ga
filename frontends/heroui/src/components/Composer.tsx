@@ -35,6 +35,7 @@ export function Composer({
   const [previewContent, setPreviewContent] = useState("");
   const [sopError, setSopError] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const previewRequestSeqRef = useRef(0);
   const selectedProfile = modelProfiles.find((profile) => String(profile.id) === selectedProfileId);
   const selectedSopIds = useMemo(() => new Set(selectedSops.map((sop) => sop.id)), [selectedSops]);
   const filteredSops = useMemo(() => {
@@ -129,12 +130,20 @@ export function Composer({
   }
 
   async function showSopPreview(sop: SopEntry) {
+    const requestSeq = previewRequestSeqRef.current + 1;
+    previewRequestSeqRef.current = requestSeq;
     setPreviewSop(sop);
     setPreviewContent("正在读取 SOP...");
     try {
       const detail = await getSopDetail(sop.id);
+      if (requestSeq !== previewRequestSeqRef.current) {
+        return;
+      }
       setPreviewContent(detail.content);
     } catch (error) {
+      if (requestSeq !== previewRequestSeqRef.current) {
+        return;
+      }
       setPreviewContent(error instanceof Error ? error.message : "SOP 读取失败");
     }
   }

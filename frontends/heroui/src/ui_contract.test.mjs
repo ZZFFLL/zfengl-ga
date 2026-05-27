@@ -431,7 +431,9 @@ test("SOP library view is reachable from the sidebar and supports search preview
 
   assert.match(app, /type ActiveView = "chat" \| "sops"/);
   assert.match(app, /const \[activeView, setActiveView\] = useState<ActiveView>\("chat"\)/);
-  assert.match(app, /import \{ SopWorkspace \} from "\.\/components\/SopWorkspace"/);
+  assert.match(app, /lazy\(\(\) => import\("\.\/components\/SopWorkspace"\)\)/);
+  assert.doesNotMatch(app, /import \{ SopWorkspace \} from "\.\/components\/SopWorkspace"/);
+  assert.match(app, /<Suspense fallback=\{<div className="sop-view-loading">正在加载 SOP 库\.\.\.<\/div>\}>/);
   assert.match(app, /activeView=\{activeView\}/);
   assert.match(app, /onOpenSops=\{handleOpenSops\}/);
   assert.match(app, /activeView === "sops"/);
@@ -446,6 +448,8 @@ test("SOP library view is reachable from the sidebar and supports search preview
   assert.match(sopWorkspace, /listSops/);
   assert.match(sopWorkspace, /getSopDetail/);
   assert.match(sopWorkspace, /saveSopDetail/);
+  assert.match(sopWorkspace, /detailRequestSeqRef/);
+  assert.match(sopWorkspace, /requestSeq !== detailRequestSeqRef\.current/);
   assert.match(sopWorkspace, /SopWorkspaceItem/);
   assert.doesNotMatch(sopWorkspace, /SopListItem/);
   assert.match(sopWorkspace, /AnimatePresence/);
@@ -492,6 +496,16 @@ test("SOP library view is reachable from the sidebar and supports search preview
   assert.match(styles, /\.sop-list-resize-handle/);
   assert.match(styles, /\.sop-editor-panel/);
   assert.match(styles, /\.sop-markdown-preview/);
+});
+
+test("SOP picker and library ignore stale preview detail responses", () => {
+  const composer = readFileSync(new URL("components/Composer.tsx", import.meta.url), "utf8");
+  const sopWorkspace = readFileSync(new URL("components/SopWorkspace.tsx", import.meta.url), "utf8");
+
+  assert.match(composer, /previewRequestSeqRef/);
+  assert.match(composer, /requestSeq !== previewRequestSeqRef\.current/);
+  assert.match(sopWorkspace, /detailRequestSeqRef/);
+  assert.match(sopWorkspace, /requestSeq !== detailRequestSeqRef\.current/);
 });
 
 test("model switch stays inside the composer instead of duplicating a separate dock bar", () => {

@@ -1,7 +1,7 @@
 import { Button, Chip } from "@heroui/react";
 import { FileCode, FolderOpen, Info, Loader2, Menu, Search } from "lucide-react";
 import { AnimatePresence, motion, useIsPresent } from "motion/react";
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import {
   cancelSession,
   createSession,
@@ -22,7 +22,6 @@ import {
 import { ChatSurface } from "./components/ChatSurface";
 import { Composer } from "./components/Composer";
 import { ConversationRail } from "./components/ConversationRail";
-import { SopWorkspace } from "./components/SopWorkspace";
 import {
   applyStreamEvent,
   createInitialTurnState,
@@ -37,6 +36,7 @@ const SIDEBAR_WIDTH_STORAGE_KEY = "genericagent.heroui.sidebarWidth";
 const DEFAULT_SIDEBAR_WIDTH = 240;
 const MIN_SIDEBAR_WIDTH = 220;
 const MAX_SIDEBAR_WIDTH = 420;
+const SopWorkspace = lazy(() => import("./components/SopWorkspace"));
 
 type ActiveView = "chat" | "sops";
 
@@ -507,7 +507,9 @@ export function App() {
       />
       <section className={`conversation-main ${activeView === "sops" ? "is-sop-view" : ""}`} aria-label="GenericAgent 智能工作台">
         {activeView === "sops" ? (
-          <SopWorkspace />
+          <Suspense fallback={<div className="sop-view-loading">正在加载 SOP 库...</div>}>
+            <SopWorkspace />
+          </Suspense>
         ) : (
           <>
             <header className="conversation-header">

@@ -47,6 +47,7 @@ export function SopWorkspace() {
   const [isListResizing, setIsListResizing] = useState(false);
   const workspaceRef = useRef<HTMLElement | null>(null);
   const resizeCleanupRef = useRef<(() => void) | null>(null);
+  const detailRequestSeqRef = useRef(0);
   const selectedSop = detail?.item ?? sops.find((sop) => sop.id === selectedSopId) ?? null;
   const hasPreview = Boolean(selectedSopId);
   const isDirty = Boolean(detail && draft !== detail.content);
@@ -91,21 +92,31 @@ export function SopWorkspace() {
   }
 
   async function openSop(sop: SopEntry) {
+    const requestSeq = detailRequestSeqRef.current + 1;
+    detailRequestSeqRef.current = requestSeq;
     setSelectedSopId(sop.id);
     setIsLoadingDetail(true);
     setSaveState("idle");
     try {
       const nextDetail = await getSopDetail(sop.id);
+      if (requestSeq !== detailRequestSeqRef.current) {
+        return;
+      }
       setDetail(nextDetail);
       setDraft(nextDetail.content);
       setActiveTab("preview");
       setError("");
     } catch (loadError) {
+      if (requestSeq !== detailRequestSeqRef.current) {
+        return;
+      }
       setDetail(null);
       setDraft("");
       setError(loadError instanceof Error ? loadError.message : "SOP 内容读取失败");
     } finally {
-      setIsLoadingDetail(false);
+      if (requestSeq === detailRequestSeqRef.current) {
+        setIsLoadingDetail(false);
+      }
     }
   }
 
@@ -344,3 +355,5 @@ export function SopWorkspace() {
     </section>
   );
 }
+
+export default SopWorkspace;
