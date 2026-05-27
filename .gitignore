@@ -9,6 +9,7 @@ venv/
 env/
 build/
 dist/
+frontends/heroui/.vite/
 *.egg-info/
 
 .streamlit/
