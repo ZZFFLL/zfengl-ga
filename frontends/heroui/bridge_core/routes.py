@@ -5,6 +5,7 @@ import contextlib
 import json
 import os
 import platform
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -13,6 +14,13 @@ from aiohttp import web, WSMsgType
 
 from .http_utils import cors_headers, cors_middleware, json_ok, parse_positive_int, read_json
 from .streaming import parse_event_cursor, sse_write_event
+
+
+def _plain_sop_text(text: str) -> str:
+    text = re.sub(r"`([^`]*)`", r"\1", text)
+    text = re.sub(r"(\*\*|__)(.*?)\1", r"\2", text)
+    text = re.sub(r"[*#>|]+", "", text)
+    return " ".join(text.split())
 
 
 # aiohttp 路由层：只做请求解析和响应组装，业务逻辑仍交给 AgentManager。
@@ -79,6 +87,50 @@ class BridgeRoutes:
         manager = self.manager
         return json_ok({"profiles": manager.list_model_profiles(), "activeProfileId": manager.config.get("activeProfileId")})
 
+    def _memory_dir(self) -> Path:
+        return Path(self.manager.ga_root).resolve() / "memory"
+
+    def _sop_item_from_path(self, path: Path) -> dict:
+        content = path.read_text(encoding="utf-8", errors="replace")
+        lines = [line.strip() for line in content.splitlines()]
+        title = next((_plain_sop_text(line.lstrip("#").strip()) for line in lines if line.startswith("#")), path.name)
+        summary = next((_plain_sop_text(line) for line in lines if line and not line.startswith("#")), "")
+        # 只返回相对 memory 路径，避免把本机绝对路径暴露给前端输入模板。
+        return {
+            "id": path.stem,
+            "name": path.name,
+            "title": title or path.name,
+            "path": f"memory/{path.name}",
+            "size": path.stat().st_size,
+            "summary": summary,
+        }
+
+    def _list_sop_items(self) -> list[dict]:
+        memory_dir = self._memory_dir()
+        if not memory_dir.exists():
+            return []
+        items = []
+        for path in sorted(memory_dir.glob("*.md"), key=lambda item: item.name.lower()):
+            if path.is_file():
+                items.append(self._sop_item_from_path(path))
+        return items
+
+    async def sops_handler(self, request):
+        return json_ok({"items": self._list_sop_items()})
+
+    async def sop_detail_handler(self, request):
+        sop_id = str(request.match_info.get("sop_id") or "")
+        target = self._memory_dir() / f"{sop_id}.md"
+        memory_dir = self._memory_dir()
+        try:
+            resolved = target.resolve()
+            resolved.relative_to(memory_dir.resolve())
+        except ValueError:
+            raise web.HTTPNotFound(text=json.dumps({"error": f"SOP not found: {sop_id}"}, ensure_ascii=False), content_type="application/json")
+        if not resolved.is_file():
+            raise web.HTTPNotFound(text=json.dumps({"error": f"SOP not found: {sop_id}"}, ensure_ascii=False), content_type="application/json")
+        return json_ok({"item": self._sop_item_from_path(resolved), "content": resolved.read_text(encoding="utf-8", errors="replace")})
+
     async def switch_model_profile_handler(self, request):
         manager = self.manager
         data = await read_json(request)
@@ -138,8 +190,9 @@ class BridgeRoutes:
         sid = request.match_info["sid"]
         data = await read_json(request)
         prompt = data.get("prompt", data.get("content", data.get("message", "")))
+        display_prompt = data.get("displayPrompt", data.get("display_prompt"))
         images = data.get("images") or []
-        return json_ok(manager.submit_prompt(sid, prompt, images))
+        return json_ok(manager.submit_prompt(sid, prompt, images, display_prompt if isinstance(display_prompt, str) else None))
 
     async def messages_handler(self, request):
         manager = self.manager
@@ -241,6 +294,8 @@ class BridgeRoutes:
         app.router.add_get("/config", self.get_config_handler)
         app.router.add_post("/config", self.save_config_handler)
         app.router.add_get("/model-profiles", self.model_profiles_handler)
+        app.router.add_get("/sops", self.sops_handler)
+        app.router.add_get("/sops/{sop_id}", self.sop_detail_handler)
         app.router.add_post("/model-profile", self.switch_model_profile_handler)
         app.router.add_get("/sessions", self.list_sessions_handler)
         app.router.add_post("/session/new", self.new_session_handler)

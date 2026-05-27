@@ -328,7 +328,7 @@ export function App() {
     setAppError("");
   }
 
-  async function handleSubmit(content: string, images: ImageAttachment[] = []) {
+  async function handleSubmit(content: string, images: ImageAttachment[] = [], displayContent?: string) {
     const sessionId = activeSessionId || (await createSessionForSubmit()).id;
     const startedAt = new Date().toISOString();
     const terminalTurn =
@@ -340,8 +340,9 @@ export function App() {
       : { messages, timeline, artifacts };
     const optimistic: MessageRecord = {
       role: "user",
-      content,
+      content: displayContent || content,
       created_at: new Date().toISOString(),
+      agent_prompt: displayContent ? content : undefined,
     };
     setMessages([...history.messages, optimistic]);
     setTimeline(history.timeline);
@@ -354,7 +355,7 @@ export function App() {
 
     try {
       closeActiveSource(activeSourceRef.current);
-      const turnId = await createTurn(sessionId, content, images);
+      const turnId = await createTurn(sessionId, content, images, displayContent);
       if (activeSessionRef.current !== sessionId) {
         return;
       }

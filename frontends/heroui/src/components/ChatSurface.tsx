@@ -273,12 +273,12 @@ function MessageRow({
         layout="position"
         transition={{ damping: 24, stiffness: 280, type: "spring" }}
       >
-        <MessageBubble content={message.content} />
+        <MessageBubble agentPrompt={message.agent_prompt} content={message.content} role={message.role} />
       </motion.article>
     ) : (
       <article className={`message-row message-row--${message.role}`} data-message-role={message.role}>
         {/* 助手正文保持流式渲染，不做整条消息的位移入场动画。 */}
-        <MessageBubble content={message.content} />
+        <MessageBubble agentPrompt={message.agent_prompt} content={message.content} role={message.role} />
         <AssistantActions message={message} onReplayTurn={onReplayTurn} sessionTitle={sessionTitle} />
       </article>
     )
@@ -472,9 +472,30 @@ function TimelineStepCard({ step }: { step: ExecutionStep }) {
   );
 }
 
-function MessageBubble({ content }: { content: string }) {
+function MessageBubble({
+  agentPrompt,
+  content,
+  role,
+}: {
+  agentPrompt?: string;
+  content: string;
+  role: MessageRecord["role"];
+}) {
+  const sopReferences = role === "user" && agentPrompt ? parseVisibleSopReferences(content) : null;
+  const markdownContent = sopReferences ? sopReferences.body : content;
   return (
     <div className="message-bubble">
+      {sopReferences ? (
+        <div className="message-sop-ref-row" aria-label="已引用 SOP">
+          {sopReferences.refs.map((ref) => (
+            <span className="message-sop-ref-chip" key={ref}>
+              <BookOpen size={13} />
+              <span>{ref}</span>
+            </span>
+          ))}
+        </div>
+      ) : null}
+      {markdownContent ? (
       <ReactMarkdown
         components={{
           a: ({ children, ...props }) => (
@@ -485,10 +506,24 @@ function MessageBubble({ content }: { content: string }) {
         }}
         remarkPlugins={[remarkGfm]}
       >
-        {content}
+        {markdownContent}
       </ReactMarkdown>
+      ) : null}
     </div>
   );
+}
+
+function parseVisibleSopReferences(content: string) {
+  const normalized = content.replace(/\r\n/g, "\n").trim();
+  const [firstLine = "", ...restLines] = normalized.split("\n");
+  const refs = firstLine.trim().split(/\s+/).filter((item) => /^@[A-Za-z0-9_.-]+$/.test(item));
+  if (refs.length === 0 || refs.join(" ") !== firstLine.trim()) {
+    return null;
+  }
+  return {
+    body: restLines.join("\n").trimStart(),
+    refs,
+  };
 }
 
 function AssistantActions({

@@ -38,6 +38,20 @@ export type PathOpenRequest = {
   target?: string;
 };
 
+export type SopEntry = {
+  id: string;
+  name: string;
+  title: string;
+  path: string;
+  size: number;
+  summary: string;
+};
+
+export type SopDetail = {
+  item: SopEntry;
+  content: string;
+};
+
 type BridgeSession = {
   id: string;
   title: string;
@@ -65,6 +79,7 @@ type BridgeMessage = {
   outputs?: string[];
   source?: string;
   elapsed_ms?: number;
+  agent_prompt?: string;
 };
 
 type BridgeTimelineEvent = StreamEvent & {
@@ -118,6 +133,17 @@ export async function listModelProfiles(): Promise<ModelProfile[]> {
   const response = await fetch(apiUrl("/model-profiles"));
   const payload = await readJson<BridgeProfilesResponse>(response);
   return payload.profiles ?? [];
+}
+
+export async function listSops(): Promise<SopEntry[]> {
+  const response = await fetch(apiUrl("/sops"));
+  const payload = await readJson<{ items?: SopEntry[] }>(response);
+  return payload.items ?? [];
+}
+
+export async function getSopDetail(sopId: string): Promise<SopDetail> {
+  const response = await fetch(apiUrl(`/sops/${encodeURIComponent(sopId)}`));
+  return readJson<SopDetail>(response);
 }
 
 export async function switchModelProfile(profileId: string, sessionId?: string): Promise<ModelProfile[]> {
@@ -197,11 +223,11 @@ export async function listTranscript(sessionId: string): Promise<SessionTranscri
   };
 }
 
-export async function createTurn(sessionId: string, content: string, images: ImageAttachment[] = []): Promise<string> {
+export async function createTurn(sessionId: string, content: string, images: ImageAttachment[] = [], displayPrompt?: string): Promise<string> {
   const response = await fetch(apiUrl(`/session/${encodeURIComponent(sessionId)}/prompt`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt: content, images }),
+    body: JSON.stringify({ prompt: content, images, displayPrompt }),
   });
   const payload = await readJson<{ seq?: number; userMessageId?: number; eventSeq?: number }>(response);
   const seq = typeof payload.seq === "number" ? payload.seq : typeof payload.userMessageId === "number" ? payload.userMessageId : 0;
@@ -499,6 +525,7 @@ function mapMessageRecord(message: BridgeMessage): MessageRecord {
     outputs: message.outputs,
     source: message.source,
     elapsed_ms: typeof message.elapsed_ms === "number" ? message.elapsed_ms : undefined,
+    agent_prompt: message.agent_prompt,
   };
 }
 

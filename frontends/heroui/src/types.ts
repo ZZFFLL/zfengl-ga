@@ -35,6 +35,7 @@ export type MessageRecord = {
   outputs?: string[];
   source?: string;
   elapsed_ms?: number;
+  agent_prompt?: string;
 };
 
 export type ImageAttachment = {

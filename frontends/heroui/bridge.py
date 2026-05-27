@@ -494,7 +494,8 @@ class AgentManager:
             if not target_user_message:
                 raise web.HTTPBadRequest(text=json.dumps({"error": f"user message not found for turn: {turn_id}"}, ensure_ascii=False), content_type="application/json")
 
-            replay_prompt = str(target_user_message.get("content") or "")
+            replay_prompt = str(target_user_message.get("agent_prompt") or target_user_message.get("content") or "")
+            replay_display_prompt = str(target_user_message.get("content") or "")
             replay_images = list(target_user_message.get("image_ids") or [])
             replay_turn_no = int(target_user_message.get("id") or 0)
             truncated_turn_ids = {
@@ -534,10 +535,11 @@ class AgentManager:
             replay_user_message = self.add_message(
                 sess,
                 "user",
-                replay_prompt,
+                replay_display_prompt,
                 persist=False,
                 image_ids=replay_images,
                 turn_started_at=time.time(),
+                agent_prompt=replay_prompt if replay_prompt != replay_display_prompt else "",
             )
             replay_user_message["turn_id"] = turn_id
             replay_user_message["source"] = "user"
@@ -613,8 +615,9 @@ class AgentManager:
         emit_session_state(sess, "closed")
         return {"ok": True, "sessionId": sid}
 
-    def submit_prompt(self, sid: str, prompt: Any, images: Optional[list] = None) -> dict:
+    def submit_prompt(self, sid: str, prompt: Any, images: Optional[list] = None, display_prompt: Optional[str] = None) -> dict:
         prompt, image_ids = normalize_prompt(prompt, images)
+        display_prompt = str(display_prompt) if display_prompt is not None else prompt
         with self.lock:
             sess = self.sessions.get(sid)
             if not sess:
@@ -624,7 +627,9 @@ class AgentManager:
             extra = {}
             if image_ids:
                 extra["image_ids"] = image_ids
-            user_msg = self.add_message(sess, "user", prompt, persist=False, **extra)
+            if display_prompt != prompt:
+                extra["agent_prompt"] = prompt
+            user_msg = self.add_message(sess, "user", display_prompt, persist=False, **extra)
             turn_started_at = float(user_msg.get("ts") or time.time())
             turn_id = self.make_turn_id(sid, user_msg["id"])
             user_msg["turn_id"] = turn_id
@@ -1005,6 +1010,14 @@ async def save_config_handler(request):
 
 async def model_profiles_handler(request):
     return await routes.model_profiles_handler(request)
+
+
+async def sops_handler(request):
+    return await routes.sops_handler(request)
+
+
+async def sop_detail_handler(request):
+    return await routes.sop_detail_handler(request)
 
 
 async def switch_model_profile_handler(request):

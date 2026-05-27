@@ -16,6 +16,7 @@ export default defineConfig(({ mode }) => {
         "/model-profiles": bridgeTarget,
         "/sessions": bridgeTarget,
         "/session": bridgeTarget,
+        "/sops": bridgeTarget,
         "/path": bridgeTarget,
         "/ws": {
           target: bridgeTarget,

@@ -8,6 +8,7 @@ const state = readFileSync(new URL("./state.ts", import.meta.url), "utf8");
 const packageJson = readFileSync(new URL("../package.json", import.meta.url), "utf8");
 const bridge = readFileSync(new URL("../bridge.py", import.meta.url), "utf8");
 const bridgeEvents = readFileSync(new URL("../bridge_core/events.py", import.meta.url), "utf8");
+const sopPrompt = readFileSync(new URL("./sop_prompt.ts", import.meta.url), "utf8");
 const components = [
   "components/ChatSurface.tsx",
   "components/Composer.tsx",
@@ -344,7 +345,37 @@ test("Composer exposes image attachments and a streaming cancel action", () => {
   const composer = readFileSync(new URL("components/Composer.tsx", import.meta.url), "utf8");
 
   assert.match(composer, /import type \{ ImageAttachment \} from "\.\.\/types"/);
-  assert.match(composer, /onSubmit: \(content: string, images: ImageAttachment\[\]\) => void/);
+  assert.match(api, /export type SopEntry/);
+  assert.match(api, /listSops/);
+  assert.match(api, /getSopDetail/);
+  assert.match(api, /\/sops/);
+  assert.match(composer, /Popover/);
+  assert.match(composer, /Chip/);
+  assert.match(composer, /BookOpen/);
+  assert.match(composer, /AnimatePresence/);
+  assert.match(composer, /motion/);
+  assert.match(composer, /sop-picker/);
+  assert.match(composer, /selectedSopIds/);
+  assert.match(composer, /sop-picker-icon/);
+  assert.match(composer, /sop-picker-title-row/);
+  assert.match(composer, /sop-picker-meta/);
+  assert.match(composer, /sop-picker-file/);
+  assert.match(composer, /next\.endsWith\("@"/);
+  assert.match(composer, /buildPromptWithSopReferences/);
+  assert.match(composer, /buildDisplayPromptWithSopReferences/);
+  assert.match(api, /displayPrompt/);
+  assert.match(sopPrompt, /用户引用了以下 SOP/);
+  assert.match(composer, /selectedSops\.length === 0/);
+  assert.match(composer, /onSubmit: \(content: string, images: ImageAttachment\[\], displayContent\?: string\) => void/);
+  assert.match(components, /role=\{message\.role\}/);
+  assert.match(components, /message-sop-ref-row/);
+  assert.match(components, /message-sop-ref-chip/);
+  assert.match(components, /parseVisibleSopReferences/);
+  assert.match(styles, /\.message-sop-ref-row/);
+  assert.match(styles, /\.message-sop-ref-chip/);
+  assert.match(styles, /\.sop-picker-item\.is-selected/);
+  assert.match(styles, /\.sop-picker-title-row/);
+  assert.match(styles, /\.sop-picker-file/);
   assert.match(composer, /modelProfiles: ModelProfile\[\]/);
   assert.match(composer, /selectedProfileId: string/);
   assert.match(composer, /onModelProfileSelect: \(profileId: string\) => void/);

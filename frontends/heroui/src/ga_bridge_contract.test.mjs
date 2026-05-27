@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -823,6 +823,114 @@ async def main():
     assert detail["messages"][1]["responseId"] == "resp-1"
 
 asyncio.run(main())
+`;
+
+  try {
+    execFileSync("python", ["-c", script], { stdio: "pipe" });
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("HeroUI bridge exposes SOP metadata and on-demand SOP detail", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-sops-"));
+  const dbPath = join(tempDir, "sessions.sqlite3");
+  const memoryDir = join(tempDir, "memory");
+  mkdirSync(memoryDir, { recursive: true });
+  writeFileSync(join(memoryDir, "plan_sop.md"), "# Plan Mode SOP\n\n用于**复杂任务**的 `auto_reports` 探索、计划、执行和验证。\n\n第二段不应丢失。", "utf8");
+  writeFileSync(join(memoryDir, "notes.txt"), "not a SOP", "utf8");
+  const script = `
+import asyncio
+import importlib.util
+import json
+import sys
+from pathlib import Path
+
+bridge_path = Path(${JSON.stringify(bridgePath)})
+spec = importlib.util.spec_from_file_location("heroui_bridge_under_test_sops", bridge_path)
+bridge = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bridge
+spec.loader.exec_module(bridge)
+
+bridge.manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
+bridge.manager.ga_root = ${JSON.stringify(tempDir)}
+
+class Request:
+    def __init__(self, sop_id=None):
+        self.match_info = {"sop_id": sop_id} if sop_id else {}
+
+async def main():
+    list_response = await bridge.sops_handler(Request())
+    listed = json.loads(list_response.text)
+    assert len(listed["items"]) == 1
+    item = listed["items"][0]
+    assert item["id"] == "plan_sop"
+    assert item["name"] == "plan_sop.md"
+    assert item["title"] == "Plan Mode SOP"
+    assert item["path"] == "memory/plan_sop.md"
+    assert "用于复杂任务" in item["summary"]
+    assert "auto_reports" in item["summary"]
+    assert "**" not in item["summary"]
+    assert "\`" not in item["summary"]
+    assert "content" not in item
+
+    detail_response = await bridge.sop_detail_handler(Request("plan_sop"))
+    detail = json.loads(detail_response.text)
+    assert detail["item"]["id"] == "plan_sop"
+    assert "第二段不应丢失" in detail["content"]
+
+asyncio.run(main())
+`;
+
+  try {
+    execFileSync("python", ["-c", script], { stdio: "pipe" });
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("HeroUI bridge stores display prompt separately from the GA execution prompt", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-display-prompt-"));
+  const dbPath = join(tempDir, "sessions.sqlite3");
+  const script = `
+import importlib.util
+import sys
+from pathlib import Path
+
+bridge_path = Path(${JSON.stringify(bridgePath)})
+spec = importlib.util.spec_from_file_location("heroui_bridge_under_test_display_prompt", bridge_path)
+bridge = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bridge
+spec.loader.exec_module(bridge)
+
+manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
+session = manager.create_session(cwd="E:/tmp/ga", title="display prompt")
+
+class FakeThread:
+    def __init__(self, target, args, daemon=True, name=None):
+        self.target = target
+        self.args = args
+        self.daemon = daemon
+        self.name = name
+    def start(self):
+        pass
+
+old_thread = bridge.threading.Thread
+bridge.threading.Thread = FakeThread
+try:
+    manager.submit_prompt(
+        session.id,
+        "用户引用了以下 SOP：\\n- memory/plan_sop.md\\n\\n请先读取这些 SOP",
+        display_prompt="@plan_sop\\n\\n这个适合什么时候用？",
+    )
+finally:
+    bridge.threading.Thread = old_thread
+
+message = session.messages[-1]
+assert message["content"] == "@plan_sop\\n\\n这个适合什么时候用？"
+assert "用户引用了以下 SOP" not in message["content"]
+assert "用户引用了以下 SOP" in message["agent_prompt"]
+assert session.thread.args[2] == message["agent_prompt"]
 `;
 
   try {
@@ -2014,6 +2122,7 @@ test("Vite development server proxies GA bridge endpoints", () => {
   assert.match(vite, /"\/sessions"/);
   assert.match(vite, /"\/status"/);
   assert.match(vite, /"\/model-profile"/);
+  assert.match(vite, /"\/sops"/);
 });
 
 test("HeroUI bridge persists Bridge-owned agent state without model_responses restore", () => {
