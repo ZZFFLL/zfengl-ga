@@ -4,15 +4,16 @@ import type { SopEntry } from "../api";
 
 type SopPickerItemProps = {
   sop: SopEntry;
+  isActive?: boolean;
   isSelected?: boolean;
   onOpen: (sop: SopEntry) => void;
   onPreview?: (sop: SopEntry) => void;
 };
 
-export function SopPickerItem({ sop, isSelected = false, onOpen, onPreview }: SopPickerItemProps) {
+export function SopPickerItem({ sop, isActive = false, isSelected = false, onOpen, onPreview }: SopPickerItemProps) {
   return (
     // 弹窗列表保持独立 class，避免被 SOP 库页面的可变高度样式污染。
-    <div className={`sop-picker-item ${isSelected ? "is-selected" : ""}`}>
+    <div className={`sop-picker-item ${isActive ? "is-active" : ""} ${isSelected ? "is-selected" : ""}`}>
       <button className="sop-picker-main" onClick={() => onOpen(sop)} type="button">
         <span className="sop-picker-icon" aria-hidden="true">
           <BookOpen size={15} />
