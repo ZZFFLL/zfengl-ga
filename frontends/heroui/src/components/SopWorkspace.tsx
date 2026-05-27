@@ -7,24 +7,27 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerE
 import { getSopDetail, listSops, saveSopDetail, type SopDetail, type SopEntry } from "../api";
 import { SopListItem } from "./SopListItem";
 
-const SOP_LIST_WIDTH_STORAGE_KEY = "genericagent.heroui.sopListWidth";
-const DEFAULT_SOP_LIST_WIDTH = 380;
-const MIN_SOP_LIST_WIDTH = 300;
-const MAX_SOP_LIST_WIDTH = 600;
+const SOP_LIST_RATIO_STORAGE_KEY = "genericagent.heroui.sopListRatio";
+const LEGACY_SOP_LIST_WIDTH_STORAGE_KEY = "genericagent.heroui.sopListWidth";
+const DEFAULT_SOP_LIST_RATIO = 0.32;
+const MIN_SOP_LIST_RATIO = 0.22;
+const MAX_SOP_LIST_RATIO = 0.46;
 
-function clampSopListWidth(width: number) {
-  return Math.max(MIN_SOP_LIST_WIDTH, Math.min(MAX_SOP_LIST_WIDTH, Math.round(width)));
+function clampSopListRatio(ratio: number) {
+  return Math.max(MIN_SOP_LIST_RATIO, Math.min(MAX_SOP_LIST_RATIO, ratio));
 }
 
-function readStoredSopListWidth() {
+function readStoredSopListRatio() {
   if (typeof window === "undefined") {
-    return DEFAULT_SOP_LIST_WIDTH;
+    return DEFAULT_SOP_LIST_RATIO;
   }
   try {
-    const storedWidth = Number(window.localStorage.getItem(SOP_LIST_WIDTH_STORAGE_KEY));
-    return Number.isFinite(storedWidth) ? clampSopListWidth(storedWidth) : DEFAULT_SOP_LIST_WIDTH;
+    const storedRatio = Number(window.localStorage.getItem(SOP_LIST_RATIO_STORAGE_KEY));
+    // 旧版本曾保存固定像素宽度；现在改为比例后主动清理，避免旧值造成误判。
+    window.localStorage.removeItem(LEGACY_SOP_LIST_WIDTH_STORAGE_KEY);
+    return Number.isFinite(storedRatio) ? clampSopListRatio(storedRatio) : DEFAULT_SOP_LIST_RATIO;
   } catch {
-    return DEFAULT_SOP_LIST_WIDTH;
+    return DEFAULT_SOP_LIST_RATIO;
   }
 }
 
@@ -40,7 +43,7 @@ export function SopWorkspace() {
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveState, setSaveState] = useState<"idle" | "saved">("idle");
-  const [sopListWidth, setSopListWidth] = useState(() => readStoredSopListWidth());
+  const [sopListRatio, setSopListRatio] = useState(() => readStoredSopListRatio());
   const [isListResizing, setIsListResizing] = useState(false);
   const workspaceRef = useRef<HTMLElement | null>(null);
   const resizeCleanupRef = useRef<(() => void) | null>(null);
@@ -68,11 +71,11 @@ export function SopWorkspace() {
       return;
     }
     try {
-      window.localStorage.setItem(SOP_LIST_WIDTH_STORAGE_KEY, String(sopListWidth));
+      window.localStorage.setItem(SOP_LIST_RATIO_STORAGE_KEY, sopListRatio.toFixed(4));
     } catch {
-      // localStorage 不可用时只影响宽度记忆，不影响 SOP 页面使用。
+      // localStorage 不可用时只影响列表比例记忆，不影响 SOP 页面使用。
     }
-  }, [sopListWidth]);
+  }, [sopListRatio]);
 
   async function loadSops() {
     setIsLoadingList(true);
@@ -147,7 +150,7 @@ export function SopWorkspace() {
     setIsListResizing(true);
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
-      setSopListWidth(clampSopListWidth(moveEvent.clientX - rect.left));
+      setSopListRatio(clampSopListRatio((moveEvent.clientX - rect.left) / rect.width));
     };
 
     const cleanup = () => {
@@ -169,7 +172,7 @@ export function SopWorkspace() {
       aria-label="SOP 库"
       className={`sop-workspace ${hasPreview ? "has-preview" : ""} ${isListResizing ? "is-list-resizing" : ""}`}
       ref={workspaceRef}
-      style={{ "--sop-list-width": `${sopListWidth}px` } as CSSProperties}
+      style={{ "--sop-list-ratio": String(sopListRatio) } as CSSProperties}
     >
       <motion.aside className="sop-library-panel" layout transition={{ damping: 26, stiffness: 280, type: "spring" }}>
         <div className="sop-library-head">

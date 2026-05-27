@@ -1728,8 +1728,7 @@ textarea {
   background: transparent;
 }
 
-.sop-picker-item,
-.sop-library-item {
+.sop-picker-item {
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 32px;
@@ -1743,10 +1742,17 @@ textarea {
 }
 
 .sop-library-item {
+  position: relative;
+  display: grid;
   grid-template-columns: minmax(0, 1fr) 30px;
-  min-height: 92px;
+  gap: 8px;
+  align-items: center;
+  min-height: clamp(5.75rem, 11vh, 7.5rem);
   padding: 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
   background: #fff;
+  transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 
 .sop-picker-item::before,
@@ -1975,7 +1981,7 @@ textarea {
 }
 
 .sop-workspace.has-preview {
-  grid-template-columns: var(--sop-list-width) 8px minmax(0, 1fr);
+  grid-template-columns: clamp(min(24rem, 42vw), calc(100% * var(--sop-list-ratio)), min(38rem, 46vw)) 0.5rem minmax(0, 1fr);
 }
 
 .sop-workspace.is-list-resizing {
@@ -1997,7 +2003,7 @@ textarea {
 }
 
 .sop-workspace:not(.has-preview) .sop-library-panel {
-  width: min(100%, 980px);
+  width: min(100%, clamp(42rem, 74vw, 70rem));
   justify-self: center;
   border-right: 0;
 }
@@ -2081,7 +2087,6 @@ textarea {
 .sop-library-row {
   display: block;
   min-width: 0;
-  min-height: 92px;
 }
 
 .sop-library-empty,
@@ -2098,8 +2103,8 @@ textarea {
 
 .sop-list-resize-handle {
   position: relative;
-  width: 8px;
-  min-width: 8px;
+  width: 0.5rem;
+  min-width: 0.5rem;
   height: 100%;
   cursor: col-resize;
   touch-action: none;
@@ -2312,6 +2317,7 @@ textarea {
 .sop-editor-textarea,
 .sop-editor-textarea.textarea {
   height: 100%;
+  min-height: 0;
   border: 0;
   background: transparent;
   box-shadow: none;
@@ -2319,8 +2325,8 @@ textarea {
 
 .sop-editor-textarea textarea,
 .sop-editor-textarea .textarea__input {
-  height: calc(100vh - 132px);
-  min-height: 420px;
+  height: 100%;
+  min-height: 0;
   padding: 22px max(24px, 4vw) 48px;
   border: 0;
   background: #fcfcfd;
@@ -2501,14 +2507,14 @@ textarea {
   }
 
   .sop-library-panel {
-    min-height: 320px;
+    min-height: clamp(18rem, 38vh, 28rem);
     border-right: 0;
     border-bottom: 1px solid #dedee3;
   }
 
   .sop-editor-panel,
   .sop-empty-preview {
-    min-height: 560px;
+    min-height: clamp(32rem, 72vh, 46rem);
   }
 }
 
