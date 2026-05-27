@@ -2197,8 +2197,7 @@ textarea {
   background: #cbd5e1;
 }
 
-.sop-editor-panel,
-.sop-empty-preview {
+.sop-editor-panel {
   grid-column: 3;
 }
 
@@ -2411,34 +2410,8 @@ textarea {
   resize: none;
 }
 
-.sop-empty-preview {
-  display: grid;
-  place-content: center;
-  gap: 8px;
-  min-width: 0;
-  min-height: 0;
-  padding: 24px;
-  border-left: 1px solid #e2e8f0;
-  background: #fff;
-  color: #64748b;
-  text-align: center;
-}
-
-.sop-workspace:not(.has-preview) .sop-empty-preview,
 .sop-workspace:not(.has-preview) .sop-list-resize-handle {
   display: none;
-}
-
-.sop-empty-preview strong {
-  color: #1e293b;
-  font-size: 16px;
-  line-height: 22px;
-}
-
-.sop-empty-preview span {
-  max-width: 320px;
-  font-size: 13px;
-  line-height: 20px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2586,8 +2559,7 @@ textarea {
     border-bottom: 1px solid #dedee3;
   }
 
-  .sop-editor-panel,
-  .sop-empty-preview {
+  .sop-editor-panel {
     grid-column: 1;
     min-height: clamp(32rem, 72vh, 46rem);
   }

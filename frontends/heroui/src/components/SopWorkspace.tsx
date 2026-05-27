@@ -1,5 +1,5 @@
 import { Button, Tabs, TextArea } from "@heroui/react";
-import { AnimatePresence, motion } from "motion/react";
+import { motion } from "motion/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Check, Loader2, RefreshCw, Save, Search, X } from "lucide-react";
@@ -95,6 +95,8 @@ export function SopWorkspace() {
     const requestSeq = detailRequestSeqRef.current + 1;
     detailRequestSeqRef.current = requestSeq;
     setSelectedSopId(sop.id);
+    setDetail(null);
+    setDraft("");
     setIsLoadingDetail(true);
     setSaveState("idle");
     try {
@@ -247,17 +249,15 @@ export function SopWorkspace() {
         role="separator"
       />
 
-      <AnimatePresence initial={false}>
-        {hasPreview ? (
-          <motion.section
-            animate={{ opacity: 1, x: 0 }}
-            aria-label="SOP 预览内容"
-            className="sop-editor-panel"
-            exit={{ opacity: 0, x: 22 }}
-            initial={{ opacity: 0, x: 14 }}
-            key={selectedSopId}
-            transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-          >
+      {hasPreview ? (
+        <motion.section
+          animate={{ opacity: 1, x: 0 }}
+          aria-label="SOP 预览内容"
+          className="sop-editor-panel"
+          initial={{ opacity: 0, x: 14 }}
+          key="preview"
+          transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+        >
             <header className="sop-editor-head">
               <div className="sop-editor-title">
                 <strong>{selectedSop?.title || selectedSop?.name || "SOP"}</strong>
@@ -336,22 +336,8 @@ export function SopWorkspace() {
                 </Tabs.Panel>
               </Tabs>
             )}
-          </motion.section>
-        ) : (
-          <motion.section
-            animate={{ opacity: 1, scale: 1 }}
-            aria-label="SOP 空状态"
-            className="sop-empty-preview"
-            exit={{ opacity: 0, scale: 0.98 }}
-            initial={{ opacity: 0, scale: 0.98 }}
-            key="empty"
-            transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-          >
-            <strong>选择一个 SOP</strong>
-            <span>左侧列表支持搜索，打开后可在预览和编辑之间切换。</span>
-          </motion.section>
-        )}
-      </AnimatePresence>
+        </motion.section>
+      ) : null}
     </section>
   );
 }
