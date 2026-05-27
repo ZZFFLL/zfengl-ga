@@ -185,7 +185,7 @@ export function SopWorkspace() {
       ref={workspaceRef}
       style={{ "--sop-list-ratio": String(sopListRatio) } as CSSProperties}
     >
-      <motion.aside className="sop-library-panel" layout transition={{ damping: 26, stiffness: 280, type: "spring" }}>
+      <motion.aside className="sop-library-panel" layout transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}>
         <div className="sop-library-head">
           <div>
             <h2>SOP 库</h2>
@@ -218,14 +218,14 @@ export function SopWorkspace() {
         <div aria-label="SOP 页面列表" className="sop-library-list" role="list">
           {filteredSops.map((sop) => (
             <motion.div
-              animate={{ opacity: 1, y: 0 }}
+              animate={{ opacity: 1 }}
               className="sop-library-row"
-              exit={{ opacity: 0, y: 8 }}
-              initial={{ opacity: 0, y: 8 }}
+              exit={{ opacity: 0 }}
+              initial={{ opacity: 0 }}
               key={sop.id}
               layout="position"
               role="listitem"
-              transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+              transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
             >
               <SopWorkspaceItem
                 isSelected={sop.id === selectedSopId}
@@ -247,16 +247,16 @@ export function SopWorkspace() {
         role="separator"
       />
 
-      <AnimatePresence mode="popLayout">
+      <AnimatePresence initial={false}>
         {hasPreview ? (
           <motion.section
             animate={{ opacity: 1, x: 0 }}
             aria-label="SOP 预览内容"
             className="sop-editor-panel"
             exit={{ opacity: 0, x: 22 }}
-            initial={{ opacity: 0, x: 28 }}
+            initial={{ opacity: 0, x: 14 }}
             key={selectedSopId}
-            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
           >
             <header className="sop-editor-head">
               <div className="sop-editor-title">

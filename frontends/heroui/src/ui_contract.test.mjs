@@ -453,7 +453,13 @@ test("SOP library view is reachable from the sidebar and supports search preview
   assert.match(sopWorkspace, /SopWorkspaceItem/);
   assert.doesNotMatch(sopWorkspace, /SopListItem/);
   assert.match(sopWorkspace, /AnimatePresence/);
+  assert.match(sopWorkspace, /<AnimatePresence initial=\{false\}>/);
+  assert.doesNotMatch(sopWorkspace, /mode="popLayout"/);
   assert.match(sopWorkspace, /motion/);
+  assert.match(sopWorkspace, /<motion\.aside className="sop-library-panel" layout transition=\{\{ duration: 0\.2, ease: \[0\.22, 1, 0\.36, 1\] \}\}>/);
+  assert.doesNotMatch(sopWorkspace, /initial=\{\{ opacity: 0, y: 8 \}\}/);
+  assert.doesNotMatch(sopWorkspace, /exit=\{\{ opacity: 0, y: 8 \}\}/);
+  assert.match(sopWorkspace, /initial=\{\{ opacity: 0, x: 14 \}\}/);
   assert.doesNotMatch(sopWorkspace, /ListBox/);
   assert.doesNotMatch(sopWorkspace, /DEFAULT_SOP_LIST_WIDTH/);
   assert.doesNotMatch(sopWorkspace, /MIN_SOP_LIST_WIDTH/);
@@ -480,6 +486,8 @@ test("SOP library view is reachable from the sidebar and supports search preview
   assert.doesNotMatch(styles, /\.sop-library-item\s*{[^}]*min-height:\s*\d+px/s);
   assert.match(styles, /\.sop-library-item\s*{[^}]*min-height: clamp\(/s);
   assert.match(styles, /\.sop-library-item\s*{[^}]*grid-template-columns: minmax\(0, 1fr\) auto/s);
+  assert.match(styles, /\.sop-library-main\s*{[^}]*align-self: stretch/s);
+  assert.match(styles, /\.sop-library-main\s*{[^}]*height: 100%/s);
   assert.match(styles, /\.sop-library-title-row\s*{[^}]*flex-wrap: wrap/s);
   assert.match(styles, /\.sop-library-file\s*{[^}]*max-width: 100%/s);
   assert.match(styles, /\.sop-library-summary\s*{[^}]*overflow-wrap: anywhere/s);
@@ -490,6 +498,7 @@ test("SOP library view is reachable from the sidebar and supports search preview
   assert.match(styles, /\.sop-workspace:not\(\.has-preview\) \.sop-library-panel\s*{[^}]*width: min\(100%, clamp\(/s);
   assert.match(styles, /\.sop-editor-textarea textarea,\s*\.sop-editor-textarea \.textarea__input\s*{[^}]*height: 100%[^}]*min-height: 0/s);
   assert.match(styles, /\.sop-library-panel\s*{[^}]*min-height: clamp\(18rem, 38vh, 28rem\)/s);
+  assert.match(styles, /\.sop-editor-panel,\s*\.sop-empty-preview\s*{[^}]*grid-column: 3/s);
   assert.match(styles, /\.sop-editor-panel,\s*\.sop-empty-preview\s*{[^}]*min-height: clamp\(32rem, 72vh, 46rem\)/s);
   assert.match(styles, /\.sop-workspace:not\(\.has-preview\) \.sop-empty-preview/);
   assert.match(styles, /\.sop-workspace\.has-preview\s*{[^}]*clamp\(min\(28rem, 45%\), calc\(100% \* var\(--sop-list-ratio\)\), min\(42rem, 54%\)\)[\s\S]*0\.5rem/s);
