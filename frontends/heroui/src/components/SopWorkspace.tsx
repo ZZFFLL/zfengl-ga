@@ -1,4 +1,4 @@
-import { Button, ListBox, Tabs, TextArea } from "@heroui/react";
+import { Button, Tabs, TextArea } from "@heroui/react";
 import { AnimatePresence, motion } from "motion/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -8,9 +8,9 @@ import { getSopDetail, listSops, saveSopDetail, type SopDetail, type SopEntry } 
 import { SopListItem } from "./SopListItem";
 
 const SOP_LIST_WIDTH_STORAGE_KEY = "genericagent.heroui.sopListWidth";
-const DEFAULT_SOP_LIST_WIDTH = 360;
-const MIN_SOP_LIST_WIDTH = 260;
-const MAX_SOP_LIST_WIDTH = 560;
+const DEFAULT_SOP_LIST_WIDTH = 380;
+const MIN_SOP_LIST_WIDTH = 300;
+const MAX_SOP_LIST_WIDTH = 600;
 
 function clampSopListWidth(width: number) {
   return Math.max(MIN_SOP_LIST_WIDTH, Math.min(MAX_SOP_LIST_WIDTH, Math.round(width)));
@@ -190,12 +190,29 @@ export function SopWorkspace() {
         </div>
         <div className="sop-library-search">
           <Search size={15} />
-          <input aria-label="搜索 SOP" onChange={(event) => setQuery(event.target.value)} placeholder="搜索 SOP" value={query} />
+          <input
+            aria-label="搜索 SOP"
+            id="sop-library-search"
+            name="sop-library-search"
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="搜索 SOP"
+            value={query}
+          />
         </div>
         {error ? <div className="sop-library-error">{error}</div> : null}
-        <ListBox aria-label="SOP 页面列表" className="sop-library-list" selectionMode="none">
+        {/* 这里使用原生列表，保证可变高度的 SOP 摘要按自然文档流排布。 */}
+        <div aria-label="SOP 页面列表" className="sop-library-list" role="list">
           {filteredSops.map((sop) => (
-            <ListBox.Item className="sop-library-row" id={sop.id} key={sop.id} textValue={`${sop.name} ${sop.title}`}>
+            <motion.div
+              animate={{ opacity: 1, y: 0 }}
+              className="sop-library-row"
+              exit={{ opacity: 0, y: 8 }}
+              initial={{ opacity: 0, y: 8 }}
+              key={sop.id}
+              layout="position"
+              role="listitem"
+              transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+            >
               <SopListItem
                 isSelected={sop.id === selectedSopId}
                 onOpen={(nextSop) => void openSop(nextSop)}
@@ -203,9 +220,9 @@ export function SopWorkspace() {
                 sop={sop}
                 variant="library"
               />
-            </ListBox.Item>
+            </motion.div>
           ))}
-        </ListBox>
+        </div>
         {filteredSops.length === 0 && !isLoadingList ? <div className="sop-library-empty">没有匹配的 SOP</div> : null}
       </motion.aside>
 

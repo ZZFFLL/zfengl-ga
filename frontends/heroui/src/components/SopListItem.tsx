@@ -25,7 +25,7 @@ export function SopListItem({ sop, isSelected = false, onOpen, onPreview, varian
             <span className="sop-picker-file">@{sop.id}</span>
           </span>
           <span className="sop-picker-meta">{sop.path}</span>
-          {sop.summary ? <span className="sop-picker-summary">{sop.summary}</span> : null}
+          <span className="sop-picker-summary">{sop.summary || "暂无摘要"}</span>
         </span>
       </button>
       {onPreview ? (

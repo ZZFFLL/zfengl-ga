@@ -1716,8 +1716,7 @@ textarea {
   padding: 1px;
 }
 
-.sop-picker-row,
-.sop-library-row {
+.sop-picker-row {
   display: block;
   padding: 0;
   border-radius: 8px;
@@ -1725,9 +1724,7 @@ textarea {
 }
 
 .sop-picker-row[data-hovered="true"],
-.sop-picker-row[data-focus-visible="true"],
-.sop-library-row[data-hovered="true"],
-.sop-library-row[data-focus-visible="true"] {
+.sop-picker-row[data-focus-visible="true"] {
   background: transparent;
 }
 
@@ -1747,8 +1744,9 @@ textarea {
 
 .sop-library-item {
   grid-template-columns: minmax(0, 1fr) 30px;
-  min-height: 82px;
-  padding: 10px;
+  min-height: 92px;
+  padding: 12px;
+  background: #fff;
 }
 
 .sop-picker-item::before,
@@ -1867,6 +1865,40 @@ textarea {
   line-height: 17px;
 }
 
+.sop-library-item .sop-picker-main {
+  gap: 12px;
+  width: 100%;
+}
+
+.sop-library-item .sop-picker-icon {
+  flex-basis: 32px;
+  width: 32px;
+  height: 32px;
+  border-color: #d8dde7;
+  box-shadow: none;
+}
+
+.sop-library-item .sop-picker-copy {
+  gap: 4px;
+}
+
+.sop-library-item .sop-picker-title {
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.sop-library-item .sop-picker-file {
+  max-width: 46%;
+  background: #f5f7fb;
+}
+
+.sop-library-item .sop-picker-summary {
+  display: -webkit-box;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .sop-picker-preview-button {
   width: 30px;
   min-width: 30px;
@@ -1934,11 +1966,11 @@ textarea {
 
 .sop-workspace {
   display: grid;
-  grid-template-columns: minmax(320px, 720px) 0 minmax(0, 0);
+  grid-template-columns: minmax(0, 1fr) 0 minmax(0, 0);
   min-height: 0;
   height: 100vh;
   overflow: hidden;
-  background: #f7f7f8;
+  background: #f8fafc;
   transition: grid-template-columns 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -1954,14 +1986,20 @@ textarea {
 
 .sop-library-panel {
   display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
-  gap: 12px;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  gap: 14px;
   min-width: 0;
   min-height: 0;
-  padding: 18px 16px;
-  border-right: 1px solid #dedee3;
-  background: #fbfbfc;
+  padding: 22px 24px;
+  border-right: 1px solid #e2e8f0;
+  background: #f8fafc;
   overflow: hidden;
+}
+
+.sop-workspace:not(.has-preview) .sop-library-panel {
+  width: min(100%, 980px);
+  justify-self: center;
+  border-right: 0;
 }
 
 .sop-library-head {
@@ -1973,16 +2011,16 @@ textarea {
 
 .sop-library-head h2 {
   margin: 0;
-  color: #111217;
-  font-size: 18px;
+  color: #1e293b;
+  font-size: 20px;
   font-weight: 720;
-  line-height: 24px;
+  line-height: 28px;
 }
 
 .sop-library-head span {
   display: block;
   margin-top: 2px;
-  color: #777982;
+  color: #64748b;
   font-size: 12px;
   line-height: 16px;
 }
@@ -2004,12 +2042,18 @@ textarea {
   grid-template-columns: 18px minmax(0, 1fr);
   align-items: center;
   gap: 8px;
-  min-height: 40px;
+  min-height: 42px;
   padding: 0 12px;
-  border: 1px solid #dde1e9;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
   background: #fff;
-  color: #737782;
+  color: #64748b;
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.sop-library-search:focus-within {
+  border-color: #94a3b8;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
 }
 
 .sop-library-search input {
@@ -2017,25 +2061,33 @@ textarea {
   border: 0;
   outline: 0;
   background: transparent;
-  color: #202127;
+  color: #1e293b;
   font-size: 14px;
   line-height: 20px;
 }
 
 .sop-library-list {
   display: grid;
-  gap: 6px;
+  grid-auto-rows: auto;
+  align-content: start;
+  gap: 8px;
   min-height: 0;
   overflow: auto;
-  padding: 1px 2px 14px 1px;
-  scrollbar-color: #c0c4ce transparent;
+  padding: 1px 3px 18px 1px;
+  scrollbar-color: #cbd5e1 transparent;
   scrollbar-width: thin;
+}
+
+.sop-library-row {
+  display: block;
+  min-width: 0;
+  min-height: 92px;
 }
 
 .sop-library-empty,
 .sop-library-error {
   padding: 10px 2px;
-  color: #747780;
+  color: #64748b;
   font-size: 13px;
   line-height: 18px;
 }
@@ -2068,7 +2120,7 @@ textarea {
 
 .sop-list-resize-handle:hover::before,
 .sop-list-resize-handle:active::before {
-  background: #d4d5d9;
+  background: #cbd5e1;
 }
 
 .sop-editor-panel {
@@ -2087,7 +2139,7 @@ textarea {
   gap: 16px;
   min-height: 66px;
   padding: 12px 18px;
-  border-bottom: 1px solid #e4e5ea;
+  border-bottom: 1px solid #e2e8f0;
 }
 
 .sop-editor-title {
@@ -2098,7 +2150,7 @@ textarea {
 
 .sop-editor-title strong {
   overflow: hidden;
-  color: #17181d;
+  color: #1e293b;
   font-size: 16px;
   font-weight: 700;
   line-height: 22px;
@@ -2108,7 +2160,7 @@ textarea {
 
 .sop-editor-title code {
   overflow: hidden;
-  color: #7f838d;
+  color: #64748b;
   font-family: "Cascadia Code", "JetBrains Mono", monospace;
   font-size: 12px;
   line-height: 16px;
@@ -2286,14 +2338,19 @@ textarea {
   min-width: 0;
   min-height: 0;
   padding: 24px;
-  border-left: 1px solid #e3e4e8;
+  border-left: 1px solid #e2e8f0;
   background: #fff;
-  color: #74757d;
+  color: #64748b;
   text-align: center;
 }
 
+.sop-workspace:not(.has-preview) .sop-empty-preview,
+.sop-workspace:not(.has-preview) .sop-list-resize-handle {
+  display: none;
+}
+
 .sop-empty-preview strong {
-  color: #202127;
+  color: #1e293b;
   font-size: 16px;
   line-height: 22px;
 }
@@ -2302,6 +2359,23 @@ textarea {
   max-width: 320px;
   font-size: 13px;
   line-height: 20px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sop-workspace,
+  .sop-library-search,
+  .sop-picker-item,
+  .sop-library-item,
+  .sop-list-resize-handle::before {
+    transition: none;
+  }
+
+  .sop-picker-item:hover,
+  .sop-picker-item:focus-within,
+  .sop-library-item:hover,
+  .sop-library-item:focus-within {
+    transform: none;
+  }
 }
 
 .composer-model-switch {

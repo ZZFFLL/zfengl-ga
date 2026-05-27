@@ -442,6 +442,9 @@ test("SOP library view is reachable from the sidebar and supports search preview
   assert.match(sopWorkspace, /saveSopDetail/);
   assert.match(sopWorkspace, /AnimatePresence/);
   assert.match(sopWorkspace, /motion/);
+  assert.doesNotMatch(sopWorkspace, /ListBox/);
+  assert.match(sopWorkspace, /role="list"/);
+  assert.match(sopWorkspace, /role="listitem"/);
   assert.match(sopWorkspace, /handleListResizePointerDown/);
   assert.match(sopWorkspace, /sop-list-resize-handle/);
   assert.match(sopWorkspace, /TextArea/);
@@ -453,6 +456,9 @@ test("SOP library view is reachable from the sidebar and supports search preview
   assert.match(styles, /\.sop-workspace/);
   assert.match(styles, /\.sop-workspace\.has-preview/);
   assert.match(styles, /\.sop-library-panel/);
+  assert.match(styles, /\.sop-library-list\s*{[^}]*grid-auto-rows: auto/s);
+  assert.match(styles, /\.sop-library-item\s*{[^}]*min-height: 92px/s);
+  assert.match(styles, /\.sop-workspace:not\(\.has-preview\) \.sop-empty-preview/);
   assert.match(styles, /\.sop-list-resize-handle/);
   assert.match(styles, /\.sop-editor-panel/);
   assert.match(styles, /\.sop-markdown-preview/);

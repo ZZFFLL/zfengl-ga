@@ -229,6 +229,8 @@ export function Composer({
                       <input
                         aria-label="搜索 SOP"
                         autoFocus
+                        id="sop-picker-search"
+                        name="sop-picker-search"
                         onChange={(event) => setSopQuery(event.target.value)}
                         placeholder="搜索 SOP"
                         value={sopQuery}
