@@ -2,19 +2,17 @@ import { Button } from "@heroui/react";
 import { BookOpen, Eye } from "lucide-react";
 import type { SopEntry } from "../api";
 
-type SopListItemProps = {
+type SopPickerItemProps = {
   sop: SopEntry;
   isSelected?: boolean;
   onOpen: (sop: SopEntry) => void;
   onPreview?: (sop: SopEntry) => void;
-  variant?: "picker" | "library";
 };
 
-export function SopListItem({ sop, isSelected = false, onOpen, onPreview, variant = "picker" }: SopListItemProps) {
-  const className = `${variant === "library" ? "sop-library-item" : "sop-picker-item"} ${isSelected ? "is-selected" : ""}`;
-
+export function SopPickerItem({ sop, isSelected = false, onOpen, onPreview }: SopPickerItemProps) {
   return (
-    <div className={className}>
+    // 弹窗列表保持独立 class，避免被 SOP 库页面的可变高度样式污染。
+    <div className={`sop-picker-item ${isSelected ? "is-selected" : ""}`}>
       <button className="sop-picker-main" onClick={() => onOpen(sop)} type="button">
         <span className="sop-picker-icon" aria-hidden="true">
           <BookOpen size={15} />

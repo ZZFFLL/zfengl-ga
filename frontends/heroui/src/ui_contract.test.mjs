@@ -13,7 +13,8 @@ const components = [
   "components/ChatSurface.tsx",
   "components/Composer.tsx",
   "components/ConversationRail.tsx",
-  "components/SopListItem.tsx",
+  "components/SopPickerItem.tsx",
+  "components/SopWorkspaceItem.tsx",
   "components/SopWorkspace.tsx",
   "tool_details.ts",
 ]
@@ -384,7 +385,11 @@ test("Composer exposes image attachments and a streaming cancel action", () => {
   assert.match(composer, /motion/);
   assert.match(composer, /sop-picker/);
   assert.match(composer, /selectedSopIds/);
-  assert.match(composer, /SopListItem/);
+  assert.match(composer, /SopPickerItem/);
+  assert.doesNotMatch(composer, /SopListItem/);
+  assert.doesNotMatch(composer, /<ListBox aria-label="SOP 列表"/);
+  assert.match(composer, /role="listbox"/);
+  assert.match(composer, /role="option"/);
   assert.match(components, /sop-picker-icon/);
   assert.match(components, /sop-picker-title-row/);
   assert.match(components, /sop-picker-meta/);
@@ -405,6 +410,7 @@ test("Composer exposes image attachments and a streaming cancel action", () => {
   assert.match(styles, /\.sop-picker-item\.is-selected/);
   assert.match(styles, /\.sop-picker-title-row/);
   assert.match(styles, /\.sop-picker-file/);
+  assert.doesNotMatch(styles, /\.sop-library-item \.sop-picker-/);
   assert.match(composer, /modelProfiles: ModelProfile\[\]/);
   assert.match(composer, /selectedProfileId: string/);
   assert.match(composer, /onModelProfileSelect: \(profileId: string\) => void/);
@@ -440,6 +446,8 @@ test("SOP library view is reachable from the sidebar and supports search preview
   assert.match(sopWorkspace, /listSops/);
   assert.match(sopWorkspace, /getSopDetail/);
   assert.match(sopWorkspace, /saveSopDetail/);
+  assert.match(sopWorkspace, /SopWorkspaceItem/);
+  assert.doesNotMatch(sopWorkspace, /SopListItem/);
   assert.match(sopWorkspace, /AnimatePresence/);
   assert.match(sopWorkspace, /motion/);
   assert.doesNotMatch(sopWorkspace, /ListBox/);
@@ -468,9 +476,9 @@ test("SOP library view is reachable from the sidebar and supports search preview
   assert.doesNotMatch(styles, /\.sop-library-item\s*{[^}]*min-height:\s*\d+px/s);
   assert.match(styles, /\.sop-library-item\s*{[^}]*min-height: clamp\(/s);
   assert.match(styles, /\.sop-library-item\s*{[^}]*grid-template-columns: minmax\(0, 1fr\) auto/s);
-  assert.match(styles, /\.sop-library-item \.sop-picker-title-row\s*{[^}]*flex-wrap: wrap/s);
-  assert.match(styles, /\.sop-library-item \.sop-picker-file\s*{[^}]*max-width: 100%/s);
-  assert.match(styles, /\.sop-library-item \.sop-picker-summary\s*{[^}]*overflow-wrap: anywhere/s);
+  assert.match(styles, /\.sop-library-title-row\s*{[^}]*flex-wrap: wrap/s);
+  assert.match(styles, /\.sop-library-file\s*{[^}]*max-width: 100%/s);
+  assert.match(styles, /\.sop-library-summary\s*{[^}]*overflow-wrap: anywhere/s);
   assert.doesNotMatch(styles, /--sop-list-width/);
   assert.doesNotMatch(styles, /\.sop-library-panel\s*{[^}]*min-height:\s*(?:320|420|560)px/s);
   assert.doesNotMatch(styles, /\.sop-editor-panel,\s*\.sop-empty-preview\s*{[^}]*min-height:\s*(?:320|420|560)px/s);

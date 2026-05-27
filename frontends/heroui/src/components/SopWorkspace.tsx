@@ -5,7 +5,7 @@ import remarkGfm from "remark-gfm";
 import { Check, Loader2, RefreshCw, Save, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { getSopDetail, listSops, saveSopDetail, type SopDetail, type SopEntry } from "../api";
-import { SopListItem } from "./SopListItem";
+import { SopWorkspaceItem } from "./SopWorkspaceItem";
 
 const SOP_LIST_RATIO_STORAGE_KEY = "genericagent.heroui.sopListRatio";
 const LEGACY_SOP_LIST_WIDTH_STORAGE_KEY = "genericagent.heroui.sopListWidth";
@@ -216,12 +216,11 @@ export function SopWorkspace() {
               role="listitem"
               transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
             >
-              <SopListItem
+              <SopWorkspaceItem
                 isSelected={sop.id === selectedSopId}
                 onOpen={(nextSop) => void openSop(nextSop)}
                 onPreview={(nextSop) => void openSop(nextSop)}
                 sop={sop}
-                variant="library"
               />
             </motion.div>
           ))}

@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { getSopDetail, listSops, type ModelProfile, type SopEntry } from "../api";
 import { buildDisplayPromptWithSopReferences, buildPromptWithSopReferences, removeTrailingSopTrigger } from "../sop_prompt";
 import type { ImageAttachment } from "../types";
-import { SopListItem } from "./SopListItem";
+import { SopPickerItem } from "./SopPickerItem";
 
 type ComposerProps = {
   disabled: boolean;
@@ -237,23 +237,24 @@ export function Composer({
                       />
                     </div>
                     {sopError ? <div className="sop-picker-error">{sopError}</div> : null}
-                    <ListBox aria-label="SOP 列表" className="sop-picker-list" selectionMode="none">
+                    {/* SOP 弹窗行高由自定义卡片决定，避免 ListBox collection 布局压缩列表项。 */}
+                    <div aria-label="SOP 列表" className="sop-picker-list" role="listbox">
                       {filteredSops.map((sop) => (
-                        <ListBox.Item
+                        <div
+                          aria-selected={selectedSopIds.has(sop.id)}
                           className="sop-picker-row"
-                          id={sop.id}
                           key={sop.id}
-                          textValue={`${sop.name} ${sop.title}`}
+                          role="option"
                         >
-                          <SopListItem
+                          <SopPickerItem
                             isSelected={selectedSopIds.has(sop.id)}
                             onOpen={addSopReference}
                             onPreview={(nextSop) => void showSopPreview(nextSop)}
                             sop={sop}
                           />
-                        </ListBox.Item>
+                        </div>
                       ))}
-                    </ListBox>
+                    </div>
                     {filteredSops.length === 0 && !sopError ? <div className="sop-picker-empty">没有匹配的 SOP</div> : null}
                     <AnimatePresence>
                       {previewSop ? (
