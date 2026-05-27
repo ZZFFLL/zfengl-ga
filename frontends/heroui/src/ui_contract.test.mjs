@@ -13,6 +13,8 @@ const components = [
   "components/ChatSurface.tsx",
   "components/Composer.tsx",
   "components/ConversationRail.tsx",
+  "components/SopListItem.tsx",
+  "components/SopWorkspace.tsx",
   "tool_details.ts",
 ]
   .map((path) => readFileSync(new URL(path, import.meta.url), "utf8"))
@@ -382,10 +384,11 @@ test("Composer exposes image attachments and a streaming cancel action", () => {
   assert.match(composer, /motion/);
   assert.match(composer, /sop-picker/);
   assert.match(composer, /selectedSopIds/);
-  assert.match(composer, /sop-picker-icon/);
-  assert.match(composer, /sop-picker-title-row/);
-  assert.match(composer, /sop-picker-meta/);
-  assert.match(composer, /sop-picker-file/);
+  assert.match(composer, /SopListItem/);
+  assert.match(components, /sop-picker-icon/);
+  assert.match(components, /sop-picker-title-row/);
+  assert.match(components, /sop-picker-meta/);
+  assert.match(components, /sop-picker-file/);
   assert.match(composer, /next\.endsWith\("@"/);
   assert.match(composer, /buildPromptWithSopReferences/);
   assert.match(composer, /buildDisplayPromptWithSopReferences/);
@@ -414,6 +417,45 @@ test("Composer exposes image attachments and a streaming cancel action", () => {
   assert.match(composer, /composer-model-switch/);
   assert.match(composer, /Select\.Popover className="composer-model-popover"/);
   assert.match(composer, /selectedProfile \? formatProfileOption\(selectedProfile\) : "选择模型"/);
+});
+
+test("SOP library view is reachable from the sidebar and supports search preview editing", () => {
+  const rail = readFileSync(new URL("components/ConversationRail.tsx", import.meta.url), "utf8");
+  const sopWorkspace = readFileSync(new URL("components/SopWorkspace.tsx", import.meta.url), "utf8");
+
+  assert.match(app, /type ActiveView = "chat" \| "sops"/);
+  assert.match(app, /const \[activeView, setActiveView\] = useState<ActiveView>\("chat"\)/);
+  assert.match(app, /import \{ SopWorkspace \} from "\.\/components\/SopWorkspace"/);
+  assert.match(app, /activeView=\{activeView\}/);
+  assert.match(app, /onOpenSops=\{handleOpenSops\}/);
+  assert.match(app, /activeView === "sops"/);
+  assert.match(app, /<SopWorkspace \/>/);
+  assert.match(rail, /onOpenSops: \(\) => void/);
+  assert.match(rail, /activeView: "chat" \| "sops"/);
+  assert.match(rail, /BookOpenText/);
+  assert.match(rail, /SOP 库/);
+  assert.match(rail, /activeView === "sops"/);
+  assert.match(api, /saveSopDetail/);
+  assert.match(api, /method: "PUT"/);
+  assert.match(sopWorkspace, /listSops/);
+  assert.match(sopWorkspace, /getSopDetail/);
+  assert.match(sopWorkspace, /saveSopDetail/);
+  assert.match(sopWorkspace, /AnimatePresence/);
+  assert.match(sopWorkspace, /motion/);
+  assert.match(sopWorkspace, /handleListResizePointerDown/);
+  assert.match(sopWorkspace, /sop-list-resize-handle/);
+  assert.match(sopWorkspace, /TextArea/);
+  assert.match(sopWorkspace, /Tabs/);
+  assert.match(sopWorkspace, /搜索 SOP/);
+  assert.match(sopWorkspace, /预览/);
+  assert.match(sopWorkspace, /编辑/);
+  assert.match(sopWorkspace, /保存/);
+  assert.match(styles, /\.sop-workspace/);
+  assert.match(styles, /\.sop-workspace\.has-preview/);
+  assert.match(styles, /\.sop-library-panel/);
+  assert.match(styles, /\.sop-list-resize-handle/);
+  assert.match(styles, /\.sop-editor-panel/);
+  assert.match(styles, /\.sop-markdown-preview/);
 });
 
 test("model switch stays inside the composer instead of duplicating a separate dock bar", () => {

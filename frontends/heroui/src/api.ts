@@ -146,6 +146,15 @@ export async function getSopDetail(sopId: string): Promise<SopDetail> {
   return readJson<SopDetail>(response);
 }
 
+export async function saveSopDetail(sopId: string, content: string): Promise<SopDetail> {
+  const response = await fetch(apiUrl(`/sops/${encodeURIComponent(sopId)}`), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content }),
+  });
+  return readJson<SopDetail>(response);
+}
+
 export async function switchModelProfile(profileId: string, sessionId?: string): Promise<ModelProfile[]> {
   const response = await fetch(apiUrl("/model-profile"), {
     method: "POST",

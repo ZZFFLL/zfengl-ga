@@ -1,15 +1,17 @@
 import { Avatar, Button, Dropdown, Label } from "@heroui/react";
-import { CheckSquare, Ellipsis, Loader2, MessageCircle, MessageSquarePlus, PencilLine, Square, Trash2, X } from "lucide-react";
+import { BookOpenText, CheckSquare, Ellipsis, Loader2, MessageCircle, MessageSquarePlus, PencilLine, Square, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import type { SessionRecord } from "../types";
 
 type ConversationRailProps = {
   sessions: SessionRecord[];
   activeSessionId: string;
+  activeView: "chat" | "sops";
   modelLabel: string;
   regeneratingSessionId: string;
   onCreateSession: () => void;
   onDeleteSessions: (sessionIds: string[]) => void;
+  onOpenSops: () => void;
   onRegenerateSessionTitle: (sessionId: string) => void;
   onSelectSession: (sessionId: string) => void;
 };
@@ -17,10 +19,12 @@ type ConversationRailProps = {
 export function ConversationRail({
   sessions,
   activeSessionId,
+  activeView,
   modelLabel,
   regeneratingSessionId,
   onCreateSession,
   onDeleteSessions,
+  onOpenSops,
   onRegenerateSessionTitle,
   onSelectSession,
 }: ConversationRailProps) {
@@ -69,6 +73,10 @@ export function ConversationRail({
           <MessageSquarePlus size={18} />
           <span>新建聊天</span>
         </Button>
+        <Button className={`sidebar-nav-item ${activeView === "sops" ? "is-active" : ""}`} fullWidth onPress={onOpenSops} variant="tertiary">
+          <BookOpenText size={18} />
+          <span>SOP 库</span>
+        </Button>
       </nav>
 
       <div className="sidebar-divider" />
@@ -89,9 +97,9 @@ export function ConversationRail({
 
       <nav className="recent-list" aria-label="最近会话">
         {sessions.map((session, index) => (
-          <div className={`recent-item-row ${session.id === activeSessionId ? "is-active" : ""}`} key={session.id}>
+          <div className={`recent-item-row ${activeView === "chat" && session.id === activeSessionId ? "is-active" : ""}`} key={session.id}>
             <Button
-              className={`recent-item ${session.id === activeSessionId ? "is-active" : ""}`}
+              className={`recent-item ${activeView === "chat" && session.id === activeSessionId ? "is-active" : ""}`}
               fullWidth
               onPress={() => (isDeleting ? toggleSession(session.id) : onSelectSession(session.id))}
               variant="tertiary"
@@ -116,11 +124,9 @@ export function ConversationRail({
             {!isDeleting && regeneratingSessionId !== session.id ? (
               <div className="recent-item-actions">
                 <Dropdown>
-                  <Dropdown.Trigger>
-                    <Button aria-label="更多会话操作" className="recent-item-menu-button" isIconOnly size="sm" variant="ghost">
-                      <Ellipsis size={16} />
-                    </Button>
-                  </Dropdown.Trigger>
+                  <Button aria-label="更多会话操作" className="recent-item-menu-button" isIconOnly size="sm" variant="ghost">
+                    <Ellipsis size={16} />
+                  </Button>
                   <Dropdown.Popover className="session-actions-popover">
                     <Dropdown.Menu className="session-actions-menu" onAction={(key) => handleSessionAction(String(key), session.id)}>
                       <Dropdown.Item className="session-actions-item" id="regenerate-title" textValue="重新生成标题">

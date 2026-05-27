@@ -22,6 +22,7 @@ import {
 import { ChatSurface } from "./components/ChatSurface";
 import { Composer } from "./components/Composer";
 import { ConversationRail } from "./components/ConversationRail";
+import { SopWorkspace } from "./components/SopWorkspace";
 import {
   applyStreamEvent,
   createInitialTurnState,
@@ -36,6 +37,8 @@ const SIDEBAR_WIDTH_STORAGE_KEY = "genericagent.heroui.sidebarWidth";
 const DEFAULT_SIDEBAR_WIDTH = 240;
 const MIN_SIDEBAR_WIDTH = 220;
 const MAX_SIDEBAR_WIDTH = 420;
+
+type ActiveView = "chat" | "sops";
 
 function clampSidebarWidth(width: number) {
   return Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, Math.round(width)));
@@ -68,6 +71,7 @@ export function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(() => readStoredSidebarWidth());
   const [isSidebarResizing, setIsSidebarResizing] = useState(false);
+  const [activeView, setActiveView] = useState<ActiveView>("chat");
   const [showBridgeDiagnostics, setShowBridgeDiagnostics] = useState(false);
   const [isSwitchingModelProfile, setIsSwitchingModelProfile] = useState(false);
   const [regeneratingTitleSessionId, setRegeneratingTitleSessionId] = useState("");
@@ -287,6 +291,7 @@ export function App() {
   }
 
   async function handleCreateSession() {
+    setActiveView("chat");
     if (activeSessionId && messages.length === 0 && (!activeTurn || activeTurn.status !== "streaming")) {
       setAppError("");
       return;
@@ -311,6 +316,7 @@ export function App() {
   }
 
   function handleSelectSession(sessionId: string) {
+    setActiveView("chat");
     if (sessionId === activeSessionId) {
       setAppError("");
       return;
@@ -325,6 +331,11 @@ export function App() {
     setArtifacts([]);
     setActiveTurn(null);
     setIsLoadingMessages(true);
+    setAppError("");
+  }
+
+  function handleOpenSops() {
+    setActiveView("sops");
     setAppError("");
   }
 
@@ -476,6 +487,7 @@ export function App() {
       style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
     >
       <ConversationRail
+        activeView={activeView}
         sessions={sessions}
         activeSessionId={activeSessionId}
         modelLabel={modelLabel}
@@ -483,6 +495,7 @@ export function App() {
         onCreateSession={handleCreateSession}
         onDeleteSessions={handleDeleteSessions}
         onRegenerateSessionTitle={(sessionId) => void handleRegenerateSessionTitle(sessionId)}
+        onOpenSops={handleOpenSops}
         onSelectSession={handleSelectSession}
       />
       <div
@@ -492,99 +505,105 @@ export function App() {
         onPointerDown={handleSidebarResizePointerDown}
         role="separator"
       />
-      <section className="conversation-main" aria-label="GenericAgent 智能工作台">
-        <header className="conversation-header">
-          <Button
-            aria-label={sidebarCollapsed ? "展开侧栏" : "折叠侧栏"}
-            className="header-menu"
-            isIconOnly
-            onPress={() => setSidebarCollapsed((current) => !current)}
-            variant="tertiary"
-          >
-            <Menu size={18} />
-          </Button>
-          <div className="conversation-title">
-            <h1>{formatChineseTitle(activeSession?.title ?? "新会话")}</h1>
-            {isRegeneratingActiveTitle ? (
-              <span className="conversation-title-status">
-                <Loader2 size={12} />
-                正在生成标题…
-              </span>
-            ) : null}
-          </div>
-          <div className="header-actions">
-            <div className="bridge-meta-strip" aria-label="HeroBridge 状态">
-              <Chip color={bridgeStatus?.ready ? "success" : "warning"} size="sm" variant="soft">
-                <Chip.Label title={bridgeStatus?.ready ? "已连接" : "连接中"}>HeroBridge</Chip.Label>
-              </Chip>
-            </div>
-            <Button
-              aria-label="Bridge 诊断"
-              className="bridge-diagnostics-button"
-              isIconOnly
-              onPress={toggleBridgeDiagnostics}
-              ref={bridgeDiagnosticsButtonRef}
-              size="sm"
-              variant="tertiary"
-            >
-              <Info size={16} />
-            </Button>
-            <Button size="sm" variant="tertiary">
-              <Search size={16} />
-              搜索
-            </Button>
-          </div>
-          <AnimatePresence initial={false}>
-            {showBridgeDiagnostics ? (
-              <motion.div
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                aria-label="Bridge 诊断面板"
-                className="bridge-diagnostics-panel"
-                exit={{ opacity: 0, scale: 0.96, y: -10 }}
-                initial={{ opacity: 0, scale: 0.96, y: -12 }}
-                ref={bridgeDiagnosticsPanelRef}
-                transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+      <section className={`conversation-main ${activeView === "sops" ? "is-sop-view" : ""}`} aria-label="GenericAgent 智能工作台">
+        {activeView === "sops" ? (
+          <SopWorkspace />
+        ) : (
+          <>
+            <header className="conversation-header">
+              <Button
+                aria-label={sidebarCollapsed ? "展开侧栏" : "折叠侧栏"}
+                className="header-menu"
+                isIconOnly
+                onPress={() => setSidebarCollapsed((current) => !current)}
+                variant="tertiary"
               >
-                <div className="bridge-diagnostics-summary">
-                  <span>GA 根目录</span>
-                  <code>{bridgeStatus?.gaRoot ?? "未连接"}</code>
+                <Menu size={18} />
+              </Button>
+              <div className="conversation-title">
+                <h1>{formatChineseTitle(activeSession?.title ?? "新会话")}</h1>
+                {isRegeneratingActiveTitle ? (
+                  <span className="conversation-title-status">
+                    <Loader2 size={12} />
+                    正在生成标题…
+                  </span>
+                ) : null}
+              </div>
+              <div className="header-actions">
+                <div className="bridge-meta-strip" aria-label="HeroBridge 状态">
+                  <Chip color={bridgeStatus?.ready ? "success" : "warning"} size="sm" variant="soft">
+                    <Chip.Label title={bridgeStatus?.ready ? "已连接" : "连接中"}>HeroBridge</Chip.Label>
+                  </Chip>
                 </div>
-                <BridgeConfigDetails activeProfile={activeModelProfile} profiles={modelProfiles} status={bridgeStatus} />
-                <div className="bridge-diagnostics-actions">
-                  <Button className="bridge-open-button" onPress={() => handleOpenBridgePath("root")} size="sm" variant="secondary">
-                    <FolderOpen size={15} />
-                    打开 GA 根目录
-                  </Button>
-                  <Button className="bridge-open-button" onPress={() => handleOpenBridgePath("config")} size="sm" variant="secondary">
-                    <FileCode size={15} />
-                    打开 mykey.py
-                  </Button>
-                </div>
-              </motion.div>
-            ) : null}
-          </AnimatePresence>
-        </header>
-        {appError ? <div className="app-error">{appError}</div> : null}
-        <ChatSurface
-          activeTurn={activeTurn}
-          artifacts={artifacts}
-          isLoadingMessages={isLoadingMessages}
-          messages={messages}
-          onReplayTurn={(message) => void handleReplayTurn(message)}
-          sessionTitle={activeSession?.title ?? "新会话"}
-          timeline={timeline}
-        />
-        <div className="composer-stack">
-          <HumanInteractionPromptPanel humanInteractionPrompt={humanInteractionPrompt} onAskUserChoice={(choice) => void handleSubmit(choice)} />
-          <Composer
-            disabled={activeTurn?.status === "streaming"}
-            modelProfiles={modelProfiles}
-            onCancel={handleCancelTurn}
-            onModelProfileSelect={handleSwitchModelProfile}
-            onSubmit={handleSubmit}
-            selectedProfileId={selectedProfileId}
-          />
-        </div>
+                <Button
+                  aria-label="Bridge 诊断"
+                  className="bridge-diagnostics-button"
+                  isIconOnly
+                  onPress={toggleBridgeDiagnostics}
+                  ref={bridgeDiagnosticsButtonRef}
+                  size="sm"
+                  variant="tertiary"
+                >
+                  <Info size={16} />
+                </Button>
+                <Button size="sm" variant="tertiary">
+                  <Search size={16} />
+                  搜索
+                </Button>
+              </div>
+              <AnimatePresence initial={false}>
+                {showBridgeDiagnostics ? (
+                  <motion.div
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    aria-label="Bridge 诊断面板"
+                    className="bridge-diagnostics-panel"
+                    exit={{ opacity: 0, scale: 0.96, y: -10 }}
+                    initial={{ opacity: 0, scale: 0.96, y: -12 }}
+                    ref={bridgeDiagnosticsPanelRef}
+                    transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                  >
+                    <div className="bridge-diagnostics-summary">
+                      <span>GA 根目录</span>
+                      <code>{bridgeStatus?.gaRoot ?? "未连接"}</code>
+                    </div>
+                    <BridgeConfigDetails activeProfile={activeModelProfile} profiles={modelProfiles} status={bridgeStatus} />
+                    <div className="bridge-diagnostics-actions">
+                      <Button className="bridge-open-button" onPress={() => handleOpenBridgePath("root")} size="sm" variant="secondary">
+                        <FolderOpen size={15} />
+                        打开 GA 根目录
+                      </Button>
+                      <Button className="bridge-open-button" onPress={() => handleOpenBridgePath("config")} size="sm" variant="secondary">
+                        <FileCode size={15} />
+                        打开 mykey.py
+                      </Button>
+                    </div>
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
+            </header>
+            {appError ? <div className="app-error">{appError}</div> : null}
+            <ChatSurface
+              activeTurn={activeTurn}
+              artifacts={artifacts}
+              isLoadingMessages={isLoadingMessages}
+              messages={messages}
+              onReplayTurn={(message) => void handleReplayTurn(message)}
+              sessionTitle={activeSession?.title ?? "新会话"}
+              timeline={timeline}
+            />
+            <div className="composer-stack">
+              <HumanInteractionPromptPanel humanInteractionPrompt={humanInteractionPrompt} onAskUserChoice={(choice) => void handleSubmit(choice)} />
+              <Composer
+                disabled={activeTurn?.status === "streaming"}
+                modelProfiles={modelProfiles}
+                onCancel={handleCancelTurn}
+                onModelProfileSelect={handleSwitchModelProfile}
+                onSubmit={handleSubmit}
+                selectedProfileId={selectedProfileId}
+              />
+            </div>
+          </>
+        )}
       </section>
     </main>
   );

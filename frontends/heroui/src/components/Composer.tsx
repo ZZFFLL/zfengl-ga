@@ -1,11 +1,12 @@
 import { Button, Chip, ListBox, Popover, Select, Surface, TextArea, type Key } from "@heroui/react";
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowUp, BookOpen, Eye, Paperclip, Search, Square, X } from "lucide-react";
+import { ArrowUp, BookOpen, Paperclip, Search, Square, X } from "lucide-react";
 import type { ChangeEvent, FormEvent, KeyboardEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getSopDetail, listSops, type ModelProfile, type SopEntry } from "../api";
 import { buildDisplayPromptWithSopReferences, buildPromptWithSopReferences, removeTrailingSopTrigger } from "../sop_prompt";
 import type { ImageAttachment } from "../types";
+import { SopListItem } from "./SopListItem";
 
 type ComposerProps = {
   disabled: boolean;
@@ -237,34 +238,17 @@ export function Composer({
                     <ListBox aria-label="SOP 列表" className="sop-picker-list" selectionMode="none">
                       {filteredSops.map((sop) => (
                         <ListBox.Item
-                          className={`sop-picker-item ${selectedSopIds.has(sop.id) ? "is-selected" : ""}`}
+                          className="sop-picker-row"
                           id={sop.id}
                           key={sop.id}
                           textValue={`${sop.name} ${sop.title}`}
                         >
-                          <button className="sop-picker-main" onClick={() => addSopReference(sop)} type="button">
-                            <span className="sop-picker-icon" aria-hidden="true">
-                              <BookOpen size={15} />
-                            </span>
-                            <span className="sop-picker-copy">
-                              <span className="sop-picker-title-row">
-                                <span className="sop-picker-title">{sop.title || sop.name}</span>
-                                <span className="sop-picker-file">@{sop.id}</span>
-                              </span>
-                              <span className="sop-picker-meta">{sop.path}</span>
-                              {sop.summary ? <span className="sop-picker-summary">{sop.summary}</span> : null}
-                            </span>
-                          </button>
-                          <Button
-                            aria-label={`查看 ${sop.name}`}
-                            className="sop-picker-preview-button"
-                            isIconOnly
-                            onPress={() => void showSopPreview(sop)}
-                            size="sm"
-                            variant="ghost"
-                          >
-                            <Eye size={14} />
-                          </Button>
+                          <SopListItem
+                            isSelected={selectedSopIds.has(sop.id)}
+                            onOpen={addSopReference}
+                            onPreview={(nextSop) => void showSopPreview(nextSop)}
+                            sop={sop}
+                          />
                         </ListBox.Item>
                       ))}
                     </ListBox>

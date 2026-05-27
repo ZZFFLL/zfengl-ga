@@ -131,6 +131,25 @@ class BridgeRoutes:
             raise web.HTTPNotFound(text=json.dumps({"error": f"SOP not found: {sop_id}"}, ensure_ascii=False), content_type="application/json")
         return json_ok({"item": self._sop_item_from_path(resolved), "content": resolved.read_text(encoding="utf-8", errors="replace")})
 
+    async def sop_save_handler(self, request):
+        sop_id = str(request.match_info.get("sop_id") or "")
+        target = self._memory_dir() / f"{sop_id}.md"
+        memory_dir = self._memory_dir()
+        try:
+            resolved = target.resolve()
+            resolved.relative_to(memory_dir.resolve())
+        except ValueError:
+            raise web.HTTPNotFound(text=json.dumps({"error": f"SOP not found: {sop_id}"}, ensure_ascii=False), content_type="application/json")
+        if not resolved.is_file():
+            raise web.HTTPNotFound(text=json.dumps({"error": f"SOP not found: {sop_id}"}, ensure_ascii=False), content_type="application/json")
+        data = await read_json(request)
+        content = data.get("content")
+        if not isinstance(content, str):
+            raise web.HTTPBadRequest(text=json.dumps({"error": "content must be a string"}, ensure_ascii=False), content_type="application/json")
+        # SOP 在线编辑只覆盖 memory 下已有 Markdown 文件，避免把页面输入扩展成任意文件写入能力。
+        resolved.write_text(content, encoding="utf-8")
+        return json_ok({"item": self._sop_item_from_path(resolved), "content": resolved.read_text(encoding="utf-8", errors="replace")})
+
     async def switch_model_profile_handler(self, request):
         manager = self.manager
         data = await read_json(request)
@@ -296,6 +315,7 @@ class BridgeRoutes:
         app.router.add_get("/model-profiles", self.model_profiles_handler)
         app.router.add_get("/sops", self.sops_handler)
         app.router.add_get("/sops/{sop_id}", self.sop_detail_handler)
+        app.router.add_put("/sops/{sop_id}", self.sop_save_handler)
         app.router.add_post("/model-profile", self.switch_model_profile_handler)
         app.router.add_get("/sessions", self.list_sessions_handler)
         app.router.add_post("/session/new", self.new_session_handler)

@@ -571,11 +571,9 @@ function AssistantActions({
   return (
     <div className="assistant-actions" aria-label="助手消息操作">
       <Dropdown>
-        <Dropdown.Trigger>
-          <Button aria-label="导出回答" isIconOnly size="sm" variant="ghost">
-            <Copy size={16} />
-          </Button>
-        </Dropdown.Trigger>
+        <Button aria-label="导出回答" isIconOnly size="sm" variant="ghost">
+          <Copy size={16} />
+        </Button>
         <Dropdown.Popover className="assistant-actions-popover">
           <Dropdown.Menu className="assistant-actions-menu" onAction={(key) => handleAssistantExportAction(String(key), message, sessionTitle)}>
             <Dropdown.Item className="assistant-action-item" id="copy-markdown" textValue="复制为 Markdown">

@@ -1020,6 +1020,10 @@ async def sop_detail_handler(request):
     return await routes.sop_detail_handler(request)
 
 
+async def sop_save_handler(request):
+    return await routes.sop_save_handler(request)
+
+
 async def switch_model_profile_handler(request):
     return await routes.switch_model_profile_handler(request)
 

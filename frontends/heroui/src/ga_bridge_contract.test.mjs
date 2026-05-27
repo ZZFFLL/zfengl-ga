@@ -889,6 +889,62 @@ asyncio.run(main())
   }
 });
 
+test("HeroUI bridge updates an existing SOP inside memory only", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-sop-save-"));
+  const dbPath = join(tempDir, "sessions.sqlite3");
+  const memoryDir = join(tempDir, "memory");
+  mkdirSync(memoryDir, { recursive: true });
+  writeFileSync(join(memoryDir, "plan_sop.md"), "# Old SOP\n\n旧内容", "utf8");
+  const script = `
+import asyncio
+import importlib.util
+import json
+import sys
+from pathlib import Path
+
+bridge_path = Path(${JSON.stringify(bridgePath)})
+spec = importlib.util.spec_from_file_location("heroui_bridge_under_test_sop_save", bridge_path)
+bridge = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bridge
+spec.loader.exec_module(bridge)
+
+bridge.manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
+bridge.manager.ga_root = ${JSON.stringify(tempDir)}
+
+class Request:
+    can_read_body = True
+    def __init__(self, sop_id, payload):
+        self.match_info = {"sop_id": sop_id}
+        self._payload = payload
+    async def json(self):
+        return self._payload
+
+async def main():
+    response = await bridge.sop_save_handler(Request("plan_sop", {"content": "# New SOP\\n\\n新内容"}))
+    payload = json.loads(response.text)
+    assert payload["item"]["id"] == "plan_sop"
+    assert payload["item"]["title"] == "New SOP"
+    assert payload["content"] == "# New SOP\\n\\n新内容"
+    assert Path(${JSON.stringify(join(memoryDir, "plan_sop.md"))}).read_text(encoding="utf-8") == "# New SOP\\n\\n新内容"
+
+    for bad_id in ["../outside", "missing_sop"]:
+        try:
+            await bridge.sop_save_handler(Request(bad_id, {"content": "bad"}))
+        except bridge.web.HTTPNotFound:
+            pass
+        else:
+            raise AssertionError("unsafe or missing SOP should not be written")
+
+asyncio.run(main())
+`;
+
+  try {
+    execFileSync("python", ["-c", script], { stdio: "pipe" });
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
 test("HeroUI bridge stores display prompt separately from the GA execution prompt", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-display-prompt-"));
   const dbPath = join(tempDir, "sessions.sqlite3");
