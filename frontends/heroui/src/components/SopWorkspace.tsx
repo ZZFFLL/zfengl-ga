@@ -9,9 +9,9 @@ import { SopListItem } from "./SopListItem";
 
 const SOP_LIST_RATIO_STORAGE_KEY = "genericagent.heroui.sopListRatio";
 const LEGACY_SOP_LIST_WIDTH_STORAGE_KEY = "genericagent.heroui.sopListWidth";
-const DEFAULT_SOP_LIST_RATIO = 0.32;
-const MIN_SOP_LIST_RATIO = 0.22;
-const MAX_SOP_LIST_RATIO = 0.46;
+const DEFAULT_SOP_LIST_RATIO = 0.38;
+const MIN_SOP_LIST_RATIO = 0.34;
+const MAX_SOP_LIST_RATIO = 0.5;
 
 function clampSopListRatio(ratio: number) {
   return Math.max(MIN_SOP_LIST_RATIO, Math.min(MAX_SOP_LIST_RATIO, ratio));

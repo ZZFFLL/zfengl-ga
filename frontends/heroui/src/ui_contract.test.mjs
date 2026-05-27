@@ -449,6 +449,7 @@ test("SOP library view is reachable from the sidebar and supports search preview
   assert.match(sopWorkspace, /SOP_LIST_RATIO_STORAGE_KEY/);
   assert.match(sopWorkspace, /LEGACY_SOP_LIST_WIDTH_STORAGE_KEY/);
   assert.match(sopWorkspace, /removeItem\(LEGACY_SOP_LIST_WIDTH_STORAGE_KEY\)/);
+  assert.doesNotMatch(sopWorkspace, /MIN_SOP_LIST_RATIO = 0\.22/);
   assert.match(sopWorkspace, /--sop-list-ratio/);
   assert.match(sopWorkspace, /role="list"/);
   assert.match(sopWorkspace, /role="listitem"/);
@@ -466,6 +467,10 @@ test("SOP library view is reachable from the sidebar and supports search preview
   assert.match(styles, /\.sop-library-list\s*{[^}]*grid-auto-rows: auto/s);
   assert.doesNotMatch(styles, /\.sop-library-item\s*{[^}]*min-height:\s*\d+px/s);
   assert.match(styles, /\.sop-library-item\s*{[^}]*min-height: clamp\(/s);
+  assert.match(styles, /\.sop-library-item\s*{[^}]*grid-template-columns: minmax\(0, 1fr\) auto/s);
+  assert.match(styles, /\.sop-library-item \.sop-picker-title-row\s*{[^}]*flex-wrap: wrap/s);
+  assert.match(styles, /\.sop-library-item \.sop-picker-file\s*{[^}]*max-width: 100%/s);
+  assert.match(styles, /\.sop-library-item \.sop-picker-summary\s*{[^}]*overflow-wrap: anywhere/s);
   assert.doesNotMatch(styles, /--sop-list-width/);
   assert.doesNotMatch(styles, /\.sop-library-panel\s*{[^}]*min-height:\s*(?:320|420|560)px/s);
   assert.doesNotMatch(styles, /\.sop-editor-panel,\s*\.sop-empty-preview\s*{[^}]*min-height:\s*(?:320|420|560)px/s);
@@ -475,7 +480,7 @@ test("SOP library view is reachable from the sidebar and supports search preview
   assert.match(styles, /\.sop-library-panel\s*{[^}]*min-height: clamp\(18rem, 38vh, 28rem\)/s);
   assert.match(styles, /\.sop-editor-panel,\s*\.sop-empty-preview\s*{[^}]*min-height: clamp\(32rem, 72vh, 46rem\)/s);
   assert.match(styles, /\.sop-workspace:not\(\.has-preview\) \.sop-empty-preview/);
-  assert.match(styles, /\.sop-workspace\.has-preview\s*{[^}]*clamp\(min\(24rem, 42vw\), calc\(100% \* var\(--sop-list-ratio\)\), min\(38rem, 46vw\)\)[\s\S]*0\.5rem/s);
+  assert.match(styles, /\.sop-workspace\.has-preview\s*{[^}]*clamp\(min\(28rem, 45%\), calc\(100% \* var\(--sop-list-ratio\)\), min\(42rem, 54%\)\)[\s\S]*0\.5rem/s);
   assert.match(styles, /\.sop-list-resize-handle/);
   assert.match(styles, /\.sop-editor-panel/);
   assert.match(styles, /\.sop-markdown-preview/);

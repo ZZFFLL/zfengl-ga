@@ -1744,10 +1744,10 @@ textarea {
 .sop-library-item {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 30px;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
-  align-items: center;
-  min-height: clamp(5.75rem, 11vh, 7.5rem);
+  align-items: start;
+  min-height: clamp(6.5rem, 12vh, 8.5rem);
   padding: 12px;
   border: 1px solid transparent;
   border-radius: 8px;
@@ -1872,35 +1872,55 @@ textarea {
 }
 
 .sop-library-item .sop-picker-main {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr);
+  align-items: start;
   gap: 12px;
   width: 100%;
 }
 
 .sop-library-item .sop-picker-icon {
   flex-basis: 32px;
-  width: 32px;
-  height: 32px;
+  width: 2rem;
+  height: 2rem;
   border-color: #d8dde7;
   box-shadow: none;
 }
 
 .sop-library-item .sop-picker-copy {
   gap: 4px;
+  min-width: 0;
+}
+
+.sop-library-item .sop-picker-title-row {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  row-gap: 4px;
 }
 
 .sop-library-item .sop-picker-title {
+  flex: 1 1 10rem;
   font-size: 14px;
   line-height: 20px;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .sop-library-item .sop-picker-file {
-  max-width: 46%;
+  flex: 0 1 auto;
+  max-width: 100%;
   background: #f5f7fb;
+}
+
+.sop-library-item .sop-picker-meta {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .sop-library-item .sop-picker-summary {
   display: -webkit-box;
   white-space: normal;
+  overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
@@ -1981,7 +2001,7 @@ textarea {
 }
 
 .sop-workspace.has-preview {
-  grid-template-columns: clamp(min(24rem, 42vw), calc(100% * var(--sop-list-ratio)), min(38rem, 46vw)) 0.5rem minmax(0, 1fr);
+  grid-template-columns: clamp(min(28rem, 45%), calc(100% * var(--sop-list-ratio)), min(42rem, 54%)) 0.5rem minmax(0, 1fr);
 }
 
 .sop-workspace.is-list-resizing {
