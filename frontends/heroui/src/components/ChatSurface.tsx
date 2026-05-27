@@ -350,7 +350,7 @@ function HistoryTimelineSummary({
 }) {
   const failedCount = steps.filter((step) => step.status === "failed").length;
   const elapsedLabel = readElapsedLabel(readTimelineElapsedMs(steps, elapsedMs));
-  const summaryParts = [`${steps.length} 次工具调用`];
+  const summaryParts = [`已运行 ${steps.length} 条命令`];
   if (artifacts.length > 0) {
     summaryParts.push(`${artifacts.length} 个附件`);
   }
@@ -418,6 +418,7 @@ function TimelineStepCard({ step }: { step: ExecutionStep }) {
   const [isExpanded, setIsExpanded] = useState(Boolean(step.default_open && !isModelSummaryStep(step)));
   const icon = readStepIcon(step);
   const title = readStepHeadline(step);
+  const runLabel = `已运行 ${title}`;
   const statusLabel = readStepStatusLabel(step);
   const detailSections = step.kind === "thought" ? [] : buildToolDetailSections(step);
   const hasDetail = detailSections.length > 0 || Boolean(step.detail.trim());
@@ -438,7 +439,7 @@ function TimelineStepCard({ step }: { step: ExecutionStep }) {
         <Disclosure.Heading>
           <Button className="timeline-step-trigger" slot="trigger" variant="tertiary">
             <span className="timeline-step-trigger-main">
-              <span className="timeline-step-title">{title}</span>
+              <span className="timeline-step-title">{runLabel}</span>
             </span>
             <span className="timeline-step-trigger-meta">
               <Chip className="timeline-step-chip" size="sm" variant="secondary">

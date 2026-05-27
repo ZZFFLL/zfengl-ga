@@ -141,7 +141,7 @@ test("webui uses HeroUI components for the agent workbench shell", () => {
   assert.match(source, /HistoryTimelineSummary/);
   assert.match(source, /timelineMode="summary"/);
   assert.match(source, /timelineMode="full"/);
-  assert.match(source, /次工具调用/);
+  assert.match(source, /已运行 \$\{steps\.length\} 条命令/);
   assert.doesNotMatch(source, /turn-phase--footer[\s\S]*thinking-dots/);
   assert.match(source, /Dropdown\.Popover className="assistant-actions-popover"/);
   assert.match(source, /navigator\.clipboard\.writeText/);
@@ -264,6 +264,7 @@ test("webui keeps the screenshot-style chat layout contract", () => {
   assert.match(styles, /\.thinking-dots/);
   assert.match(styles, /@keyframes thinking-dot-bounce/);
   assert.match(styles, /\.timeline-step-card/);
+  assert.match(styles, /\.timeline-step-card\s*{[^}]*width: fit-content/s);
   assert.match(styles, /\.thought-panel/);
   assert.match(styles, /\.artifact-card/);
   assert.match(styles, /\.tool-card/);
@@ -271,6 +272,11 @@ test("webui keeps the screenshot-style chat layout contract", () => {
   assert.match(styles, /\.timeline-step-trigger-meta/);
   assert.match(styles, /\.timeline-step-trigger\s*{[^}]*white-space: normal/s);
   assert.match(styles, /\.timeline-step-trigger\s*{[^}]*align-items: center/s);
+  assert.match(styles, /\.timeline-step-trigger\s*{[^}]*background: transparent/s);
+  assert.match(styles, /\.timeline-step-trigger\s*{[^}]*box-shadow: none/s);
+  assert.match(styles, /\.timeline-step-title\s*{[^}]*font-weight: 500/s);
+  assert.match(styles, /\.historical-timeline-summary-trigger\s*{[^}]*width: fit-content/s);
+  assert.match(styles, /\.historical-timeline-summary-trigger\s*{[^}]*background: transparent/s);
   assert.doesNotMatch(styles, /\.timeline-step-trigger\s*{[^}]*align-items: flex-start/s);
   assert.match(styles, /\.timeline-step-title\s*{[^}]*word-break: break-word/s);
   assert.match(components, /buildToolDetailSections/);
@@ -308,11 +314,14 @@ test("webui keeps the screenshot-style chat layout contract", () => {
   assert.match(components, /label: "入参"/);
   assert.match(components, /label: "结果"/);
   assert.match(components, /label: sections\.length > 0 \? "过程" : "详情"/);
+  assert.match(components, /已运行 \$\{steps\.length\} 条命令/);
+  assert.match(components, /已运行 \$\{title\}/);
   assert.doesNotMatch(components, /readSummaryFromModelDetail/);
   assert.doesNotMatch(components, /timeline-tool-name/);
   assert.doesNotMatch(components, /timeline-tool-label/);
   assert.match(components, /className=\{`tool-detail-section tool-detail-section--\$\{section\.kind\}`\}/);
-  assert.match(styles, /\.tool-detail-section\s*{[^}]*border: 1px solid #e0e1e7/s);
+  assert.match(styles, /\.tool-detail-section\s*{[^}]*border-top: 1px solid #e3e4e8/s);
+  assert.match(styles, /\.tool-detail-section\s*{[^}]*background: transparent/s);
   assert.match(styles, /\.ask-user-panel\s*{/);
   assert.match(styles, /\.composer-ask-user-panel\s*{[^}]*width: var\(--conversation-content-width\)/s);
   assert.match(styles, /\.ask-user-choice-list\s*{[^}]*flex-wrap: wrap/s);

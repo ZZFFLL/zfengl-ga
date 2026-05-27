@@ -857,9 +857,9 @@ textarea {
 .execution-timeline {
   position: relative;
   display: grid;
-  gap: 12px;
+  gap: 8px;
   min-width: 0;
-  padding-left: 30px;
+  padding-left: 24px;
 }
 
 .execution-timeline::before {
@@ -867,32 +867,37 @@ textarea {
   position: absolute;
   top: 8px;
   bottom: 8px;
-  left: 11px;
+  left: 8px;
   width: 1px;
-  background: repeating-linear-gradient(to bottom, #dfe0e5 0 4px, transparent 4px 9px);
+  background: repeating-linear-gradient(to bottom, #d7d8de 0 3px, transparent 3px 8px);
 }
 
 .timeline-step {
   position: relative;
   display: grid;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
   justify-items: start;
 }
 
 .timeline-dot {
   position: absolute;
-  top: 7px;
-  left: -29px;
+  top: 5px;
+  left: -24px;
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
-  border: 1px solid #e3e4ea;
-  border-radius: 999px;
-  background: #fff;
-  color: #6167ff;
-  box-shadow: 0 6px 16px rgba(16, 17, 19, 0.08);
+  width: 18px;
+  height: 18px;
+  border: 1px solid #dfe0e6;
+  border-radius: 4px;
+  background: transparent;
+  color: #8b8d96;
+  box-shadow: none;
+}
+
+.timeline-dot svg {
+  width: 12px;
+  height: 12px;
 }
 
 .timeline-step--running .timeline-dot svg {
@@ -922,7 +927,7 @@ textarea {
 }
 
 .timeline-step-card {
-  width: min(720px, 100%);
+  width: fit-content;
   max-width: 100%;
   min-width: 0;
 }
@@ -937,26 +942,34 @@ textarea {
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  width: 100%;
+  width: fit-content;
   max-width: 100%;
   min-width: 0;
-  min-height: 36px;
+  min-height: 26px;
   height: auto;
-  padding: 5px 10px;
-  border: 1px solid #e4e5eb;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.86);
-  color: #23242a;
-  box-shadow: 0 8px 22px rgba(16, 17, 19, 0.05);
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #8a8c94;
+  box-shadow: none;
   text-align: left;
   white-space: normal;
+}
+
+.timeline-step-trigger:hover,
+.timeline-step-trigger[data-hovered="true"],
+.timeline-step-trigger[data-focus-visible="true"] {
+  background: #ededf0;
+  color: #696b73;
+  box-shadow: none;
 }
 
 .timeline-step-trigger-main {
   display: flex;
   flex: 1 1 240px;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
   max-width: 100%;
 }
@@ -972,17 +985,17 @@ textarea {
 .timeline-step-title {
   display: block;
   min-width: 0;
-  font-size: 14px;
-  font-weight: 650;
-  line-height: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
   overflow-wrap: anywhere;
   white-space: normal;
   word-break: break-word;
 }
 
 .timeline-step-chip {
-  color: #6d6f78;
-  font-size: 12px;
+  color: #8a8c94;
+  font-size: 11px;
 }
 
 .timeline-step--failed .timeline-step-chip {
@@ -991,10 +1004,10 @@ textarea {
 
 .timeline-step-duration {
   margin-left: 4px;
-  padding: 2px 6px;
+  padding: 1px 5px;
   border-radius: 999px;
-  background: #f2f3f6;
-  color: #777982;
+  background: transparent;
+  color: #8f9199;
   font-family: "Cascadia Code", "JetBrains Mono", monospace;
   font-size: 12px;
   font-weight: 650;
@@ -1015,24 +1028,24 @@ textarea {
 
 .thought-panel,
 .tool-detail-panel {
-  width: min(520px, 100%);
+  width: min(640px, 100%);
   max-width: 100%;
   min-width: 0;
-  margin-top: 6px;
-  padding: 14px 16px;
-  border: 1px solid #e5e6eb;
-  border-radius: 8px;
-  background: #f3f4f6;
-  color: #25262b;
-  font-size: 14px;
-  line-height: 24px;
+  margin-top: 3px;
+  padding: 8px 0 4px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #53555d;
+  font-size: 13px;
+  line-height: 20px;
   overflow: hidden;
   white-space: pre-wrap;
 }
 
 .tool-detail-sections {
   display: grid;
-  gap: 10px;
+  gap: 6px;
   white-space: normal;
 }
 
@@ -1074,17 +1087,19 @@ textarea {
 
 .tool-detail-section {
   display: grid;
-  gap: 5px;
+  gap: 4px;
   min-width: 0;
-  padding: 10px 12px;
-  border: 1px solid #e0e1e7;
-  border-radius: 8px;
-  background: #fff;
+  padding: 6px 0 7px;
+  border: 0;
+  border-top: 1px solid #e3e4e8;
+  border-radius: 0;
+  background: transparent;
 }
 
 .tool-detail-section strong {
-  color: #686a73;
+  color: #8a8c94;
   font-size: 12px;
+  font-weight: 500;
   line-height: 16px;
 }
 
@@ -1097,7 +1112,7 @@ textarea {
   border: 0;
   border-radius: 0;
   background: transparent;
-  color: #222326;
+  color: #5f6168;
   font-family: "Cascadia Code", "JetBrains Mono", monospace;
   font-size: 12px;
   line-height: 18px;
@@ -1361,7 +1376,8 @@ textarea {
 }
 
 .historical-timeline-summary {
-  width: min(560px, 100%);
+  width: fit-content;
+  max-width: 100%;
   min-width: 0;
 }
 
@@ -1369,16 +1385,24 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  width: 100%;
-  min-height: 30px;
-  padding: 4px 8px;
-  border: 1px solid #e0e2e7;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.72);
-  color: #656871;
+  width: fit-content;
+  max-width: 100%;
+  min-height: 28px;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #8a8c94;
   box-shadow: none;
   font-size: 12px;
   line-height: 16px;
+}
+
+.historical-timeline-summary-trigger:hover,
+.historical-timeline-summary-trigger[data-hovered="true"],
+.historical-timeline-summary-trigger[data-focus-visible="true"] {
+  background: #ededf0;
+  color: #696b73;
 }
 
 .historical-timeline-summary-main,
@@ -1397,11 +1421,11 @@ textarea {
 
 .historical-timeline-summary-action {
   flex: 0 0 auto;
-  color: #7b7d86;
+  color: #8a8c94;
 }
 
 .historical-timeline-summary-body {
-  padding: 10px 0 0;
+  padding: 6px 0 0;
 }
 
 .is-streaming .message-bubble::after {
