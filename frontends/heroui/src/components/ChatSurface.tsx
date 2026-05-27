@@ -263,18 +263,25 @@ function MessageRow({
   onReplayTurn: (message: MessageRecord) => void;
 }) {
   return (
-    <motion.article
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      className={`message-row message-row--${message.role}`}
-      data-message-role={message.role}
-      data-user-message-anchor={message.role === "user" ? "true" : undefined}
-      initial={{ opacity: 0, scale: message.role === "user" ? 0.985 : 0.995, y: message.role === "user" ? 16 : 10 }}
-      layout="position"
-      transition={{ damping: 24, stiffness: 280, type: "spring" }}
-    >
-      <MessageBubble content={message.content} />
-      {message.role === "assistant" ? <AssistantActions message={message} onReplayTurn={onReplayTurn} sessionTitle={sessionTitle} /> : null}
-    </motion.article>
+    message.role === "user" ? (
+      <motion.article
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        className="message-row message-row--user"
+        data-message-role={message.role}
+        data-user-message-anchor="true"
+        initial={{ opacity: 0, scale: 0.985, y: 16 }}
+        layout="position"
+        transition={{ damping: 24, stiffness: 280, type: "spring" }}
+      >
+        <MessageBubble content={message.content} />
+      </motion.article>
+    ) : (
+      <article className={`message-row message-row--${message.role}`} data-message-role={message.role}>
+        {/* 助手正文保持流式渲染，不做整条消息的位移入场动画。 */}
+        <MessageBubble content={message.content} />
+        <AssistantActions message={message} onReplayTurn={onReplayTurn} sessionTitle={sessionTitle} />
+      </article>
+    )
   );
 }
 
