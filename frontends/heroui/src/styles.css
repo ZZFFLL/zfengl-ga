@@ -479,12 +479,6 @@ textarea {
   box-shadow: 0 24px 70px rgba(16, 17, 19, 0.16);
   backdrop-filter: blur(16px);
   transform-origin: top right;
-  animation: bridge-panel-in 160ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.bridge-diagnostics-panel--closing {
-  pointer-events: none;
-  animation: bridge-panel-out 140ms ease-in both;
 }
 
 .bridge-diagnostics-panel > div {
@@ -699,11 +693,6 @@ textarea {
 .message-row {
   display: grid;
   gap: 8px;
-}
-
-.message-row--user,
-.message-row.is-streaming {
-  animation: message-in 220ms ease-out both;
 }
 
 .message-bubble {
@@ -1051,37 +1040,6 @@ textarea {
   width: var(--conversation-content-width);
   margin: 0 auto;
   box-shadow: 0 8px 24px rgba(16, 17, 19, 0.06);
-}
-
-.ask-user-panel--enter {
-  animation: ask-user-panel-in 180ms ease-out both;
-}
-
-.ask-user-panel--exit {
-  pointer-events: none;
-  animation: ask-user-panel-out 180ms ease-in both;
-}
-
-@keyframes ask-user-panel-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes ask-user-panel-out {
-  from {
-    opacity: 1;
-    transform: translateY(0);
-  }
-  to {
-    opacity: 0;
-    transform: translateY(8px);
-  }
 }
 
 .tool-detail-section {
@@ -1617,17 +1575,6 @@ textarea {
   text-align: center;
 }
 
-@keyframes message-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 @keyframes blink {
   0%,
   100% {
@@ -1641,28 +1588,6 @@ textarea {
 @keyframes tool-spin {
   to {
     transform: rotate(360deg);
-  }
-}
-
-@keyframes bridge-panel-in {
-  from {
-    opacity: 0;
-    transform: translateY(-6px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-@keyframes bridge-panel-out {
-  from {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-  to {
-    opacity: 0;
-    transform: translateY(-4px) scale(0.98);
   }
 }
 

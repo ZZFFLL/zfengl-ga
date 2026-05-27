@@ -1,5 +1,6 @@
 import { Button, Chip } from "@heroui/react";
 import { FileCode, FolderOpen, Info, Loader2, Menu, Search } from "lucide-react";
+import { AnimatePresence, motion, useIsPresent } from "motion/react";
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import {
   cancelSession,
@@ -31,7 +32,6 @@ import {
 } from "./state";
 import type { ArtifactRecord, ExecutionStep, ImageAttachment, MessageRecord, SessionRecord } from "./types";
 
-const PROMPT_PANEL_ANIMATION_MS = 180;
 const SIDEBAR_WIDTH_STORAGE_KEY = "genericagent.heroui.sidebarWidth";
 const DEFAULT_SIDEBAR_WIDTH = 240;
 const MIN_SIDEBAR_WIDTH = 220;
@@ -69,7 +69,6 @@ export function App() {
   const [sidebarWidth, setSidebarWidth] = useState(() => readStoredSidebarWidth());
   const [isSidebarResizing, setIsSidebarResizing] = useState(false);
   const [showBridgeDiagnostics, setShowBridgeDiagnostics] = useState(false);
-  const [isBridgeDiagnosticsClosing, setIsBridgeDiagnosticsClosing] = useState(false);
   const [isSwitchingModelProfile, setIsSwitchingModelProfile] = useState(false);
   const [regeneratingTitleSessionId, setRegeneratingTitleSessionId] = useState("");
   const activeSourceRef = useRef<EventSource | null>(null);
@@ -85,7 +84,6 @@ export function App() {
   const sidebarResizeCleanupRef = useRef<(() => void) | null>(null);
   const bridgeDiagnosticsButtonRef = useRef<HTMLButtonElement | null>(null);
   const bridgeDiagnosticsPanelRef = useRef<HTMLDivElement | null>(null);
-  const bridgeDiagnosticsCloseTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     activeSessionRef.current = activeSessionId;
@@ -174,7 +172,7 @@ export function App() {
   }, [activeSessionId]);
 
   useEffect(() => {
-    if (!showBridgeDiagnostics || isBridgeDiagnosticsClosing) {
+    if (!showBridgeDiagnostics) {
       return;
     }
 
@@ -191,40 +189,27 @@ export function App() {
 
     document.addEventListener("pointerdown", handlePointerDown);
     return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [showBridgeDiagnostics, isBridgeDiagnosticsClosing]);
+  }, [showBridgeDiagnostics]);
 
   useEffect(() => {
     return () => {
-      if (bridgeDiagnosticsCloseTimerRef.current !== null) {
-        window.clearTimeout(bridgeDiagnosticsCloseTimerRef.current);
-      }
       sidebarResizeCleanupRef.current?.();
     };
   }, []);
 
   function openBridgeDiagnostics() {
-    if (bridgeDiagnosticsCloseTimerRef.current !== null) {
-      window.clearTimeout(bridgeDiagnosticsCloseTimerRef.current);
-      bridgeDiagnosticsCloseTimerRef.current = null;
-    }
-    setIsBridgeDiagnosticsClosing(false);
     setShowBridgeDiagnostics(true);
   }
 
   function closeBridgeDiagnostics() {
-    if (!showBridgeDiagnostics || isBridgeDiagnosticsClosing) {
+    if (!showBridgeDiagnostics) {
       return;
     }
-    setIsBridgeDiagnosticsClosing(true);
-    bridgeDiagnosticsCloseTimerRef.current = window.setTimeout(() => {
-      setShowBridgeDiagnostics(false);
-      setIsBridgeDiagnosticsClosing(false);
-      bridgeDiagnosticsCloseTimerRef.current = null;
-    }, 160);
+    setShowBridgeDiagnostics(false);
   }
 
   function toggleBridgeDiagnostics() {
-    if (showBridgeDiagnostics && !isBridgeDiagnosticsClosing) {
+    if (showBridgeDiagnostics) {
       closeBridgeDiagnostics();
       return;
     }
@@ -548,29 +533,35 @@ export function App() {
               搜索
             </Button>
           </div>
-          {showBridgeDiagnostics || isBridgeDiagnosticsClosing ? (
-            <div
-              className={`bridge-diagnostics-panel ${isBridgeDiagnosticsClosing ? "bridge-diagnostics-panel--closing" : ""}`}
-              aria-label="Bridge 诊断面板"
-              ref={bridgeDiagnosticsPanelRef}
-            >
-              <div className="bridge-diagnostics-summary">
-                <span>GA 根目录</span>
-                <code>{bridgeStatus?.gaRoot ?? "未连接"}</code>
-              </div>
-              <BridgeConfigDetails activeProfile={activeModelProfile} profiles={modelProfiles} status={bridgeStatus} />
-              <div className="bridge-diagnostics-actions">
-                <Button className="bridge-open-button" onPress={() => handleOpenBridgePath("root")} size="sm" variant="secondary">
-                  <FolderOpen size={15} />
-                  打开 GA 根目录
-                </Button>
-                <Button className="bridge-open-button" onPress={() => handleOpenBridgePath("config")} size="sm" variant="secondary">
-                  <FileCode size={15} />
-                  打开 mykey.py
-                </Button>
-              </div>
-            </div>
-          ) : null}
+          <AnimatePresence initial={false}>
+            {showBridgeDiagnostics ? (
+              <motion.div
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                aria-label="Bridge 诊断面板"
+                className="bridge-diagnostics-panel"
+                exit={{ opacity: 0, scale: 0.96, y: -10 }}
+                initial={{ opacity: 0, scale: 0.96, y: -12 }}
+                ref={bridgeDiagnosticsPanelRef}
+                transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+              >
+                <div className="bridge-diagnostics-summary">
+                  <span>GA 根目录</span>
+                  <code>{bridgeStatus?.gaRoot ?? "未连接"}</code>
+                </div>
+                <BridgeConfigDetails activeProfile={activeModelProfile} profiles={modelProfiles} status={bridgeStatus} />
+                <div className="bridge-diagnostics-actions">
+                  <Button className="bridge-open-button" onPress={() => handleOpenBridgePath("root")} size="sm" variant="secondary">
+                    <FolderOpen size={15} />
+                    打开 GA 根目录
+                  </Button>
+                  <Button className="bridge-open-button" onPress={() => handleOpenBridgePath("config")} size="sm" variant="secondary">
+                    <FileCode size={15} />
+                    打开 mykey.py
+                  </Button>
+                </div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
         </header>
         {appError ? <div className="app-error">{appError}</div> : null}
         <ChatSurface
@@ -731,81 +722,51 @@ function HumanInteractionPromptPanel({
   humanInteractionPrompt: HumanInteractionPrompt | null;
   onAskUserChoice: (choice: string) => void;
 }) {
-  const [promptState, setPromptState] = useState<{
-    prompt: HumanInteractionPrompt;
-    stage: "entering" | "visible" | "exiting";
-  } | null>(null);
-  const animationTimerRef = useRef<number | null>(null);
-  const animationFrameRef = useRef<number | null>(null);
   const activePrompt = prompt && !prompt.disabled ? prompt : null;
+  const candidates = activePrompt?.interaction.candidates.filter((candidate) => candidate.trim()) ?? [];
 
-  useEffect(() => {
-    if (animationTimerRef.current !== null) {
-      window.clearTimeout(animationTimerRef.current);
-      animationTimerRef.current = null;
-    }
-    if (animationFrameRef.current !== null) {
-      window.cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
-    }
-
-    if (activePrompt) {
-      setPromptState({ prompt: activePrompt, stage: "entering" });
-      animationFrameRef.current = window.requestAnimationFrame(() => {
-        setPromptState((current) =>
-          current?.prompt.stepId === activePrompt.stepId ? { ...current, stage: "visible" } : current,
-        );
-        animationFrameRef.current = null;
-      });
-      return;
-    }
-
-    setPromptState((current) => (current ? { ...current, stage: "exiting" } : null));
-    animationTimerRef.current = window.setTimeout(() => {
-      setPromptState(null);
-      animationTimerRef.current = null;
-    }, PROMPT_PANEL_ANIMATION_MS);
-  }, [activePrompt?.stepId, activePrompt?.interaction.question, activePrompt?.interaction.candidates.join("\u0000")]);
-
-  useEffect(
-    () => () => {
-      if (animationTimerRef.current !== null) {
-        window.clearTimeout(animationTimerRef.current);
-      }
-      if (animationFrameRef.current !== null) {
-        window.cancelAnimationFrame(animationFrameRef.current);
-      }
-    },
-    [],
-  );
-
-  if (!promptState) {
-    return null;
-  }
-  const candidates = promptState.prompt.interaction.candidates.filter((candidate) => candidate.trim());
-  if (candidates.length === 0) {
-    return null;
-  }
-  const panelClassName = [
-    "ask-user-panel",
-    "composer-ask-user-panel",
-    promptState.stage === "entering" ? "ask-user-panel--enter" : "",
-    promptState.stage === "exiting" ? "ask-user-panel--exit" : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
   return (
-    <div
-      aria-hidden={promptState.stage === "exiting" ? true : undefined}
+    // 交给 Motion 播放退出动画后再卸载，避免手写计时器和面板状态漂移。
+    <AnimatePresence initial={false}>
+      {activePrompt && candidates.length > 0 ? (
+        <HumanInteractionPromptCard
+          candidates={candidates}
+          key={activePrompt.stepId}
+          onAskUserChoice={onAskUserChoice}
+          prompt={activePrompt}
+        />
+      ) : null}
+    </AnimatePresence>
+  );
+}
+
+function HumanInteractionPromptCard({
+  candidates,
+  onAskUserChoice,
+  prompt,
+}: {
+  candidates: string[];
+  onAskUserChoice: (choice: string) => void;
+  prompt: HumanInteractionPrompt;
+}) {
+  const isPresent = useIsPresent();
+
+  return (
+    <motion.div
+      animate={{ opacity: 1, y: 0 }}
+      aria-hidden={isPresent ? undefined : true}
       aria-label="ask_user 待选回复"
-      className={panelClassName}
+      className="ask-user-panel composer-ask-user-panel"
+      exit={{ opacity: 0, scale: 0.96, y: 14 }}
+      initial={{ opacity: 0, scale: 0.96, y: 18 }}
+      transition={{ damping: 22, mass: 0.8, stiffness: 260, type: "spring" }}
     >
-      {promptState.prompt.interaction.question ? <div className="ask-user-question">{promptState.prompt.interaction.question}</div> : null}
+      {prompt.interaction.question ? <div className="ask-user-question">{prompt.interaction.question}</div> : null}
       <div className="ask-user-choice-list" aria-label="可选回复">
         {candidates.map((candidate) => (
           <Button
             className="ask-user-choice"
-            isDisabled={promptState.stage === "exiting"}
+            isDisabled={!isPresent}
             key={candidate}
             onPress={() => onAskUserChoice(candidate)}
             size="sm"
@@ -815,7 +776,7 @@ function HumanInteractionPromptPanel({
           </Button>
         ))}
       </div>
-    </div>
+    </motion.div>
   );
 }
 

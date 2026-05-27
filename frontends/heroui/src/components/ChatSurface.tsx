@@ -29,6 +29,7 @@ import {
   Wrench,
   XCircle,
 } from "lucide-react";
+import { LayoutGroup, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -107,29 +108,32 @@ export function ChatSurface({ messages, timeline, artifacts, activeTurn, isLoadi
   return (
     <div className="chat-surface">
       <ScrollShadow className="conversation-scroll" ref={scrollRef}>
-        <div className="conversation-thread">
-          {isEmpty ? (
-            <Card className="empty-prompt" variant="transparent">
-              <Card.Header>
-                <Card.Title>你想了解什么？</Card.Title>
-                <Card.Description>
-                  输入任务、提出问题，或启动 GenericAgent 智能体流程。回答会保持居中可读，工具执行过程会随专属 bridge 持续演进。
-                </Card.Description>
-              </Card.Header>
-            </Card>
-          ) : null}
-          {isLoadingMessages ? <div className="conversation-loading">正在加载会话...</div> : null}
+        {/* 只平滑块级位置变化，不对逐字流式文本做 layout 动画。 */}
+        <LayoutGroup id="conversation-thread-layout">
+          <div className="conversation-thread">
+            {isEmpty ? (
+              <Card className="empty-prompt" variant="transparent">
+                <Card.Header>
+                  <Card.Title>你想了解什么？</Card.Title>
+                  <Card.Description>
+                    输入任务、提出问题，或启动 GenericAgent 智能体流程。回答会保持居中可读，工具执行过程会随专属 bridge 持续演进。
+                  </Card.Description>
+                </Card.Header>
+              </Card>
+            ) : null}
+            {isLoadingMessages ? <div className="conversation-loading">正在加载会话...</div> : null}
 
-          {threadItems.map((item) =>
-            item.type === "message" ? (
-              <MessageRow key={item.id} message={item.message} onReplayTurn={onReplayTurn} sessionTitle={sessionTitle} />
-            ) : (
-              <TurnHistory key={item.id} messages={item.messages} onReplayTurn={onReplayTurn} rounds={item.rounds} sessionTitle={sessionTitle} />
-            ),
-          )}
+            {threadItems.map((item) =>
+              item.type === "message" ? (
+                <MessageRow key={item.id} message={item.message} onReplayTurn={onReplayTurn} sessionTitle={sessionTitle} />
+              ) : (
+                <TurnHistory key={item.id} messages={item.messages} onReplayTurn={onReplayTurn} rounds={item.rounds} sessionTitle={sessionTitle} />
+              ),
+            )}
 
-          {activeTurn ? <ActiveTurnTimeline activeTurn={activeTurn} nowTick={nowTick} onReplayTurn={onReplayTurn} sessionTitle={sessionTitle} /> : null}
-        </div>
+            {activeTurn ? <ActiveTurnTimeline activeTurn={activeTurn} nowTick={nowTick} onReplayTurn={onReplayTurn} sessionTitle={sessionTitle} /> : null}
+          </div>
+        </LayoutGroup>
       </ScrollShadow>
       {!isEmpty ? (
         <div className="message-scroll-nav" aria-label="消息导航">
@@ -235,7 +239,7 @@ function TurnRoundView({
 }) {
   const hasTimeline = round.steps.length > 0 || round.artifacts.length > 0;
   return (
-    <section className="turn-round" aria-label="模型回复轮次">
+    <motion.section className="turn-round" aria-label="模型回复轮次" layout="position">
       {showSeparator ? <div className="turn-round-separator" aria-hidden="true" /> : null}
       {hasTimeline ? (
         timelineMode === "summary" ? (
@@ -245,7 +249,7 @@ function TurnRoundView({
         )
       ) : null}
       {round.message ? <MessageRow message={round.message} onReplayTurn={onReplayTurn} sessionTitle={sessionTitle} /> : null}
-    </section>
+    </motion.section>
   );
 }
 
@@ -259,14 +263,18 @@ function MessageRow({
   onReplayTurn: (message: MessageRecord) => void;
 }) {
   return (
-    <article
+    <motion.article
+      animate={{ opacity: 1, scale: 1, y: 0 }}
       className={`message-row message-row--${message.role}`}
       data-message-role={message.role}
       data-user-message-anchor={message.role === "user" ? "true" : undefined}
+      initial={{ opacity: 0, scale: message.role === "user" ? 0.985 : 0.995, y: message.role === "user" ? 16 : 10 }}
+      layout="position"
+      transition={{ damping: 24, stiffness: 280, type: "spring" }}
     >
       <MessageBubble content={message.content} />
       {message.role === "assistant" ? <AssistantActions message={message} onReplayTurn={onReplayTurn} sessionTitle={sessionTitle} /> : null}
-    </article>
+    </motion.article>
   );
 }
 
@@ -304,7 +312,7 @@ function ActiveTurnTimeline({
   const rounds = buildTurnRounds(activeMessages, activeTurn.steps, activeTurn.artifacts);
 
   return (
-    <div className="turn-timeline" aria-label="本轮执行过程">
+    <motion.div className="turn-timeline" aria-label="本轮执行过程" layout="position">
       {rounds.map((round, index) => (
         <TurnRoundView
           key={round.id}
@@ -320,7 +328,7 @@ function ActiveTurnTimeline({
           <span className="turn-phase-duration">已用时 {liveElapsedLabel}</span>
         </div>
       ) : null}
-    </div>
+    </motion.div>
   );
 }
 
@@ -409,7 +417,14 @@ function TimelineStepCard({ step }: { step: ExecutionStep }) {
   const elapsedLabel = readElapsedLabel(step.elapsed_ms);
 
   return (
-    <div className={`timeline-step timeline-step--${step.kind} timeline-step--${step.status}`}>
+    <motion.div
+      animate={{ opacity: 1, scale: 1, x: 0 }}
+      className={`timeline-step timeline-step--${step.kind} timeline-step--${step.status}`}
+      initial={{ opacity: 0, scale: 0.985, x: -12 }}
+      layout="preserve-aspect"
+      transition={{ damping: 24, stiffness: 300, type: "spring" }}
+      whileHover={{ scale: 1.008, x: 2 }}
+    >
       <div className="timeline-dot" aria-hidden="true">
         {icon}
       </div>
@@ -447,7 +462,7 @@ function TimelineStepCard({ step }: { step: ExecutionStep }) {
           </Disclosure.Content>
         ) : null}
       </Disclosure>
-    </div>
+    </motion.div>
   );
 }
 

@@ -5,6 +5,7 @@ import test from "node:test";
 const app = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
 const api = readFileSync(new URL("./api.ts", import.meta.url), "utf8");
 const state = readFileSync(new URL("./state.ts", import.meta.url), "utf8");
+const packageJson = readFileSync(new URL("../package.json", import.meta.url), "utf8");
 const bridge = readFileSync(new URL("../bridge.py", import.meta.url), "utf8");
 const bridgeEvents = readFileSync(new URL("../bridge_core/events.py", import.meta.url), "utf8");
 const components = [
@@ -63,7 +64,6 @@ test("webui uses HeroUI components for the agent workbench shell", () => {
   assert.match(source, /Info/);
   assert.match(app, /bridgeDiagnosticsPanelRef/);
   assert.match(app, /bridgeDiagnosticsButtonRef/);
-  assert.match(app, /isBridgeDiagnosticsClosing/);
   assert.match(app, /pointerdown/);
   assert.match(app, /closeBridgeDiagnostics/);
   assert.doesNotMatch(source, /Settings2/);
@@ -299,10 +299,8 @@ test("webui keeps the screenshot-style chat layout contract", () => {
   assert.doesNotMatch(components, /onAskUserChoice/);
   assert.match(app, /HumanInteractionPromptPanel/);
   assert.match(app, /humanInteractionPrompt=\{humanInteractionPrompt\}/);
-  assert.match(app, /promptState\.stage === "entering"/);
-  assert.match(app, /promptState\.stage === "exiting"/);
-  assert.match(app, /ask-user-panel--enter/);
-  assert.match(app, /ask-user-panel--exit/);
+  assert.match(app, /HumanInteractionPromptCard/);
+  assert.match(app, /useIsPresent/);
   assert.match(app, /aria-label="ask_user 待选回复"/);
   assert.match(app, /ask-user-choice-list/);
   assert.match(app, /onAskUserChoice=\{\(choice\) => void handleSubmit\(choice\)\}/);
@@ -316,8 +314,6 @@ test("webui keeps the screenshot-style chat layout contract", () => {
   assert.match(styles, /\.tool-detail-section\s*{[^}]*border: 1px solid #e0e1e7/s);
   assert.match(styles, /\.ask-user-panel\s*{/);
   assert.match(styles, /\.composer-ask-user-panel\s*{[^}]*width: var\(--conversation-content-width\)/s);
-  assert.match(styles, /\.ask-user-panel--enter/);
-  assert.match(styles, /\.ask-user-panel--exit/);
   assert.match(styles, /\.ask-user-choice-list\s*{[^}]*flex-wrap: wrap/s);
   assert.match(styles, /\.tool-detail-section pre\s*{[^}]*overflow-wrap: anywhere/s);
   assert.match(styles, /\.timeline-step-duration/);
@@ -325,9 +321,9 @@ test("webui keeps the screenshot-style chat layout contract", () => {
   assert.match(styles, /\.timeline-step--agent/);
   assert.match(styles, /\.timeline-step--tool/);
   assert.match(styles, /\.bridge-diagnostics-panel/);
-  assert.match(styles, /\.bridge-diagnostics-panel--closing/);
-  assert.match(styles, /animation: bridge-panel-in/);
-  assert.match(styles, /animation: bridge-panel-out/);
+  assert.doesNotMatch(styles, /\.bridge-diagnostics-panel--closing/);
+  assert.doesNotMatch(styles, /animation: bridge-panel-in/);
+  assert.doesNotMatch(styles, /animation: bridge-panel-out/);
   assert.match(styles, /\.bridge-config-details/);
   assert.match(styles, /\.bridge-config-grid/);
   assert.match(styles, /\.bridge-config-item/);
@@ -335,8 +331,8 @@ test("webui keeps the screenshot-style chat layout contract", () => {
   assert.match(styles, /\.bridge-diagnostics-actions\s*{[^}]*justify-content: flex-end/s);
   assert.match(styles, /\.bridge-diagnostics-panel > \.bridge-diagnostics-actions\s*{[^}]*display: flex/s);
   assert.doesNotMatch(styles, /\.model-profile-panel/);
-  assert.match(styles, /@keyframes bridge-panel-in/);
-  assert.match(styles, /@keyframes bridge-panel-out/);
+  assert.doesNotMatch(styles, /@keyframes bridge-panel-in/);
+  assert.doesNotMatch(styles, /@keyframes bridge-panel-out/);
   assert.match(styles, /\.composer-attachment-list/);
   assert.match(styles, /\.recent-item\s*{[^}]*font-size: 14px/s);
   assert.doesNotMatch(styles, /\.turn-complete/);
@@ -449,4 +445,36 @@ test("model process cards stay collapsed and final answers stay normal messages"
   assert.doesNotMatch(components, /<thinking>/);
   assert.doesNotMatch(components, /<tool_use>/);
   assert.doesNotMatch(components, /file_content/);
+});
+
+test("Motion handles only block-level chat layout and ask_user panel transitions", () => {
+  const chatSurface = readFileSync(new URL("components/ChatSurface.tsx", import.meta.url), "utf8");
+
+  assert.match(packageJson, /"motion":/);
+  assert.match(app, /import \{ AnimatePresence, motion, useIsPresent \} from "motion\/react"/);
+  assert.match(chatSurface, /import \{ LayoutGroup, motion \} from "motion\/react"/);
+  assert.match(chatSurface, /<LayoutGroup id="conversation-thread-layout">/);
+  assert.match(chatSurface, /<motion\.article/);
+  assert.match(chatSurface, /<motion\.section/);
+  assert.match(chatSurface, /<motion\.div/);
+  assert.match(chatSurface, /layout="position"/);
+  assert.match(chatSurface, /layout="preserve-aspect"/);
+  assert.match(chatSurface, /initial=\{\{ opacity: 0, scale: message\.role === "user" \? 0\.985 : 0\.995, y: message\.role === "user" \? 16 : 10 \}\}/);
+  assert.match(chatSurface, /whileHover=\{\{ scale: 1\.008, x: 2 \}\}/);
+  assert.match(app, /<AnimatePresence initial=\{false\}>/);
+  assert.match(app, /<motion\.div/);
+  assert.match(app, /className="bridge-diagnostics-panel"/);
+  assert.match(app, /initial=\{\{ opacity: 0, scale: 0\.96, y: -12 \}\}/);
+  assert.match(app, /exit=\{\{ opacity: 0, scale: 0\.96, y: -10 \}\}/);
+  assert.match(app, /key=\{activePrompt\.stepId\}/);
+  assert.match(app, /initial=\{\{ opacity: 0, scale: 0\.96, y: 18 \}\}/);
+  assert.match(app, /exit=\{\{ opacity: 0, scale: 0\.96, y: 14 \}\}/);
+  assert.match(app, /transition=\{\{ damping: 22, mass: 0\.8, stiffness: 260, type: "spring" \}\}/);
+  assert.doesNotMatch(app, /PROMPT_PANEL_ANIMATION_MS/);
+  assert.doesNotMatch(app, /animationTimerRef/);
+  assert.doesNotMatch(app, /animationFrameRef/);
+  assert.doesNotMatch(app, /requestAnimationFrame/);
+  assert.doesNotMatch(app, /ask-user-panel--enter/);
+  assert.doesNotMatch(app, /ask-user-panel--exit/);
+  assert.doesNotMatch(styles, /@keyframes message-in/);
 });
