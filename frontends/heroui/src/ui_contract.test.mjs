@@ -466,7 +466,9 @@ test("Motion handles only block-level chat layout and ask_user panel transitions
   assert.match(chatSurface, /initial=\{\{ opacity: 0, scale: 0\.985, y: 16 \}\}/);
   assert.doesNotMatch(chatSurface, /message\.role === "user" \? 0\.985 : 0\.995/);
   assert.doesNotMatch(chatSurface, /message\.role === "user" \? 16 : 10/);
-  assert.match(chatSurface, /whileHover=\{\{ scale: 1\.008, x: 2 \}\}/);
+  assert.doesNotMatch(chatSurface, /whileHover=/);
+  assert.doesNotMatch(chatSurface, /whileHover=\{\{[^}]*x:/);
+  assert.doesNotMatch(chatSurface, /whileHover=\{\{[^}]*scale:/);
   assert.match(app, /<AnimatePresence initial=\{false\}>/);
   assert.match(app, /<motion\.div/);
   assert.match(app, /className="bridge-diagnostics-panel"/);

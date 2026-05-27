@@ -430,7 +430,6 @@ function TimelineStepCard({ step }: { step: ExecutionStep }) {
       initial={{ opacity: 0, scale: 0.985, x: -12 }}
       layout="preserve-aspect"
       transition={{ damping: 24, stiffness: 300, type: "spring" }}
-      whileHover={{ scale: 1.008, x: 2 }}
     >
       <div className="timeline-dot" aria-hidden="true">
         {icon}
