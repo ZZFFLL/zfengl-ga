@@ -54,10 +54,11 @@
   }},
   {"type": "function", "function": {
     "name": "web_search",
-    "description": "当 web_scan/web_execute_js 无法找到所需信息时，搜索外部网页服务。服务选择与故障转移由内部处理",
+    "description": "web_search 是用于互联网数据搜索的搜索服务 API。请提供关键词和返回结果数量。",
     "parameters": {"type": "object", "properties": {
-      "keyword": {"type": "string", "description": "搜索关键词或查询语句"}},
-      "required": ["keyword"]}
+      "keyword": {"type": "string", "description": "搜索关键词或查询语句"},
+      "result_count": {"type": "integer", "description": "返回的搜索结果数量"}},
+      "required": ["keyword", "result_count"]}
   }},
   {"type": "function", "function": {
     "name": "update_working_checkpoint",

@@ -14,16 +14,17 @@ def import_searchserver():
 
 
 def test_config_reads_tavily_keys_and_endpoint_without_llm_config_names():
-    _, _, config, _ = import_searchserver()
+    _, _, config, tavily = import_searchserver()
     module = types.SimpleNamespace(
         tavily_search_keys=["tvly-one", "tvly-two"],
         tavily_search_url="https://api.tavily.com/search",
     )
 
-    providers = config.load_provider_configs(module)
+    providers = config.load_provider_configs(module, provider_classes={"tavily": tavily.TavilyProvider})
 
     assert providers["tavily"].keys == ["tvly-one", "tvly-two"]
     assert providers["tavily"].url == "https://api.tavily.com/search"
+    assert providers["tavily"].type == "国外数据全能"
 
 
 def test_search_falls_back_to_next_provider_after_failure():
@@ -32,16 +33,20 @@ def test_search_falls_back_to_next_provider_after_failure():
     class FailingProvider(base.SearchProvider):
         name = "failing"
 
-        def search(self, query):
+        type = "国内数据全能"
+
+        def search(self, query, result_count):
             raise base.ProviderError("temporary failure")
 
     class WorkingProvider(base.SearchProvider):
         name = "working"
+        type = "国外数据全能"
 
-        def search(self, query):
+        def search(self, query, result_count):
+            assert result_count == 7
             return base.success_payload("working", query, [{"title": "ok", "url": "https://example.com"}])
 
-    result = searchserver.search("generic agent", providers=[FailingProvider(), WorkingProvider()])
+    result = searchserver.search("generic agent", 7, providers=[FailingProvider(), WorkingProvider()])
 
     assert result["status"] == "success"
     assert result["provider"] == "working"
@@ -54,17 +59,19 @@ def test_search_reports_all_provider_errors_when_all_fail():
 
     class FirstProvider(base.SearchProvider):
         name = "first"
+        type = "国内新闻"
 
-        def search(self, query):
+        def search(self, query, result_count):
             raise base.ProviderError("bad key")
 
     class SecondProvider(base.SearchProvider):
         name = "second"
+        type = "国外新闻"
 
-        def search(self, query):
+        def search(self, query, result_count):
             raise RuntimeError("rate limited")
 
-    result = searchserver.search("generic agent", providers=[FirstProvider(), SecondProvider()])
+    result = searchserver.search("generic agent", 5, providers=[FirstProvider(), SecondProvider()])
 
     assert result["status"] == "error"
     assert result["query"] == "generic agent"
@@ -78,12 +85,12 @@ def test_search_reports_all_provider_errors_when_all_fail():
 def test_search_reports_discovery_errors_as_all_failed_payload(monkeypatch):
     searchserver, _, _, _ = import_searchserver()
 
-    def broken_discovery(provider_names=None):
+    def broken_discovery(provider_names=None, provider_types=None):
         raise RuntimeError("bad provider import")
 
     monkeypatch.setattr(searchserver.registry, "build_providers", broken_discovery)
 
-    result = searchserver.search("generic agent")
+    result = searchserver.search("generic agent", 5)
 
     assert result["status"] == "error"
     assert result["query"] == "generic agent"
@@ -96,11 +103,12 @@ def test_registry_build_providers_supports_default_and_explicit_selection(monkey
 
     class FakeProvider(base.SearchProvider):
         name = "fake"
+        type = "国内数据全能"
 
         def __init__(self, config):
             self.config = config
 
-        def search(self, query):
+        def search(self, query, result_count):
             return base.success_payload("fake", query, [{"title": "fake", "url": "https://fake.example"}])
 
     monkeypatch.setattr(
@@ -120,6 +128,30 @@ def test_registry_build_providers_supports_default_and_explicit_selection(monkey
     providers, unavailable = searchserver.registry.build_providers(provider_names=["tavily"], configs=configs)
     assert [provider.name for provider in providers] == ["tavily"]
     assert unavailable == []
+
+    providers, unavailable = searchserver.registry.build_providers(provider_types=["国外数据全能"], configs=configs)
+    assert [provider.name for provider in providers] == ["tavily"]
+    assert unavailable == []
+
+
+def test_registry_rejects_provider_without_type(monkeypatch):
+    searchserver, base, _, _ = import_searchserver()
+
+    class UntypedProvider(base.SearchProvider):
+        name = "untyped"
+
+        def __init__(self, config):
+            self.config = config
+
+        def search(self, query, result_count):
+            return base.success_payload("untyped", query, [])
+
+    monkeypatch.setattr(searchserver.registry, "discover_provider_classes", lambda: {"untyped": UntypedProvider})
+    configs = {"untyped": base.ProviderConfig(name="untyped", keys=["k"], url="https://example.com/search")}
+
+    providers, unavailable = searchserver.registry.build_providers(configs=configs)
+    assert providers == []
+    assert unavailable == [{"provider": "untyped", "error": "missing provider type"}]
 
 
 def test_tavily_provider_rotates_keys_and_normalizes_results():
@@ -146,9 +178,10 @@ def test_tavily_provider_rotates_keys_and_normalizes_results():
         http_post=fake_post,
     )
 
-    result = provider.search("latest AI search")
+    result = provider.search("latest AI search", 80)
 
     assert [call[2]["Authorization"] for call in calls] == ["Bearer tvly-bad", "Bearer tvly-good"]
+    assert [call[1]["max_results"] for call in calls] == [50, 50]
     assert result["status"] == "success"
     assert result["provider"] == "tavily"
     assert result["query"] == "latest AI search"
@@ -173,7 +206,7 @@ def test_tavily_provider_reports_key_failures_when_every_key_fails():
     )
 
     with pytest.raises(base.ProviderError) as exc:
-        provider.search("generic agent")
+        provider.search("generic agent", 5)
 
     assert "tvly-one" not in str(exc.value)
     assert "tvly-two" not in str(exc.value)

@@ -12,7 +12,7 @@ def test_tavily_real_provider_smoke_when_configured():
     if not tavily or not tavily.keys or not tavily.url:
         pytest.skip("Tavily smoke skipped: tavily_search_keys and tavily_search_url are not configured")
 
-    result = search("GenericAgent autonomous agent framework", provider_names=["tavily"])
+    result = search("GenericAgent autonomous agent framework", 5, provider_names=["tavily"])
 
     assert result["status"] == "success"
     assert result["provider"] == "tavily"

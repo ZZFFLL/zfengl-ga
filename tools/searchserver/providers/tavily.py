@@ -5,19 +5,24 @@ from ..base import ProviderError, SearchProvider, success_payload
 
 class TavilyProvider(SearchProvider):
     name = "tavily"
+    type = "国外数据全能"
 
     def __init__(self, config, http_post=None):
         self.config = config
         self.http_post = http_post or _post_json
 
-    def search(self, query):
+    def search(self, query, result_count):
         if not self.config.url:
             raise ProviderError("missing tavily_search_url")
         if not self.config.keys:
             raise ProviderError("missing tavily_search_keys")
 
         failures = []
-        payload = {"query": query, "search_depth": "basic", "max_results": 5}
+        try:
+            max_results = min(max(1, int(result_count)), 50)
+        except (TypeError, ValueError) as exc:
+            raise ProviderError("result_count must be an integer") from exc
+        payload = {"query": query, "search_depth": "basic", "max_results": max_results}
         for idx, key in enumerate(self.config.keys, start=1):
             headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
             try:

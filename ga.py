@@ -383,7 +383,16 @@ class GenericAgentHandler(BaseHandler):
         keyword = str(raw_keyword).strip()
         if not keyword:
             return StepOutcome({"status": "error", "msg": "keyword is required"}, next_prompt="\n")
-        result = searchserver.search(keyword)
+        raw_result_count = args.get("result_count")
+        if raw_result_count in (None, ""):
+            return StepOutcome({"status": "error", "msg": "result_count is required"}, next_prompt="\n")
+        try:
+            result_count = int(raw_result_count)
+        except (TypeError, ValueError):
+            return StepOutcome({"status": "error", "msg": "result_count must be an integer"}, next_prompt="\n")
+        if result_count <= 0:
+            return StepOutcome({"status": "error", "msg": "result_count must be greater than 0"}, next_prompt="\n")
+        result = searchserver.search(keyword, result_count)
         provider = result.get("provider") if isinstance(result, dict) else ""
         status = result.get("status") if isinstance(result, dict) else "unknown"
         if provider:

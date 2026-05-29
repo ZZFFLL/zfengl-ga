@@ -21,20 +21,29 @@ def discover_provider_classes():
     return classes
 
 
-def build_providers(provider_names=None, configs=None):
+def build_providers(provider_names=None, provider_types=None, configs=None):
     names = set(provider_names or [])
-    configs = configs if configs is not None else config_loader.load_provider_configs()
+    types = set(provider_types or [])
     classes = discover_provider_classes()
+    configs = configs if configs is not None else config_loader.load_provider_configs(provider_classes=classes)
     providers = []
     unavailable = []
 
     for name, cls in classes.items():
         if names and name not in names:
             continue
+        provider_type = str(getattr(cls, "type", "") or "").strip()
+        if not provider_type:
+            unavailable.append({"provider": name, "error": "missing provider type"})
+            continue
+        if types and provider_type not in types:
+            continue
         cfg = configs.get(name)
         if not cfg:
             unavailable.append({"provider": name, "error": "not configured"})
             continue
+        if not getattr(cfg, "type", ""):
+            cfg.type = provider_type
         try:
             providers.append(cls(cfg))
         except Exception as exc:

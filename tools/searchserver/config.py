@@ -23,14 +23,28 @@ def _load_mykey_module():
     return importlib.reload(mykey)
 
 
-def load_provider_configs(module=None):
+def _discover_provider_classes():
+    from .registry import discover_provider_classes
+
+    return discover_provider_classes()
+
+
+def load_provider_configs(module=None, provider_classes=None):
     module = module if module is not None else _load_mykey_module()
     if module is None:
         return {}
 
+    provider_classes = provider_classes if provider_classes is not None else _discover_provider_classes()
     providers = {}
-    tavily_keys = _as_key_list(getattr(module, "tavily_search_keys", None))
-    tavily_url = str(getattr(module, "tavily_search_url", "") or "").strip()
-    if tavily_keys or tavily_url:
-        providers["tavily"] = ProviderConfig(name="tavily", keys=tavily_keys, url=tavily_url)
+    for name, cls in provider_classes.items():
+        keys = _as_key_list(getattr(module, f"{name}_search_keys", None))
+        url = str(getattr(module, f"{name}_search_url", "") or "").strip()
+        if not keys and not url:
+            continue
+        providers[name] = ProviderConfig(
+            name=name,
+            type=str(getattr(cls, "type", "") or "").strip(),
+            keys=keys,
+            url=url,
+        )
     return providers

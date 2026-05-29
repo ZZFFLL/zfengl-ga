@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 @dataclass
 class ProviderConfig:
     name: str
+    type: str = ""
     keys: list[str] = field(default_factory=list)
     url: str = ""
     timeout: int = 15
@@ -15,8 +16,9 @@ class ProviderError(Exception):
 
 class SearchProvider:
     name = ""
+    type = ""
 
-    def search(self, query):
+    def search(self, query, result_count):
         raise NotImplementedError
 
 

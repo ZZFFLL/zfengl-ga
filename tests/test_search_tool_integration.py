@@ -14,8 +14,13 @@ def test_tool_schemas_expose_exactly_one_provider_neutral_search_tool():
         assert search_names == ["web_search"], (path, search_names)
 
         web_search = next(tool for tool in tools if tool["function"]["name"] == "web_search")
+        description = web_search["function"]["description"]
         properties = web_search["function"]["parameters"]["properties"]
-        assert set(properties) == {"keyword"}
+        assert set(properties) == {"keyword", "result_count"}
+        assert set(web_search["function"]["parameters"]["required"]) == {"keyword", "result_count"}
+        assert "web_scan" not in description
+        assert "web_execute_js" not in description
+        assert "search service API" in description or "搜索服务 API" in description
 
 
 class FakeParent:
@@ -25,8 +30,9 @@ class FakeParent:
 def test_web_search_dispatch_forwards_structured_success(monkeypatch):
     import ga
 
-    def fake_search(keyword):
+    def fake_search(keyword, result_count):
         assert keyword == "GenericAgent"
+        assert result_count == 5
         return {
             "status": "success",
             "provider": "fake",
@@ -37,7 +43,7 @@ def test_web_search_dispatch_forwards_structured_success(monkeypatch):
     monkeypatch.setattr(ga.searchserver, "search", fake_search)
     handler = ga.GenericAgentHandler(FakeParent())
 
-    gen = BaseHandler.dispatch(handler, "web_search", {"keyword": "GenericAgent"}, "")
+    gen = BaseHandler.dispatch(handler, "web_search", {"keyword": "GenericAgent", "result_count": 5}, "")
     chunks = []
     try:
         while True:
@@ -57,11 +63,11 @@ def test_web_search_dispatch_accepts_query_alias(monkeypatch):
     monkeypatch.setattr(
         ga.searchserver,
         "search",
-        lambda keyword: {"status": "success", "provider": "fake", "query": keyword, "results": []},
+        lambda keyword, result_count: {"status": "success", "provider": "fake", "query": keyword, "results": [], "result_count": result_count},
     )
     handler = ga.GenericAgentHandler(FakeParent())
 
-    gen = BaseHandler.dispatch(handler, "web_search", {"query": "alias"}, "")
+    gen = BaseHandler.dispatch(handler, "web_search", {"query": "alias", "result_count": 3}, "")
     try:
         while True:
             next(gen)
@@ -80,10 +86,10 @@ def test_web_search_dispatch_returns_all_failed_payload(monkeypatch):
         "query": "GenericAgent",
         "provider_errors": [{"provider": "tavily", "error": "bad key"}],
     }
-    monkeypatch.setattr(ga.searchserver, "search", lambda keyword: error_payload)
+    monkeypatch.setattr(ga.searchserver, "search", lambda keyword, result_count: error_payload)
     handler = ga.GenericAgentHandler(FakeParent())
 
-    gen = BaseHandler.dispatch(handler, "web_search", {"keyword": "GenericAgent"}, "")
+    gen = BaseHandler.dispatch(handler, "web_search", {"keyword": "GenericAgent", "result_count": 4}, "")
     try:
         while True:
             next(gen)
@@ -109,16 +115,32 @@ def test_web_search_requires_keyword_or_query():
     assert "keyword" in outcome.data["msg"]
 
 
+def test_web_search_requires_result_count():
+    import ga
+
+    handler = ga.GenericAgentHandler(FakeParent())
+    gen = BaseHandler.dispatch(handler, "web_search", {"keyword": "GenericAgent"}, "")
+
+    try:
+        while True:
+            next(gen)
+    except StopIteration as stop:
+        outcome = stop.value
+
+    assert outcome.data["status"] == "error"
+    assert "result_count" in outcome.data["msg"]
+
+
 def test_web_search_coerces_non_string_keyword(monkeypatch):
     import ga
 
     monkeypatch.setattr(
         ga.searchserver,
         "search",
-        lambda keyword: {"status": "success", "provider": "fake", "query": keyword, "results": []},
+        lambda keyword, result_count: {"status": "success", "provider": "fake", "query": keyword, "results": []},
     )
     handler = ga.GenericAgentHandler(FakeParent())
-    gen = BaseHandler.dispatch(handler, "web_search", {"keyword": 123}, "")
+    gen = BaseHandler.dispatch(handler, "web_search", {"keyword": 123, "result_count": 2}, "")
 
     try:
         while True:

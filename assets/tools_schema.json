@@ -54,10 +54,11 @@
   }},
   {"type": "function", "function": {
     "name": "web_search",
-    "description": "Search external web services when web_scan/web_execute_js cannot find the needed information. Provider selection and fallback are handled internally",
+    "description": "web_search is a search service API for internet data search. Provide a keyword and the number of results to return.",
     "parameters": {"type": "object", "properties": {
-      "keyword": {"type": "string", "description": "Search keyword or query"}},
-      "required": ["keyword"]}
+      "keyword": {"type": "string", "description": "Search keyword or query"},
+      "result_count": {"type": "integer", "description": "Number of search results to return"}},
+      "required": ["keyword", "result_count"]}
   }},
   {"type": "function", "function": {
     "name": "update_working_checkpoint",
