@@ -139,6 +139,12 @@ mixin_config = {
 # ══════════════════════════════════════════════════════════════════════════════
 #  1. NativeClaudeSession — Anthropic 原生协议 + 原生工具（推荐首选）
 # ══════════════════════════════════════════════════════════════════════════════
+
+# ── 搜索服务：Tavily（可选）────────────────────────────────────────────────
+#  仅供 web_search 工具使用；变量名不要包含 api/config/cookie，避免被 LLM
+#  session 自动扫描逻辑误识别。keys 支持多个，失败时按顺序尝试下一个。
+# tavily_search_keys = ['tvly-<your-first-key>', 'tvly-<your-second-key>']
+# tavily_search_url = 'https://api.tavily.com/search'
 #
 #  大部分用户使用的是 CC switch 适配的 Claude 透传渠道（非官方直连），这类渠道
 #  把 Claude Code 的请求透传到上游，需要 fake_cc_system_prompt=True。

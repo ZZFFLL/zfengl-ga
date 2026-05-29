@@ -7,6 +7,7 @@ if sys.stderr is None: sys.stderr = open(os.devnull, "w")
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from agent_loop import BaseHandler, StepOutcome, json_default
+from tools import searchserver
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 NORMAL_WORKING_MEMORY_WINDOW = 80
@@ -374,6 +375,23 @@ class GenericAgentHandler(BaseHandler):
         result = json.dumps(result, ensure_ascii=False, default=json_default)
         maxlen = 8000 // args.get('_tool_num', 1)
         return StepOutcome(smart_format(result, max_str_len=maxlen), next_prompt=next_prompt)
+
+    def do_web_search(self, args, response):
+        raw_keyword = args.get("keyword")
+        if raw_keyword in (None, ""):
+            raw_keyword = args.get("query", "")
+        keyword = str(raw_keyword).strip()
+        if not keyword:
+            return StepOutcome({"status": "error", "msg": "keyword is required"}, next_prompt="\n")
+        result = searchserver.search(keyword)
+        provider = result.get("provider") if isinstance(result, dict) else ""
+        status = result.get("status") if isinstance(result, dict) else "unknown"
+        if provider:
+            yield f"[Info] Search {status} via {provider}\n"
+        else:
+            yield f"[Info] Search {status}\n"
+        next_prompt = self._get_anchor_prompt(skip=args.get('_index', 0) > 0)
+        return StepOutcome(result, next_prompt=next_prompt)
     
     def do_file_patch(self, args, response):
         path = self._get_abs_path(args.get("path", ""))

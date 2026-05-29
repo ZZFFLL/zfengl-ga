@@ -24,6 +24,13 @@
 # ══════════════════════════════════════════════════════════════════════════════
 
 
+# ── Search service: Tavily (optional) ────────────────────────────────────────
+#  Used only by the web_search tool. Keep variable names free of api/config/cookie
+#  so GA's LLM session auto-scan does not treat them as model sessions.
+#  Multiple keys are tried in order when one cannot be used.
+# tavily_search_keys = ['tvly-<your-first-key>', 'tvly-<your-second-key>']
+# tavily_search_url = 'https://api.tavily.com/search'
+
 # ── 1. NativeClaudeSession — Anthropic direct ────────────────────────────────
 #  Official Anthropic endpoint. apikey starting with 'sk-ant-' is auto-sent
 #  as x-api-key; any other prefix uses Authorization: Bearer.
