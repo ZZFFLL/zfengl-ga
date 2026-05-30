@@ -7,14 +7,14 @@ def import_searchserver():
     try:
         import tools.searchserver as searchserver
         from tools.searchserver import base, config
-        from tools.searchserver.providers import tavily
+        from tools.searchserver.providers import tavily, zhipu
     except ModuleNotFoundError as exc:
         pytest.fail(f"searchserver package missing: {exc}")
-    return searchserver, base, config, tavily
+    return searchserver, base, config, tavily, zhipu
 
 
 def test_config_reads_tavily_keys_and_endpoint_without_llm_config_names():
-    _, _, config, tavily = import_searchserver()
+    _, _, config, tavily, _ = import_searchserver()
     module = types.SimpleNamespace(
         tavily_search_keys=["tvly-one", "tvly-two"],
         tavily_search_url="https://api.tavily.com/search",
@@ -27,8 +27,22 @@ def test_config_reads_tavily_keys_and_endpoint_without_llm_config_names():
     assert providers["tavily"].type == "国外数据全能"
 
 
+def test_config_reads_zhipu_keys_and_endpoint_without_llm_config_names():
+    _, _, config, _, zhipu = import_searchserver()
+    module = types.SimpleNamespace(
+        zhipu_search_keys=["zhipu-one", "zhipu-two"],
+        zhipu_search_url="https://open.bigmodel.cn/api/paas/v4/web_search",
+    )
+
+    providers = config.load_provider_configs(module, provider_classes={"zhipu": zhipu.ZhipuProvider})
+
+    assert providers["zhipu"].keys == ["zhipu-one", "zhipu-two"]
+    assert providers["zhipu"].url == "https://open.bigmodel.cn/api/paas/v4/web_search"
+    assert providers["zhipu"].type == "国内数据全能"
+
+
 def test_search_falls_back_to_next_provider_after_failure():
-    searchserver, base, _, _ = import_searchserver()
+    searchserver, base, _, _, _ = import_searchserver()
 
     class FailingProvider(base.SearchProvider):
         name = "failing"
@@ -55,7 +69,7 @@ def test_search_falls_back_to_next_provider_after_failure():
 
 
 def test_search_reports_all_provider_errors_when_all_fail():
-    searchserver, base, _, _ = import_searchserver()
+    searchserver, base, _, _, _ = import_searchserver()
 
     class FirstProvider(base.SearchProvider):
         name = "first"
@@ -82,8 +96,8 @@ def test_search_reports_all_provider_errors_when_all_fail():
     ]
 
 
-def test_search_prioritizes_provider_type_for_news_queries():
-    searchserver, base, _, _ = import_searchserver()
+def test_search_filters_providers_by_requested_type():
+    searchserver, base, _, _, _ = import_searchserver()
 
     class GeneralProvider(base.SearchProvider):
         name = "general"
@@ -99,13 +113,29 @@ def test_search_prioritizes_provider_type_for_news_queries():
         def search(self, query, result_count):
             return base.success_payload("news", query, [{"title": "news", "url": "https://example.com"}])
 
-    result = searchserver.search("latest AI news", 5, providers=[GeneralProvider(), NewsProvider()])
+    result = searchserver.search("latest AI news", 5, provider_types=["国外新闻"], providers=[GeneralProvider(), NewsProvider()])
 
     assert result["provider"] == "news"
 
 
+def test_search_reports_when_requested_type_has_no_provider():
+    searchserver, base, _, _, _ = import_searchserver()
+
+    class GeneralProvider(base.SearchProvider):
+        name = "general"
+        type = "国外数据全能"
+
+        def search(self, query, result_count):
+            return base.success_payload("general", query, [])
+
+    result = searchserver.search("latest AI news", 5, provider_types=["国内新闻"], providers=[GeneralProvider()])
+
+    assert result["status"] == "error"
+    assert result["msg"] == "searchserver: no provider matched type: 国内新闻"
+
+
 def test_search_reports_discovery_errors_as_all_failed_payload(monkeypatch):
-    searchserver, _, _, _ = import_searchserver()
+    searchserver, _, _, _, _ = import_searchserver()
 
     def broken_discovery(provider_names=None, provider_types=None):
         raise RuntimeError("bad provider import")
@@ -121,7 +151,7 @@ def test_search_reports_discovery_errors_as_all_failed_payload(monkeypatch):
 
 
 def test_registry_build_providers_supports_default_and_explicit_selection(monkeypatch):
-    searchserver, base, _, tavily = import_searchserver()
+    searchserver, base, _, tavily, _ = import_searchserver()
 
     class FakeProvider(base.SearchProvider):
         name = "fake"
@@ -157,7 +187,7 @@ def test_registry_build_providers_supports_default_and_explicit_selection(monkey
 
 
 def test_tavily_strategy_configs_reuse_tavily_key_variables():
-    _, _, config, tavily = import_searchserver()
+    _, _, config, tavily, _ = import_searchserver()
     module = types.SimpleNamespace(
         tavily_search_keys=["tvly-one"],
         tavily_search_url="https://api.tavily.com/search",
@@ -180,7 +210,7 @@ def test_tavily_strategy_configs_reuse_tavily_key_variables():
 
 
 def test_registry_rejects_provider_without_type(monkeypatch):
-    searchserver, base, _, _ = import_searchserver()
+    searchserver, base, _, _, _ = import_searchserver()
 
     class UntypedProvider(base.SearchProvider):
         name = "untyped"
@@ -200,7 +230,7 @@ def test_registry_rejects_provider_without_type(monkeypatch):
 
 
 def test_tavily_provider_rotates_keys_and_normalizes_results():
-    _, base, _, tavily = import_searchserver()
+    _, base, _, tavily, _ = import_searchserver()
     calls = []
 
     def fake_post(url, payload, headers, timeout):
@@ -236,7 +266,7 @@ def test_tavily_provider_rotates_keys_and_normalizes_results():
 
 
 def test_tavily_strategy_providers_set_advanced_news_and_finance_parameters():
-    _, base, _, tavily = import_searchserver()
+    _, base, _, tavily, _ = import_searchserver()
     payloads = []
 
     def fake_post(url, payload, headers, timeout):
@@ -261,7 +291,7 @@ def test_tavily_strategy_providers_set_advanced_news_and_finance_parameters():
 
 
 def test_tavily_post_json_uses_api_error_detail(monkeypatch):
-    _, base, _, tavily = import_searchserver()
+    _, base, _, tavily, _ = import_searchserver()
 
     class FakeResponse:
         def raise_for_status(self):
@@ -279,7 +309,7 @@ def test_tavily_post_json_uses_api_error_detail(monkeypatch):
 
 
 def test_tavily_provider_reports_key_failures_when_every_key_fails():
-    _, base, _, tavily = import_searchserver()
+    _, base, _, tavily, _ = import_searchserver()
 
     def fake_post(url, payload, headers, timeout):
         raise base.ProviderError(f"failed {headers['Authorization']}")
@@ -300,3 +330,75 @@ def test_tavily_provider_reports_key_failures_when_every_key_fails():
     assert "tvly-two" not in str(exc.value)
     assert "key 1" in str(exc.value)
     assert "key 2" in str(exc.value)
+
+
+def test_zhipu_provider_uses_domestic_search_api_and_normalizes_results():
+    _, base, _, _, zhipu = import_searchserver()
+    calls = []
+
+    def fake_post(url, payload, headers, timeout):
+        calls.append((url, payload, headers, timeout))
+        return {
+            "search_result": [
+                {
+                    "title": "Domestic",
+                    "link": "https://example.cn/article",
+                    "content": "Domestic snippet",
+                    "media": "搜狐",
+                    "icon": "https://example.cn/icon.png",
+                    "publish_date": "2025-05-23",
+                    "refer": "ref_1",
+                }
+            ]
+        }
+
+    provider = zhipu.ZhipuProvider(
+        base.ProviderConfig(
+            name="zhipu",
+            keys=["53500bc3b75b433fa02a29cfa58f8011.vM5fVMa93wQEnN9T"],
+            url="https://open.bigmodel.cn/api/paas/v4/web_search",
+        ),
+        http_post=fake_post,
+    )
+
+    result = provider.search("搜索2025年4月的财经新闻", 60)
+
+    assert calls[0][0] == "https://open.bigmodel.cn/api/paas/v4/web_search"
+    assert calls[0][1] == {
+        "search_engine": "search_pro",
+        "search_query": "搜索2025年4月的财经新闻",
+        "count": 50,
+    }
+    assert calls[0][2]["Authorization"].startswith("Bearer ")
+    assert result["status"] == "success"
+    assert result["provider"] == "zhipu"
+    assert result["query"] == "搜索2025年4月的财经新闻"
+    assert result["results"] == [
+        {
+            "title": "Domestic",
+            "url": "https://example.cn/article",
+            "content": "Domestic snippet",
+            "media": "搜狐",
+            "icon": "https://example.cn/icon.png",
+            "publish_date": "2025-05-23",
+            "refer": "ref_1",
+        }
+    ]
+
+
+def test_zhipu_post_json_uses_api_error_message(monkeypatch):
+    _, base, _, _, zhipu = import_searchserver()
+
+    class FakeResponse:
+        def raise_for_status(self):
+            raise zhipu.requests.HTTPError("400 Bad Request")
+
+        def json(self):
+            return {"message": "invalid search_engine"}
+
+    monkeypatch.setattr(zhipu.requests, "post", lambda *args, **kwargs: FakeResponse())
+
+    with pytest.raises(base.ProviderError) as exc:
+        zhipu._post_json("https://open.bigmodel.cn/api/paas/v4/web_search", {}, {}, 15)
+
+    assert str(exc.value) == "invalid search_engine"

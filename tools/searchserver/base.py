@@ -36,6 +36,9 @@ def normalize_results(items):
         content = item.get("content") or item.get("snippet") or item.get("description")
         if content:
             normalized["content"] = str(content)
+        for key in ("media", "icon", "publish_date", "refer"):
+            if item.get(key) not in (None, ""):
+                normalized[key] = item.get(key)
         if item.get("score") is not None:
             normalized["score"] = item.get("score")
         results.append(normalized)

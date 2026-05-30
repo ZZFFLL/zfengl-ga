@@ -146,6 +146,11 @@ mixin_config = {
 # tavily_search_keys = ['tvly-<your-first-key>', 'tvly-<your-second-key>']
 # tavily_search_url = 'https://api.tavily.com/search'
 #
+# ── 搜索服务：智谱 Web Search（可选）───────────────────────────────────────
+#  type: 国内数据全能。keys 支持多个，失败时按顺序尝试下一个。
+# zhipu_search_keys = ['<your-zhipu-search-key>']
+# zhipu_search_url = 'https://open.bigmodel.cn/api/paas/v4/web_search'
+#
 #  大部分用户使用的是 CC switch 适配的 Claude 透传渠道（非官方直连），这类渠道
 #  把 Claude Code 的请求透传到上游，需要 fake_cc_system_prompt=True。
 #  这是目前社区最常见的接入方式。

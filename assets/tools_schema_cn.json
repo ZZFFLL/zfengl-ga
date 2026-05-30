@@ -54,11 +54,12 @@
   }},
   {"type": "function", "function": {
     "name": "web_search",
-    "description": "web_search 是用于互联网数据搜索的搜索服务 API。请提供关键词和返回结果数量。",
+    "description": "web_search 是用于互联网数据搜索的搜索服务 API。模型必须根据用户问题自行选择搜索 type 和返回结果数量，然后提供关键词。当前可用 type：国内数据全能、国外数据全能、国外深度数据、国外新闻、国外金融。未来新增 Provider 后，可使用新 Provider 定义的中文 type 标签。",
     "parameters": {"type": "object", "properties": {
       "keyword": {"type": "string", "description": "搜索关键词或查询语句"},
-      "result_count": {"type": "integer", "description": "返回的搜索结果数量"}},
-      "required": ["keyword", "result_count"]}
+      "result_count": {"type": "integer", "description": "返回的搜索结果数量"},
+      "type": {"type": "string", "description": "模型选择的搜索场景 type。当前可用值：国内数据全能、国外数据全能、国外深度数据、国外新闻、国外金融。必须匹配某个搜索 Provider 的中文 type 标签。"}},
+      "required": ["keyword", "result_count", "type"]}
   }},
   {"type": "function", "function": {
     "name": "update_working_checkpoint",

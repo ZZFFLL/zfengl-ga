@@ -30,6 +30,11 @@
 #  Multiple keys are tried in order when one cannot be used.
 # tavily_search_keys = ['tvly-<your-first-key>', 'tvly-<your-second-key>']
 # tavily_search_url = 'https://api.tavily.com/search'
+#
+# ── Search service: Zhipu Web Search (optional) ─────────────────────────────
+#  type: 国内数据全能. Multiple keys are tried in order when one cannot be used.
+# zhipu_search_keys = ['<your-zhipu-search-key>']
+# zhipu_search_url = 'https://open.bigmodel.cn/api/paas/v4/web_search'
 
 # ── 1. NativeClaudeSession — Anthropic direct ────────────────────────────────
 #  Official Anthropic endpoint. apikey starting with 'sk-ant-' is auto-sent

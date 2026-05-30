@@ -54,11 +54,12 @@
   }},
   {"type": "function", "function": {
     "name": "web_search",
-    "description": "web_search is a search service API for internet data search. Provide a keyword and the number of results to return.",
+    "description": "web_search is a search service API for internet data search. The LLM must choose the search type and result count for the query, then provide the keyword. Current provider types are: 国内数据全能, 国外数据全能, 国外深度数据, 国外新闻, 国外金融. New provider types can be added later by implementing a provider with its own Chinese type label.",
     "parameters": {"type": "object", "properties": {
       "keyword": {"type": "string", "description": "Search keyword or query"},
-      "result_count": {"type": "integer", "description": "Number of search results to return"}},
-      "required": ["keyword", "result_count"]}
+      "result_count": {"type": "integer", "description": "Number of search results to return"},
+      "type": {"type": "string", "description": "Search scenario type chosen by the LLM. Current valid provider types: 国内数据全能, 国外数据全能, 国外深度数据, 国外新闻, 国外金融. Must match one provider's Chinese type label."}},
+      "required": ["keyword", "result_count", "type"]}
   }},
   {"type": "function", "function": {
     "name": "update_working_checkpoint",
