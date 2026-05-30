@@ -75,11 +75,33 @@ def test_search_reports_all_provider_errors_when_all_fail():
 
     assert result["status"] == "error"
     assert result["query"] == "generic agent"
-    assert "无法搜索" in result["msg"]
+    assert result["msg"] == "first: bad key\nsecond: rate limited"
     assert result["provider_errors"] == [
         {"provider": "first", "error": "bad key"},
         {"provider": "second", "error": "rate limited"},
     ]
+
+
+def test_search_prioritizes_provider_type_for_news_queries():
+    searchserver, base, _, _ = import_searchserver()
+
+    class GeneralProvider(base.SearchProvider):
+        name = "general"
+        type = "国外数据全能"
+
+        def search(self, query, result_count):
+            return base.success_payload("general", query, [{"title": "general", "url": "https://example.com"}])
+
+    class NewsProvider(base.SearchProvider):
+        name = "news"
+        type = "国外新闻"
+
+        def search(self, query, result_count):
+            return base.success_payload("news", query, [{"title": "news", "url": "https://example.com"}])
+
+    result = searchserver.search("latest AI news", 5, providers=[GeneralProvider(), NewsProvider()])
+
+    assert result["provider"] == "news"
 
 
 def test_search_reports_discovery_errors_as_all_failed_payload(monkeypatch):
@@ -94,7 +116,7 @@ def test_search_reports_discovery_errors_as_all_failed_payload(monkeypatch):
 
     assert result["status"] == "error"
     assert result["query"] == "generic agent"
-    assert "无法搜索" in result["msg"]
+    assert result["msg"] == "searchserver: bad provider import"
     assert result["provider_errors"] == [{"provider": "searchserver", "error": "bad provider import"}]
 
 
@@ -132,6 +154,29 @@ def test_registry_build_providers_supports_default_and_explicit_selection(monkey
     providers, unavailable = searchserver.registry.build_providers(provider_types=["国外数据全能"], configs=configs)
     assert [provider.name for provider in providers] == ["tavily"]
     assert unavailable == []
+
+
+def test_tavily_strategy_configs_reuse_tavily_key_variables():
+    _, _, config, tavily = import_searchserver()
+    module = types.SimpleNamespace(
+        tavily_search_keys=["tvly-one"],
+        tavily_search_url="https://api.tavily.com/search",
+    )
+    provider_classes = {
+        "tavily": tavily.TavilyProvider,
+        "tavily_deep": tavily.TavilyDeepProvider,
+        "tavily_news": tavily.TavilyNewsProvider,
+        "tavily_finance": tavily.TavilyFinanceProvider,
+    }
+
+    providers = config.load_provider_configs(module, provider_classes=provider_classes)
+
+    assert set(providers) == {"tavily", "tavily_deep", "tavily_news", "tavily_finance"}
+    assert {cfg.url for cfg in providers.values()} == {"https://api.tavily.com/search"}
+    assert {tuple(cfg.keys) for cfg in providers.values()} == {("tvly-one",)}
+    assert providers["tavily_deep"].type == "国外深度数据"
+    assert providers["tavily_news"].type == "国外新闻"
+    assert providers["tavily_finance"].type == "国外金融"
 
 
 def test_registry_rejects_provider_without_type(monkeypatch):
@@ -181,13 +226,56 @@ def test_tavily_provider_rotates_keys_and_normalizes_results():
     result = provider.search("latest AI search", 80)
 
     assert [call[2]["Authorization"] for call in calls] == ["Bearer tvly-bad", "Bearer tvly-good"]
-    assert [call[1]["max_results"] for call in calls] == [50, 50]
+    assert [call[1]["max_results"] for call in calls] == [20, 20]
     assert result["status"] == "success"
     assert result["provider"] == "tavily"
     assert result["query"] == "latest AI search"
     assert result["results"] == [
         {"title": "Result", "url": "https://example.com", "content": "Snippet", "score": 0.9}
     ]
+
+
+def test_tavily_strategy_providers_set_advanced_news_and_finance_parameters():
+    _, base, _, tavily = import_searchserver()
+    payloads = []
+
+    def fake_post(url, payload, headers, timeout):
+        payloads.append(payload)
+        return {"results": [{"title": payload["query"], "url": "https://example.com"}]}
+
+    config = base.ProviderConfig(name="tavily", keys=["tvly-good"], url="https://api.tavily.com/search")
+    providers = [
+        tavily.TavilyDeepProvider(config, http_post=fake_post),
+        tavily.TavilyNewsProvider(config, http_post=fake_post),
+        tavily.TavilyFinanceProvider(config, http_post=fake_post),
+    ]
+
+    for provider in providers:
+        provider.search("latest AI search", 3)
+
+    assert payloads == [
+        {"query": "latest AI search", "search_depth": "advanced", "max_results": 3, "chunks_per_source": 3},
+        {"query": "latest AI search", "search_depth": "basic", "max_results": 3, "topic": "news"},
+        {"query": "latest AI search", "search_depth": "basic", "max_results": 3, "topic": "finance"},
+    ]
+
+
+def test_tavily_post_json_uses_api_error_detail(monkeypatch):
+    _, base, _, tavily = import_searchserver()
+
+    class FakeResponse:
+        def raise_for_status(self):
+            raise tavily.requests.HTTPError("400 Bad Request")
+
+        def json(self):
+            return {"detail": {"error": "Invalid topic. Must be 'general' or 'news'."}}
+
+    monkeypatch.setattr(tavily.requests, "post", lambda *args, **kwargs: FakeResponse())
+
+    with pytest.raises(base.ProviderError) as exc:
+        tavily._post_json("https://api.tavily.com/search", {}, {}, 15)
+
+    assert str(exc.value) == "Invalid topic. Must be 'general' or 'news'."
 
 
 def test_tavily_provider_reports_key_failures_when_every_key_fails():

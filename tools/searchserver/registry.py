@@ -16,6 +16,8 @@ def discover_provider_classes():
         for _, obj in inspect.getmembers(module, inspect.isclass):
             if obj is SearchProvider or not issubclass(obj, SearchProvider):
                 continue
+            if getattr(obj, "abstract", False):
+                continue
             name = getattr(obj, "name", None) or module_info.name
             classes[name] = obj
     return classes

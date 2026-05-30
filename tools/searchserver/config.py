@@ -37,8 +37,9 @@ def load_provider_configs(module=None, provider_classes=None):
     provider_classes = provider_classes if provider_classes is not None else _discover_provider_classes()
     providers = {}
     for name, cls in provider_classes.items():
-        keys = _as_key_list(getattr(module, f"{name}_search_keys", None))
-        url = str(getattr(module, f"{name}_search_url", "") or "").strip()
+        prefix = str(getattr(cls, "config_prefix", "") or name).strip()
+        keys = _as_key_list(getattr(module, f"{prefix}_search_keys", None))
+        url = str(getattr(module, f"{prefix}_search_url", "") or "").strip()
         if not keys and not url:
             continue
         providers[name] = ProviderConfig(

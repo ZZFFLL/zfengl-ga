@@ -82,7 +82,7 @@ def test_web_search_dispatch_returns_all_failed_payload(monkeypatch):
 
     error_payload = {
         "status": "error",
-        "msg": "无法搜索: all providers failed",
+        "msg": "tavily: bad key",
         "query": "GenericAgent",
         "provider_errors": [{"provider": "tavily", "error": "bad key"}],
     }

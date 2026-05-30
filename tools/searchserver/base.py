@@ -17,6 +17,8 @@ class ProviderError(Exception):
 class SearchProvider:
     name = ""
     type = ""
+    config_prefix = ""
+    abstract = False
 
     def search(self, query, result_count):
         raise NotImplementedError
@@ -49,10 +51,21 @@ def success_payload(provider, query, results):
     }
 
 
+def format_provider_errors(provider_errors):
+    lines = []
+    for item in provider_errors or []:
+        if not isinstance(item, dict):
+            continue
+        provider = str(item.get("provider") or "searchserver")
+        error = str(item.get("error") or "")
+        lines.append(f"{provider}: {error}")
+    return "\n".join(lines) or "searchserver: no provider error detail"
+
+
 def all_failed_payload(query, provider_errors):
     return {
         "status": "error",
-        "msg": "无法搜索: all providers failed",
+        "msg": format_provider_errors(provider_errors),
         "query": query,
         "provider_errors": provider_errors,
     }
