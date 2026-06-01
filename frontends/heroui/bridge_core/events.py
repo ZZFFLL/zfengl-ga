@@ -7,6 +7,22 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 
+# 工具输出 / 详情的硬上限：超过此大小会在事件写入时截断头并打 marker。
+# 一个 5MB 的 file_read 在 SQLite + 内存里都缩成 64KB 左右，避免长程任务把
+# 前端 timeline state 撑爆。64KB 对绝大多数调试场景仍然能看到开头报错。
+MAX_TOOL_FIELD_BYTES = 64 * 1024
+
+
+def cap_field(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    encoded = value.encode("utf-8")
+    if len(encoded) <= MAX_TOOL_FIELD_BYTES:
+        return value
+    head = encoded[:MAX_TOOL_FIELD_BYTES].decode("utf-8", errors="replace")
+    return f"{head}\n…[truncated: shown first {MAX_TOOL_FIELD_BYTES // 1024}KB of {len(encoded) // 1024}KB]"
+
+
 def to_iso_timestamp(value: Any) -> str:
     try:
         seconds = float(value)
@@ -106,7 +122,7 @@ def convert_agent_event(session_id: str, turn_id: str, response_id: str, raw: di
                 "title": summary,
                 "status": "done",
                 "summary": summary,
-                "detail": detail,
+                "detail": cap_field(detail),
                 "elapsed_ms": raw.get("elapsed_ms"),
                 "default_open": False,
                 "created_at": created_at,
@@ -170,8 +186,8 @@ def convert_agent_event(session_id: str, turn_id: str, response_id: str, raw: di
             "title": tool_title,
             "status": "failed" if status == "failed" else "done",
             "summary": tool_title,
-            "detail": str(raw.get("detail") or ""),
-            "output": str(raw.get("output") or ""),
+            "detail": cap_field(str(raw.get("detail") or "")),
+            "output": cap_field(str(raw.get("output") or "")),
             "error": error if status == "failed" else "",
             "elapsed_ms": raw.get("elapsed_ms"),
             "tool_name": tool_name,

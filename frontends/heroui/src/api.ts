@@ -562,12 +562,12 @@ function mapEventsToTimeline(events: BridgeTimelineEvent[], messages: MessageRec
       summary: String(data.summary ?? current?.summary ?? ""),
       detail:
         detailDelta
-          ? `${current?.detail ?? ""}${detailDelta}`
+          ? appendStreamCapped(current?.detail, detailDelta)
           : typeof data.detail === "string"
             ? data.detail
             : current?.detail ?? "",
       input: typeof data.input === "string" ? data.input : current?.input,
-      output: typeof data.output === "string" ? data.output : outputDelta ? `${current?.output ?? ""}${outputDelta}` : current?.output,
+      output: typeof data.output === "string" ? data.output : outputDelta ? appendStreamCapped(current?.output, outputDelta) : current?.output,
       error: typeof data.error === "string" ? data.error : current?.error,
       elapsed_ms: typeof data.elapsed_ms === "number" ? data.elapsed_ms : current?.elapsed_ms,
       tool_name: typeof data.tool_name === "string" ? data.tool_name : current?.tool_name,
@@ -593,6 +593,21 @@ function isHiddenPhaseStep(step: ExecutionStep): boolean {
     return false;
   }
   return /:phase:\d+:(start|end)$/.test(step.id) || /^第 \d+ 轮(开始|结束)$/.test(step.title);
+}
+
+// 与 state.ts 的 appendCapped 同步：transcript 回放时也走相同上限。
+const STREAMED_FIELD_CAP = 256 * 1024;
+
+function appendStreamCapped(prev: string | undefined, delta: string): string {
+  const base = prev ?? "";
+  if (base.length + delta.length <= STREAMED_FIELD_CAP) {
+    return base + delta;
+  }
+  const room = STREAMED_FIELD_CAP - base.length;
+  if (room <= 0) {
+    return base;
+  }
+  return base + delta.slice(0, room) + "\n…[truncated; refresh transcript to see full content]";
 }
 
 function readStepKindFromData(kind: unknown): ExecutionStep["kind"] {

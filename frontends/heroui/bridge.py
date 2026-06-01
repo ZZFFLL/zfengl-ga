@@ -118,6 +118,38 @@ for _s in (sys.stdout, sys.stderr):
 # Agent management layer
 # ---------------------------------------------------------------------------
 
+# 单次 turn_outputs 截断阈值：每条 ≤64KB，整个 list ≤256KB。
+# 防止把 agent 的 file_read / shell 输出全量塞进 assistant 消息和 SQLite payload。
+MAX_OUTPUT_ITEM_BYTES = 64 * 1024
+MAX_OUTPUT_TOTAL_BYTES = 256 * 1024
+
+# 单 session 内存里保留的最大事件数。超过后裁掉最旧的，SQLite 同步 DELETE。
+# 配合 Phase 1A 的 cap_field，单事件 ≤64KB，上限 5000 ≈ 150MB 上界。
+# 客户端的 after_event cursor 仍然按 seq 比较，最旧事件被裁后客户端不会
+# 重复消费（seq 是单调递增的）。
+MAX_EVENTS_PER_SESSION = 5000
+
+
+def cap_outputs(items: Optional[List[Any]]) -> List[str]:
+    """Trim a list of per-round output chunks to bounded total size."""
+    capped: List[str] = []
+    total = 0
+    for raw in items or []:
+        s = str(raw) if raw is not None else ""
+        b = s.encode("utf-8")
+        if len(b) > MAX_OUTPUT_ITEM_BYTES:
+            s = b[:MAX_OUTPUT_ITEM_BYTES].decode("utf-8", errors="replace") + "\n…[truncated]"
+            b = s.encode("utf-8")
+        if total + len(b) > MAX_OUTPUT_TOTAL_BYTES:
+            capped.append(
+                f"…[further outputs omitted, total >{MAX_OUTPUT_TOTAL_BYTES // 1024}KB]"
+            )
+            break
+        capped.append(s)
+        total += len(b)
+    return capped
+
+
 class AgentManager:
     def __init__(self, db_path: Optional[str] = None):
         self.lock = threading.RLock()
@@ -239,6 +271,18 @@ class AgentManager:
         stored["session_id"] = str(stored.get("session_id") or sess.id)
         sess.events.append(stored)
         sess.updated_at = time.time()
+        # Phase 1C：内存里 sess.events 超过上限时裁掉最旧的，SQLite 同步删除。
+        if len(sess.events) > MAX_EVENTS_PER_SESSION:
+            dropped = len(sess.events) - MAX_EVENTS_PER_SESSION
+            cutoff_seq = int(sess.events[dropped].get("seq", 0) or 0)
+            sess.events = sess.events[dropped:]
+            if persist and sess.id not in self.deleted_session_ids and cutoff_seq > 0:
+                with self._connect() as conn:
+                    conn.execute(
+                        "DELETE FROM events WHERE session_id = ? AND seq < ?",
+                        (sess.id, cutoff_seq),
+                    )
+                    conn.commit()
         if persist:
             with self._connect() as conn:
                 self._persist_event_row(conn, sess, stored)
@@ -823,7 +867,7 @@ class AgentManager:
                         if isinstance(item.get("turn"), int):
                             ga_turn = int(item.get("turn") or 0)
                         if isinstance(item.get("outputs"), list):
-                            turn_outputs = [str(output) for output in item.get("outputs") if output is not None]
+                            turn_outputs = cap_outputs(item.get("outputs"))
                         if item.get("next"):
                             text = str(item["next"])
                             pieces.append(text)
@@ -842,7 +886,7 @@ class AgentManager:
                             if isinstance(item.get("turn"), int):
                                 ga_turn = int(item.get("turn") or ga_turn)
                             if isinstance(item.get("outputs"), list):
-                                turn_outputs = [str(output) for output in item.get("outputs") if output is not None]
+                                turn_outputs = cap_outputs(item.get("outputs"))
                             break
                     else:
                         pieces.append(str(item))

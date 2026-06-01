@@ -2195,3 +2195,175 @@ test("HeroUI bridge persists Bridge-owned agent state without model_responses re
   assert.doesNotMatch(bridge, /compress_session/);
   assert.doesNotMatch(bridge, /model_responses.*restore/);
 });
+
+test("HeroUI bridge caps oversized tool.end output and detail to 64KB", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-cap-"));
+  const dbPath = join(tempDir, "sessions.sqlite3");
+  const script = `
+import importlib.util
+import sys
+from pathlib import Path
+
+bridge_path = Path(${JSON.stringify(bridgePath)})
+spec = importlib.util.spec_from_file_location("heroui_bridge_under_test_cap", bridge_path)
+bridge = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bridge
+spec.loader.exec_module(bridge)
+
+manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
+session = manager.create_session(cwd="E:/tmp/ga", title="cap")
+turn_id = manager.make_turn_id(session.id, 1)
+response_id = manager.make_response_id(turn_id, 1)
+
+big = "x" * (200 * 1024)
+
+# tool.end with huge output/detail should be truncated to ~64KB + marker
+event = manager.convert_agent_event(session, turn_id, response_id, {
+    "type": "tool.end",
+    "turn": 1,
+    "index": 0,
+    "tool_name": "file_read",
+    "tool_kind": "read",
+    "status": "done",
+    "output": big,
+    "detail": big,
+})
+encoded_output = event["data"]["output"].encode("utf-8")
+encoded_detail = event["data"]["detail"].encode("utf-8")
+assert len(encoded_output) <= 64 * 1024 + 200, len(encoded_output)
+assert len(encoded_detail) <= 64 * 1024 + 200, len(encoded_detail)
+assert "truncated" in event["data"]["output"]
+assert "truncated" in event["data"]["detail"]
+
+# llm.end with huge detail should be truncated
+llm = manager.convert_agent_event(session, turn_id, response_id, {
+    "type": "llm.end",
+    "turn": 1,
+    "text": "summary text",
+    "has_tools": True,
+    "summary": "summary text",
+    "thinking_summary": big,
+})
+encoded = llm["data"]["detail"].encode("utf-8")
+assert len(encoded) <= 64 * 1024 + 200, len(encoded)
+assert "truncated" in llm["data"]["detail"]
+
+# small output/detail should pass through unchanged
+small = "small output"
+event_small = manager.convert_agent_event(session, turn_id, response_id, {
+    "type": "tool.end",
+    "turn": 1,
+    "index": 0,
+    "tool_name": "file_read",
+    "tool_kind": "read",
+    "status": "done",
+    "output": small,
+    "detail": small,
+})
+assert event_small["data"]["output"] == small
+assert event_small["data"]["detail"] == small
+`;
+
+  try {
+    execFileSync("python", ["-c", script], { stdio: "pipe" });
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("HeroUI bridge caps oversized turn_outputs list to 256KB and item to 64KB", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-cap-outputs-"));
+  const dbPath = join(tempDir, "sessions.sqlite3");
+  const script = `
+import importlib.util
+import queue
+import sys
+from pathlib import Path
+
+bridge_path = Path(${JSON.stringify(bridgePath)})
+spec = importlib.util.spec_from_file_location("heroui_bridge_under_test_cap_outputs", bridge_path)
+bridge = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bridge
+spec.loader.exec_module(bridge)
+
+class FakeAgent:
+    structured_events = True
+    inc_out = True
+
+    def put_task(self, prompt, images=None):
+        q = queue.Queue()
+        # one huge item (>64KB) and many small items that together exceed 256KB
+        huge = "h" * (200 * 1024)
+        outputs = [huge] + ["x" * 1024 for _ in range(300)]
+        q.put({"done": "answer", "turn": 1, "outputs": outputs})
+        return q
+
+manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
+session = manager.create_session(cwd="E:/tmp/ga", title="cap outputs")
+session.agent = FakeAgent()
+turn_id = "ga|" + session.id + "|1"
+manager.run_agent_turn(session, turn_id, "prompt")
+
+assistant = [m for m in session.messages if m["role"] == "assistant"][-1]
+assert "outputs" in assistant, assistant
+outputs = assistant["outputs"]
+total = sum(len(s.encode("utf-8")) for s in outputs)
+assert total <= 256 * 1024 + 200, total
+# huge item must be truncated
+assert any("truncated" in s for s in outputs)
+# the chain stops before exhausting all 300 small items
+assert len(outputs) < 300
+`;
+
+  try {
+    execFileSync("python", ["-c", script], { stdio: "pipe" });
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("HeroUI bridge trims sess.events beyond 5000 entries and prunes the SQLite events table", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "ga-heroui-events-trim-"));
+  const dbPath = join(tempDir, "sessions.sqlite3");
+  const script = `
+import importlib.util
+import sys
+import sqlite3
+from pathlib import Path
+
+bridge_path = Path(${JSON.stringify(bridgePath)})
+spec = importlib.util.spec_from_file_location("heroui_bridge_under_test_events_trim", bridge_path)
+bridge = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bridge
+spec.loader.exec_module(bridge)
+
+manager = bridge.AgentManager(db_path=${JSON.stringify(dbPath)})
+session = manager.create_session(cwd="E:/tmp/ga", title="events trim")
+for i in range(5050):
+    manager.add_event(session, {
+        "type": "timeline.step",
+        "turn_id": "ga|" + session.id + "|1",
+        "session_id": session.id,
+        "data": {"id": "step-" + str(i), "kind": "tool", "title": "t", "status": "done"},
+    })
+
+assert len(session.events) == 5000, len(session.events)
+# the oldest events should be the ones dropped
+assert session.events[0]["data"]["id"] == "step-50", session.events[0]["data"]["id"]
+assert session.events[-1]["data"]["id"] == "step-5049"
+
+# SQLite events table should also have been pruned
+with sqlite3.connect(${JSON.stringify(dbPath)}) as conn:
+    count = conn.execute("SELECT COUNT(*) FROM events WHERE session_id = ?", (session.id,)).fetchone()[0]
+    assert count == 5000, count
+    # the lowest seq in SQLite should be at or above 51 (i.e. step-50's seq)
+    min_seq = conn.execute("SELECT MIN(seq) FROM events WHERE session_id = ?", (session.id,)).fetchone()[0]
+    assert min_seq >= 51, min_seq
+`;
+
+  try {
+    execFileSync("python", ["-c", script], { stdio: "pipe" });
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});

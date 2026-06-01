@@ -524,7 +524,7 @@ function reduceTimelineStep(state: TurnState, event: StreamEvent): TurnState {
     summary: String(event.data.summary ?? current?.summary ?? ""),
     detail:
       detailDelta
-        ? `${current?.detail ?? ""}${detailDelta}`
+        ? appendCapped(current?.detail, detailDelta)
         : typeof event.data.detail === "string"
           ? event.data.detail
           : current?.detail ?? "",
@@ -533,7 +533,7 @@ function reduceTimelineStep(state: TurnState, event: StreamEvent): TurnState {
       typeof event.data.output === "string"
         ? event.data.output
         : outputDelta
-          ? `${current?.output ?? ""}${outputDelta}`
+          ? appendCapped(current?.output, outputDelta)
           : current?.output,
     error: typeof event.data.error === "string" ? event.data.error : current?.error,
     elapsed_ms: typeof event.data.elapsed_ms === "number" ? event.data.elapsed_ms : current?.elapsed_ms,
@@ -607,6 +607,23 @@ function upsertStep(steps: ExecutionStep[], step: ExecutionStep): ExecutionStep[
   return steps.some((current) => current.id === step.id)
     ? steps.map((current) => (current.id === step.id ? step : current))
     : [...steps, step];
+}
+
+// 阶段 1D：流式拼接单步 output / detail 时设上限，避免长 session 把单步
+// 字符串撑到几 MB。前端 state 里这俩是常驻的 React state，cap 后会随步骤
+// 关闭被 tool.end 的 cap_field 结果（≤64KB）覆盖掉。
+const STREAMED_FIELD_CAP = 256 * 1024;
+
+function appendCapped(prev: string | undefined, delta: string): string {
+  const base = prev ?? "";
+  if (base.length + delta.length <= STREAMED_FIELD_CAP) {
+    return base + delta;
+  }
+  const room = STREAMED_FIELD_CAP - base.length;
+  if (room <= 0) {
+    return base;
+  }
+  return base + delta.slice(0, room) + "\n…[truncated; refresh transcript to see full content]";
 }
 
 function isHiddenPhaseStep(step: ExecutionStep): boolean {

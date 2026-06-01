@@ -847,3 +847,80 @@ test("buildThreadItems places legacy unowned timeline before the following assis
     ["user", "timeline", "assistant"],
   );
 });
+
+test("timeline.step output_delta appends to step output but caps at 256KB with a truncation marker", () => {
+  let state = createInitialTurnState("turn-cap", "2026-05-23T00:00:00.000Z");
+  // First seed a step with a large output_delta that approaches the cap.
+  const bigDelta = "y".repeat(200 * 1024);
+  state = applyStreamEvent(state, {
+    ...baseEvent,
+    turn_id: "turn-cap",
+    type: "timeline.step",
+    data: {
+      id: "step-cap",
+      turn_id: "turn-cap",
+      kind: "tool",
+      title: "file_read",
+      status: "running",
+      summary: "file_read",
+      output_delta: bigDelta,
+    },
+  });
+  assert.equal(state.steps[0].output.length, 200 * 1024);
+
+  // Another big delta should push past the cap and append a truncation marker.
+  state = applyStreamEvent(state, {
+    ...baseEvent,
+    turn_id: "turn-cap",
+    type: "timeline.step",
+    data: {
+      id: "step-cap",
+      turn_id: "turn-cap",
+      kind: "tool",
+      title: "file_read",
+      status: "running",
+      summary: "file_read",
+      output_delta: bigDelta,
+    },
+  });
+  assert.ok(state.steps[0].output.length <= 256 * 1024 + 200, state.steps[0].output.length);
+  assert.match(state.steps[0].output, /truncated/);
+
+  // Further deltas must not grow the string further.
+  state = applyStreamEvent(state, {
+    ...baseEvent,
+    turn_id: "turn-cap",
+    type: "timeline.step",
+    data: {
+      id: "step-cap",
+      turn_id: "turn-cap",
+      kind: "tool",
+      title: "file_read",
+      status: "running",
+      summary: "file_read",
+      output_delta: "z".repeat(1024),
+    },
+  });
+  assert.ok(state.steps[0].output.length <= 256 * 1024 + 200, state.steps[0].output.length);
+});
+
+test("timeline.step detail_delta appends to step detail but caps at 256KB with a truncation marker", () => {
+  let state = createInitialTurnState("turn-cap-detail", "2026-05-23T00:00:00.000Z");
+  const bigDelta = "y".repeat(300 * 1024);
+  state = applyStreamEvent(state, {
+    ...baseEvent,
+    turn_id: "turn-cap-detail",
+    type: "timeline.step",
+    data: {
+      id: "step-cap-detail",
+      turn_id: "turn-cap-detail",
+      kind: "tool",
+      title: "shell",
+      status: "running",
+      summary: "shell",
+      detail_delta: bigDelta,
+    },
+  });
+  assert.ok(state.steps[0].detail.length <= 256 * 1024 + 200, state.steps[0].detail.length);
+  assert.match(state.steps[0].detail, /truncated/);
+});
