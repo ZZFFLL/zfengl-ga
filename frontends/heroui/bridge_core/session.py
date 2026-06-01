@@ -14,8 +14,6 @@ def find_default_ga_root() -> Path:
     candidates = [
         APP_DIR / "..",
         APP_DIR / ".." / "..",
-        APP_DIR / ".." / "GenericAgent",
-        APP_DIR / ".." / ".." / "GenericAgent",
     ]
     for p in candidates:
         root = p.resolve()

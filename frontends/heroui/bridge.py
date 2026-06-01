@@ -141,6 +141,14 @@ class AgentManager:
             sys.path.insert(0, str(root))
         return root
 
+    def _normalize_cwd(self, cwd: Optional[str]) -> str:
+        """Validate and normalize a cwd path, falling back to ga_root if invalid."""
+        if cwd:
+            cwd_path = Path(cwd)
+            if cwd_path.exists() and cwd_path.is_dir():
+                return str(cwd_path.resolve())
+        return self.ga_root
+
     def make_turn_id(self, session_id: str, turn_no: int) -> str:
         return f"ga|{session_id}|{turn_no}"
 
@@ -160,7 +168,7 @@ class AgentManager:
             sess = Session(
                 id=stored.id,
                 title=stored.title,
-                cwd=stored.cwd,
+                cwd=self._normalize_cwd(stored.cwd),
                 created_at=stored.created_at,
                 updated_at=stored.updated_at,
                 msg_seq=stored.msg_seq,
@@ -311,8 +319,9 @@ class AgentManager:
     def make_agent(self, sess: Session):
         root = self.ensure_ga_import_path()
         old_cwd = os.getcwd()
+        cwd = sess.cwd if sess.cwd and Path(sess.cwd).exists() else str(root)
         try:
-            os.chdir(sess.cwd or str(root))
+            os.chdir(cwd)
             agentmain = importlib.import_module("agentmain")
             GA = getattr(agentmain, "GenericAgent")
             agent = GA()
@@ -583,7 +592,8 @@ class AgentManager:
 
     def create_session(self, cwd: Optional[str] = None, title: str = "New chat") -> Session:
         sid = "sess-" + uuid.uuid4().hex[:12]
-        sess = Session(id=sid, title=title or "New chat", cwd=str(cwd or self.ga_root))
+        effective_cwd = self._normalize_cwd(cwd)
+        sess = Session(id=sid, title=title or "New chat", cwd=effective_cwd)
         with self.lock:
             self.sessions[sid] = sess
             self.deleted_session_ids.discard(sid)
