@@ -5,7 +5,10 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
-    "test": "tsx --test src/state.test.mjs src/tool_details.test.mjs src/ui_contract.test.mjs src/ga_bridge_contract.test.mjs src/ga_output_parser.test.mjs src/api_stream.test.mjs src/sop_prompt.test.mjs"
+    "test": "tsx --test src/state.test.mjs src/tool_details.test.mjs src/ui_contract.test.mjs src/ga_bridge_contract.test.mjs src/ga_output_parser.test.mjs src/api_stream.test.mjs src/sop_prompt.test.mjs",
+    "heroui-start": "chmod +x start.command start.cmd 2>/dev/null; bash start.command",
+    "heroui-stop": "chmod +x Makefile 2>/dev/null; make stop",
+    "heroui-status": "make status"
   },
   "dependencies": {
     "@heroui/react": "^3.1.0",

@@ -2,3 +2,5 @@ node_modules/
 dist/
 .data/
 vite-dev.log
+# Project uses pnpm; ignore stray npm lockfile from one-off installs.
+package-lock.json

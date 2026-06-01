@@ -1,4 +1,9 @@
 #!/bin/bash
+# Self-heal: even with core.fileMode=true in this subrepo, an external
+# `chmod 644`, a Finder Get Info change, or some macOS quarantine prompts
+# can strip +x. As long as we can run *once* (e.g. via `make start` or
+# `bash start.command`), re-apply +x so the next Finder double-click works.
+[ -x "$0" ] || chmod +x "$0" 2>/dev/null || true
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
