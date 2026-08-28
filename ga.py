@@ -7,6 +7,7 @@ if sys.stderr is None: sys.stderr = open(os.devnull, "w")
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from agent_loop import BaseHandler, StepOutcome, json_default
+from tools import searchserver
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 def safe_print(*args, **kwargs):
@@ -376,6 +377,39 @@ class GenericAgentHandler(BaseHandler):
         maxlen = self._get_tool_maxlen(8000, args)
         return StepOutcome(smart_format(result, max_str_len=maxlen), next_prompt=next_prompt)
     
+    def do_web_search(self, args, response):
+        '''根据模型选择的搜索类型调用搜索服务，并返回统一的搜索结果结构。'''
+        raw_keyword = args.get("keyword")
+        if raw_keyword in (None, ""):
+            raw_keyword = args.get("query", "")
+        keyword = str(raw_keyword).strip()
+        if not keyword:
+            return StepOutcome({"status": "error", "msg": "keyword is required"}, next_prompt="\n")
+        raw_result_count = args.get("result_count")
+        if raw_result_count in (None, ""):
+            return StepOutcome({"status": "error", "msg": "result_count is required"}, next_prompt="\n")
+        try:
+            result_count = int(raw_result_count)
+        except (TypeError, ValueError):
+            return StepOutcome({"status": "error", "msg": "result_count must be an integer"}, next_prompt="\n")
+        if result_count <= 0:
+            return StepOutcome({"status": "error", "msg": "result_count must be greater than 0"}, next_prompt="\n")
+        raw_type = args.get("type")
+        if raw_type in (None, ""):
+            raw_type = args.get("provider_type")
+        search_type = str(raw_type or "").strip()
+        if not search_type:
+            return StepOutcome({"status": "error", "msg": "type is required"}, next_prompt="\n")
+        result = searchserver.search(keyword, result_count, provider_types=[search_type])
+        provider = result.get("provider") if isinstance(result, dict) else ""
+        status = result.get("status") if isinstance(result, dict) else "unknown"
+        if provider:
+            yield f"[Info] Search {status} via {provider}\n"
+        else:
+            yield f"[Info] Search {status}\n"
+        next_prompt = self._get_anchor_prompt(skip=args.get('_index', 0) > 0)
+        return StepOutcome(result, next_prompt=next_prompt)
+
     def do_file_patch(self, args, response):
         path = self._get_abs_path(args.get("path", ""))
         yield f"[Action] Patching file: {path}\n"
