@@ -10,6 +10,24 @@ from agent_loop import BaseHandler, StepOutcome, json_default
 from tools import searchserver
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
+# ── hashline (line-anchored patch engine) ──────────────────────────────
+try:
+    from tools import hashline
+    _hashline_store = hashline.SnapshotStore()
+except Exception:
+    hashline = None
+    _hashline_store = None
+
+def _display_path(path):
+    """Prefer a cwd-relative path for hashline headers (shorter, copyable)."""
+    try:
+        rel = os.path.relpath(path)
+        if not rel.startswith(".."):
+            return rel
+    except ValueError:
+        pass
+    return path
+
 def safe_print(*args, **kwargs):
     try: print(*args, **kwargs)
     except: pass
@@ -205,9 +223,18 @@ def _arg(args, name, default, type=None):
         return default if v is None else bool(v)
     return v
 
-def file_patch(path: str, old_content: str, new_content: str):
-    """在文件中寻找唯一的 old_content 块并替换为 new_content"""
+def file_patch(path: str, old_content: str = "", new_content: str = "", patch: str = None, cwd: str = None):
+    """传统模式: 在文件中寻找唯一的 old_content 块并替换为 new_content。
+    hashline模式: patch 参数为 hashline DSL（[path#TAG]头 + PUT/CUT/REM/MV 操作），
+    基于内容指纹校验防 stale，支持行号漂移自动恢复。"""
     path = str(Path(path).resolve())
+    if patch is not None:
+        if hashline is None:
+            return {"status": "error", "msg": "hashline module unavailable (temp/hashline.py missing)"}
+        try:
+            return hashline.apply_patch(patch, _hashline_store, cwd=cwd or os.getcwd())
+        except Exception as e:
+            return {"status": "error", "msg": f"hashline: {e}"}
     try:
         if not os.path.exists(path): return {"status": "error", "msg": "file not found"}
         with open(path, 'r', encoding='utf-8') as f: full_text = f.read()
@@ -230,6 +257,8 @@ def _scan_files(base, depth=2):
 def file_read(path, start=1, keyword=None, count=200, show_linenos=True):
     try:
         with open(path, 'r', encoding='utf-8', errors='replace') as f:
+            full_text = f.read()
+            f.seek(0)
             stream = ((i, l.rstrip('\r\n')) for i, l in enumerate(f, 1))
             stream = itertools.dropwhile(lambda x: x[0] < start, stream)
             if keyword:
@@ -248,6 +277,12 @@ def file_read(path, start=1, keyword=None, count=200, show_linenos=True):
             tl_str = f"{total_lines}+" if remaining >= 5000 else str(total_lines)
             partial = total_lines > realcnt
             total_tag = f"[FILE] {tl_str} lines" + (f" | PARTIAL showing {realcnt}; assess need for more" if partial else "") + "\n"
+            if hashline is not None:
+                try:
+                    tag = _hashline_store.record(path, full_text)
+                    total_tag = f"[{_display_path(path)}#{tag}]\n" + total_tag
+                except Exception:
+                    pass
             res = [(i, l if len(l) <= L_MAX else l[:L_MAX] + TAG) for i, l in res]
             result = "\n".join(f"{i}|{l}" if show_linenos else l for i, l in res)
             if show_linenos: result = total_tag + result
@@ -413,6 +448,12 @@ class GenericAgentHandler(BaseHandler):
     def do_file_patch(self, args, response):
         path = self._get_abs_path(args.get("path", ""))
         yield f"[Action] Patching file: {path}\n"
+        patch = args.get("patch")
+        if patch:
+            result = file_patch(path, patch=patch, cwd=self.cwd)
+            yield f"\n{str(result)}\n"
+            next_prompt = self._get_anchor_prompt(skip=args.get('_index', 0) > 0)
+            return StepOutcome(result, next_prompt=next_prompt)
         old_content = args.get("old_content", "")
         new_content = args.get("new_content", "")
         try: new_content = expand_file_refs(new_content, base_dir=self.cwd)
