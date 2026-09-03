@@ -65,8 +65,28 @@ def _make_client(api_key=None):
     return RedFoxClient(api_key=key)
 
 
+def _method_info(m, f):
+    """方法签名 + docstring 摘要（summary + :param 行），供模型自省参数格式。"""
+    sig = f"{m}{inspect.signature(f)}"
+    doc = inspect.getdoc(f) or ""
+    summary = ""
+    for line in doc.splitlines():
+        line = line.strip()
+        if not line or line.startswith(":param") or line.startswith(":return"):
+            break
+        summary += line + " "
+    summary = summary.strip()
+    params = [ln.strip() for ln in doc.splitlines() if ln.strip().startswith(":param")]
+    parts = [sig]
+    if summary:
+        parts.append(summary)
+    if params:
+        parts.extend(params)
+    return " | ".join(parts)
+
+
 def list_actions(platform):
-    """返回某平台全部公开方法签名（供模型自省，也方便排查）。"""
+    """返回某平台全部公开方法签名+docstring说明（供模型自省，也方便排查）。"""
     try:
         from redfox import RedFoxClient
     except ImportError as exc:
@@ -85,7 +105,7 @@ def list_actions(platform):
         f = getattr(mod.__class__, m, None)
         if callable(f):
             try:
-                methods.append(f"{m}{inspect.signature(f)}")
+                methods.append(_method_info(m, f))
             except Exception:
                 methods.append(m)
     return {"status": "success", "platform": platform, "methods": methods}

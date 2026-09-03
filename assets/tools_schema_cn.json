@@ -230,7 +230,7 @@
   "type": "function",
   "function": {
    "name": "redfox",
-   "description": "红狐数据平台采集工具。覆盖抖音、小红书、公众号、B站、今日头条、TikTok、快手、视频号、YouTube、X(Twitter)、Instagram、懂车帝、易车、汽车之家等平台数据采集；热点榜单；AI搜索(Kimi/DeepSeek/千问/元宝/豆包/百度)；AI图片/视频生成；音视频下载上传。用 platform + action + params 调用。action='__methods__' 可枚举某平台全部可用方法。",
+   "description": "红狐数据平台采集工具。覆盖抖音、小红书、公众号、B站、今日头条、TikTok、快手、视频号、YouTube、X(Twitter)、Instagram、懂车帝、易车、汽车之家等平台数据采集；热点榜单；AI搜索(Kimi/DeepSeek/千问/元宝/豆包/百度)；AI图片/视频生成；音视频下载上传。用 platform + action + params 调用。action='__methods__' 可枚举某平台全部可用方法（每条含签名+参数格式说明，如日期格式，调用前先查看）。",
    "parameters": {
     "type": "object",
     "properties": {

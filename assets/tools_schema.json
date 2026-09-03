@@ -259,7 +259,7 @@
   "type": "function",
   "function": {
    "name": "redfox",
-   "description": "RedFox (红狐数据) platform data tool. Covers data scraping for Douyin, Xiaohongshu, WeChat公众号, Bilibili, Toutiao, TikTok, Kuaishou, WeChat Channels, YouTube, X(Twitter), Instagram, Dongchedi, Yiche, Autohome; hotspot rankings; AI search (Kimi/DeepSeek/Qianwen/Yuanbao/Doubao/Baidu); AI image/video generation; media download/upload. Call with platform + action + params. Use action='__methods__' to list a platform's available methods.",
+   "description": "RedFox (红狐数据) platform data tool. Covers data scraping for Douyin, Xiaohongshu, WeChat公众号, Bilibili, Toutiao, TikTok, Kuaishou, WeChat Channels, YouTube, X(Twitter), Instagram, Dongchedi, Yiche, Autohome; hotspot rankings; AI search (Kimi/DeepSeek/Qianwen/Yuanbao/Doubao/Baidu); AI image/video generation; media download/upload. Call with platform + action + params. Use action='__methods__' to list a platform's available methods (each entry includes signature + param format notes, e.g. date format; check it before calling).",
    "parameters": {
     "type": "object",
     "properties": {
