@@ -38,6 +38,9 @@ all-frontends = [
     "wecom-aibot-sdk>=1.0",
     "dingtalk-stream>=0.20",
 ]
+redfox = [
+    "redfox-python-sdk>=0.4.0",
+]
 
 [build-system]
 requires = ["setuptools>=68.0"]

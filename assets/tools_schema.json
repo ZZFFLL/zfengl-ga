@@ -254,5 +254,33 @@
     "properties": {}
    }
   }
+ },
+ {
+  "type": "function",
+  "function": {
+   "name": "redfox",
+   "description": "RedFox (红狐数据) platform data tool. Covers data scraping for Douyin, Xiaohongshu, WeChat公众号, Bilibili, Toutiao, TikTok, Kuaishou, WeChat Channels, YouTube, X(Twitter), Instagram, Dongchedi, Yiche, Autohome; hotspot rankings; AI search (Kimi/DeepSeek/Qianwen/Yuanbao/Doubao/Baidu); AI image/video generation; media download/upload. Call with platform + action + params. Use action='__methods__' to list a platform's available methods.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "platform": {
+      "type": "string",
+      "description": "Platform/module name. One of: douyin, xiaohongshu, wechat, bilibili, toutiao, tiktok, kuaishou, wechat_channels, youtube, twitter, instagram, dongchedi, yiche, autohome, hotspot, gpt_image, doubao_image, doubao_video, ai_search, tools"
+     },
+     "action": {
+      "type": "string",
+      "description": "Method name on that platform, e.g. search_articles, get_work, get_user_works, search_users. Use '__methods__' to list all available methods."
+     },
+     "params": {
+      "type": "object",
+      "description": "Keyword arguments for the action as a JSON object, e.g. {\"keyword\": \"AI\", \"page\": 1}"
+     }
+    },
+    "required": [
+     "platform",
+     "action"
+    ]
+   }
+  }
  }
 ]

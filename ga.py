@@ -8,6 +8,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from agent_loop import BaseHandler, StepOutcome, json_default
 from tools import searchserver
+from tools import redfox
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 # ── hashline (line-anchored patch engine) ──────────────────────────────
@@ -442,6 +443,21 @@ class GenericAgentHandler(BaseHandler):
             yield f"[Info] Search {status} via {provider}\n"
         else:
             yield f"[Info] Search {status}\n"
+        next_prompt = self._get_anchor_prompt(skip=args.get('_index', 0) > 0)
+        return StepOutcome(result, next_prompt=next_prompt)
+
+    def do_redfox(self, args, response):
+        '''红狐数据平台(RedFox)统一入口。platform+action 调用 SDK，params 传该方法关键字参数。'''
+        platform = str(args.get("platform", "") or "").strip()
+        action = str(args.get("action", "") or "").strip()
+        params = args.get("params") or {}
+        if not platform:
+            return StepOutcome({"status": "error", "msg": "platform is required"}, next_prompt="\n")
+        if not action:
+            return StepOutcome({"status": "error", "msg": "action is required (use '__methods__' to list)"}, next_prompt="\n")
+        result = redfox.call(platform, action, params)
+        status = result.get("status") if isinstance(result, dict) else "unknown"
+        yield f"[Info] RedFox {status} platform={platform} action={action}\n"
         next_prompt = self._get_anchor_prompt(skip=args.get('_index', 0) > 0)
         return StepOutcome(result, next_prompt=next_prompt)
 
