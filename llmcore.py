@@ -507,6 +507,9 @@ def _openai_stream(sess, messages):
     elif 'minimax' in ml: temperature = max(0.01, min(temperature, 1.0))  # MiniMax requires temp in (0, 1]
     headers = {"Authorization": f"Bearer {sess.api_key}", "Content-Type": "application/json", "Accept": "text/event-stream", 'originator': 'codex_exec'}
     headers["User-Agent"] = sess.user_agent
+    # OpenCode 用同一会话编号进行路由和提示缓存。
+    if "opencode.ai" in sess.api_base.lower():
+        headers["x-opencode-session"] = sess._session_id
     if api_mode == "responses":
         url = auto_make_url(sess.api_base, "responses")
         payload = {"model": model, "input": _to_responses_input(messages), "stream": sess.stream, 
